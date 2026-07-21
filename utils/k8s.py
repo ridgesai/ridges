@@ -42,11 +42,10 @@ def cleanup_harbor_k8s_resources() -> None:
     """Delete orphaned eval Pods at startup.
 
     Safe in multi-screener deployments: only deletes pods owned by this
-    screener (stale UID) or pods with no owner reference (legacy).
+    screener (by pod name) or pods with no owner reference (legacy).
     """
     namespace = os.getenv("K8S_NAMESPACE", "ridges")
     my_pod_name = os.getenv("MY_POD_NAME")
-    my_pod_uid = os.getenv("MY_POD_UID")
     api = _get_core_api()
 
     logger.info("Cleaning up stale K8s eval Pods...")
@@ -63,11 +62,11 @@ def cleanup_harbor_k8s_resources() -> None:
         if not owner_refs:
             # Legacy pod with no owner reference -- always clean up.
             pass
-        elif my_pod_name and my_pod_uid:
-            # Delete only if an owner ref points to this screener with a stale UID.
-            dominated_by_us = any(ref.name == my_pod_name and ref.uid != my_pod_uid for ref in owner_refs)
+        elif my_pod_name:
+            # Delete if any owner ref points to this screener pod (by name).
+            dominated_by_us = any(ref.name == my_pod_name for ref in owner_refs)
             if not dominated_by_us:
-                continue  # Owned by a different screener, or current UID matches.
+                continue  # Owned by a different screener.
         else:
             # No Downward API vars available (local dev?) -- skip pods with owners.
             continue

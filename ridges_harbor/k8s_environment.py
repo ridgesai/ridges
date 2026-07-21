@@ -65,7 +65,9 @@ class KubernetesEnvironment(BaseEnvironment):
         kubeconfig_context: str | None = None,
         node_selector: dict[str, str] | None = None,
         service_account_name: str | None = None,
-        memory_limit_multiplier: float | None = None,
+        memory_limit_multiplier: float | None = 1.0,
+        memory_request_fraction: float = 1.0,
+        cpu_request_fraction: float = 1.0,
         labels: dict[str, str] | None = None,
         image_pull_secrets: list[str] | None = None,
         owner_pod_name: str | None = None,
@@ -91,9 +93,9 @@ class KubernetesEnvironment(BaseEnvironment):
         self._owner_pod_name = owner_pod_name
         self._owner_pod_uid = owner_pod_uid
 
-        # Resource sizing
-        self.cpu_request = str(task_env_config.cpus)
-        self.memory_request = f"{task_env_config.memory_mb}Mi"
+        # Resource sizing.
+        self.cpu_request = str(round(max(task_env_config.cpus * cpu_request_fraction, 0.1), 3))
+        self.memory_request = f"{max(int(task_env_config.memory_mb * memory_request_fraction), 128)}Mi"
         self.ephemeral_storage_request = f"{task_env_config.storage_mb}Mi"
 
         if memory_limit_multiplier is not None and memory_limit_multiplier > 0:
@@ -382,10 +384,7 @@ class KubernetesEnvironment(BaseEnvironment):
         await self._wait_for_container_exec_ready()
 
         source_path = Path(source_path)
-        tar_buffer = io.BytesIO()
-        with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
-            tar.add(str(source_path), arcname=Path(target_path).name)
-        tar_buffer.seek(0)
+        payload = await asyncio.to_thread(self._build_tar_single_file, source_path, Path(target_path).name)
 
         target_dir = str(Path(target_path).parent)
         await self.exec(f"mkdir -p {shlex.quote(target_dir)}", user="root")
@@ -403,9 +402,7 @@ class KubernetesEnvironment(BaseEnvironment):
             tty=False,
             _preload_content=False,
         )
-        resp.write_stdin(tar_buffer.read())
-        resp.run_forever(timeout=1)
-        resp.close()
+        await asyncio.to_thread(self._write_tar_stream, resp, payload)
 
     @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=30), reraise=True)
     async def upload_dir(self, source_dir: Path | str, target_dir: str) -> None:
@@ -413,12 +410,7 @@ class KubernetesEnvironment(BaseEnvironment):
         await self._wait_for_container_exec_ready()
 
         source_dir = Path(source_dir)
-        tar_buffer = io.BytesIO()
-        with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
-            for item in source_dir.rglob("*"):
-                if item.is_file():
-                    tar.add(str(item), arcname=str(item.relative_to(source_dir)))
-        tar_buffer.seek(0)
+        payload = await asyncio.to_thread(self._build_tar_dir, source_dir)
 
         await self.exec(f"mkdir -p {shlex.quote(target_dir)}", user="root")
 
@@ -436,11 +428,9 @@ class KubernetesEnvironment(BaseEnvironment):
             _preload_content=False,
         )
         try:
-            resp.write_stdin(tar_buffer.read())
+            await asyncio.to_thread(self._write_tar_stream, resp, payload)
         except Exception as exc:
             raise RuntimeError(f"Failed to write tar data to Pod {self.pod_name}: {exc}") from exc
-        resp.run_forever(timeout=1)
-        resp.close()
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10), reraise=True)
     async def download_file(self, source_path: str, target_path: Path | str) -> None:
@@ -462,20 +452,9 @@ class KubernetesEnvironment(BaseEnvironment):
             _preload_content=False,
         )
 
-        tar_data = b""
-        while resp.is_open():
-            resp.update(timeout=1)
-            if resp.peek_stdout():
-                chunk = resp.read_stdout()
-                tar_data += chunk.encode("utf-8", errors="surrogateescape") if isinstance(chunk, str) else chunk
+        tar_data, _stderr_data = await asyncio.to_thread(self._read_tar_stream, resp)
 
-        tar_buffer = io.BytesIO(tar_data)
-        with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
-            for member in tar.getmembers():
-                if member.name == source_path or member.name.startswith(source_path.lstrip("/")):
-                    member.name = target_path.name
-                    tar.extract(member, path=str(target_path.parent))
-                    break
+        await asyncio.to_thread(self._extract_tar_member, tar_data, source_path, target_path)
 
     @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=30), reraise=True)
     async def download_dir(self, source_dir: str, target_dir: Path | str) -> None:
@@ -500,15 +479,7 @@ class KubernetesEnvironment(BaseEnvironment):
         except ApiException as exc:
             raise RuntimeError(f"Failed to start tar download from Pod {self.pod_name}: {exc}") from exc
 
-        tar_data = b""
-        stderr_data = ""
-        while resp.is_open():
-            resp.update(timeout=1)
-            if resp.peek_stdout():
-                chunk = resp.read_stdout()
-                tar_data += chunk.encode("utf-8", errors="surrogateescape") if isinstance(chunk, str) else chunk
-            if resp.peek_stderr():
-                stderr_data += resp.read_stderr()
+        tar_data, stderr_data = await asyncio.to_thread(self._read_tar_stream, resp)
 
         if stderr_data and ("No such file or directory" in stderr_data or "cannot cd" in stderr_data):
             raise RuntimeError(f"Failed to access directory {source_dir} in Pod {self.pod_name}: {stderr_data.strip()}")
@@ -516,15 +487,19 @@ class KubernetesEnvironment(BaseEnvironment):
         if not tar_data:
             raise RuntimeError(f"No data received when downloading {source_dir} from Pod {self.pod_name}")
 
-        tar_buffer = io.BytesIO(tar_data)
         try:
-            with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
-                tar.extractall(path=str(target_dir))
+            await asyncio.to_thread(self._extract_tar_all, tar_data, target_dir)
         except tarfile.TarError as exc:
             raise RuntimeError(f"Failed to extract {source_dir} from Pod {self.pod_name}: {exc}") from exc
 
     # ------------------------------------------------------------------
     # Private helpers
+    #
+    # These run blocking WebSocket stream I/O and tarfile (de)serialization,
+    # so they're always invoked via asyncio.to_thread rather than awaited
+    # directly -- calling them on the event loop would stall it for the
+    # entire transfer, starving heartbeats and other concurrent evaluation
+    # runs.
     # ------------------------------------------------------------------
 
     def _read_exec_output(self, resp: Any) -> tuple[str, str]:
@@ -537,6 +512,57 @@ class KubernetesEnvironment(BaseEnvironment):
             if resp.peek_stderr():
                 stderr += resp.read_stderr()
         return stdout, stderr
+
+    def _read_tar_stream(self, resp: Any) -> tuple[bytes, str]:
+        """Blocking: drain a WebSocket exec stream, returning (stdout_bytes, stderr_text)."""
+        tar_data = b""
+        stderr_data = ""
+        while resp.is_open():
+            resp.update(timeout=1)
+            if resp.peek_stdout():
+                chunk = resp.read_stdout()
+                tar_data += chunk.encode("utf-8", errors="surrogateescape") if isinstance(chunk, str) else chunk
+            if resp.peek_stderr():
+                stderr_data += resp.read_stderr()
+        return tar_data, stderr_data
+
+    def _write_tar_stream(self, resp: Any, payload: bytes) -> None:
+        """Blocking: write payload to the exec stream stdin and drain until closed."""
+        resp.write_stdin(payload)
+        resp.run_forever(timeout=1)
+        resp.close()
+
+    def _build_tar_single_file(self, source_path: Path, arcname: str) -> bytes:
+        """Blocking: build an in-memory tar archive containing a single file."""
+        tar_buffer = io.BytesIO()
+        with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+            tar.add(str(source_path), arcname=arcname)
+        return tar_buffer.getvalue()
+
+    def _build_tar_dir(self, source_dir: Path) -> bytes:
+        """Blocking: build an in-memory tar archive of every file under source_dir."""
+        tar_buffer = io.BytesIO()
+        with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+            for item in source_dir.rglob("*"):
+                if item.is_file():
+                    tar.add(str(item), arcname=str(item.relative_to(source_dir)))
+        return tar_buffer.getvalue()
+
+    def _extract_tar_member(self, tar_data: bytes, source_path: str, target_path: Path) -> None:
+        """Blocking: extract a single named member from an in-memory tar archive."""
+        tar_buffer = io.BytesIO(tar_data)
+        with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
+            for member in tar.getmembers():
+                if member.name == source_path or member.name.startswith(source_path.lstrip("/")):
+                    member.name = target_path.name
+                    tar.extract(member, path=str(target_path.parent), filter="data")
+                    break
+
+    def _extract_tar_all(self, tar_data: bytes, target_dir: Path) -> None:
+        """Blocking: extract every member of an in-memory tar archive."""
+        tar_buffer = io.BytesIO(tar_data)
+        with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
+            tar.extractall(path=str(target_dir), filter="data")
 
     async def _wait_for_container_exec_ready(self, max_attempts: int = 60) -> None:
         for attempt in range(max_attempts):
@@ -965,6 +991,9 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                 )
             ],
             volume_mounts=[k8s_client.V1VolumeMount(name="context", mount_path="/workspace")],
+            resources=k8s_client.V1ResourceRequirements(
+                requests={"cpu": "100m", "memory": "256Mi"},
+            ),
         )
 
         kaniko_args = [
@@ -995,6 +1024,9 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
             image="gcr.io/kaniko-project/executor:latest",
             args=kaniko_args,
             volume_mounts=kaniko_volume_mounts,
+            resources=k8s_client.V1ResourceRequirements(
+                requests={"cpu": "700m", "memory": "1536Mi"},
+            ),
         )
 
         volumes = [

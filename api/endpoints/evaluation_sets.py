@@ -288,6 +288,7 @@ async def _build_approved_agents(
             emission=None,
             reward_weight=None,
             approved_at=row["approved_at"],
+            initial_reward_score=row["initial_reward_score"],
             average_runtime_seconds=row["average_runtime_seconds"],
             average_cost_usd=row["average_cost_usd"],
         )

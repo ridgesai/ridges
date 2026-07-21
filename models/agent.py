@@ -63,6 +63,7 @@ class PossiblyBenchmarkAgent(Agent):
     relative_improvement_units: Optional[float] = None
     time_multiplier: Optional[float] = None
     initial_reward_score: Optional[float] = None
+    approved_at: Optional[datetime] = None
     baseline_agent_id: Optional[UUID] = None
     baseline_agent_name: Optional[str] = None
     baseline_agent_version_num: Optional[int] = None

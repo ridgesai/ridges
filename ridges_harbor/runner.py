@@ -185,6 +185,9 @@ async def _run_task_dir(
 
         from validator.config import (
             K8S_CONTEXT,
+            K8S_CPU_REQUEST_FRACTION,
+            K8S_MEMORY_LIMIT_MULTIPLIER,
+            K8S_MEMORY_REQUEST_FRACTION,
             K8S_NAMESPACE,
             K8S_NODE_SELECTOR,
             K8S_REGISTRY,
@@ -228,6 +231,9 @@ async def _run_task_dir(
                 "registry_insecure": K8S_REGISTRY_INSECURE,
                 "owner_pod_name": K8S_OWNER_POD_NAME,
                 "owner_pod_uid": K8S_OWNER_POD_UID,
+                "memory_limit_multiplier": K8S_MEMORY_LIMIT_MULTIPLIER,
+                "memory_request_fraction": K8S_MEMORY_REQUEST_FRACTION,
+                "cpu_request_fraction": K8S_CPU_REQUEST_FRACTION,
             },
         )
 

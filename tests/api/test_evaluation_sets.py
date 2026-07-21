@@ -205,6 +205,7 @@ async def test_evaluation_set_detail_happy_path():
     agent_b = uuid4()
     agent_c = uuid4()  # hardcoded rejected
     agent_d = uuid4()  # outside set-2 window (belongs to set 1)
+    leaderboard_approved_at = datetime(2026, 5, 23, 4, tzinfo=timezone.utc)
 
     async with _db.pool.acquire() as conn:
         # Two evaluation sets; set 2 is the target
@@ -272,7 +273,12 @@ async def test_evaluation_set_detail_happy_path():
         )
 
         # Approved agent
-        await _insert_approved_agent(conn, agent_id=agent_a, set_id=2)
+        await _insert_approved_agent(
+            conn,
+            agent_id=agent_a,
+            set_id=2,
+            approved_at=leaderboard_approved_at,
+        )
         await _insert_approved_agent(conn, agent_id=agent_d, set_id=1)
 
         # Scores for set 2 and set 1
@@ -349,14 +355,17 @@ async def test_evaluation_set_detail_happy_path():
     assert set(agents_by_id) == {agent_a, agent_b, agent_c}
     assert agents_by_id[agent_a].rank == 1
     assert agents_by_id[agent_a].approved is True
+    assert agents_by_id[agent_a].approved_at == leaderboard_approved_at
     assert agents_by_id[agent_a].final_score == 0.8
     assert agents_by_id[agent_a].validator_count == 1
     assert agents_by_id[agent_a].average_cost_usd == 0.2
     assert agents_by_id[agent_a].average_runtime_seconds == 75
     assert agents_by_id[agent_a].validator_hotkeys == ["validator-hotkey"]
     assert agents_by_id[agent_b].rank is None
+    assert agents_by_id[agent_b].approved_at is None
     assert agents_by_id[agent_b].final_score is None
     assert agents_by_id[agent_c].rank is None
+    assert agents_by_id[agent_c].approved_at is None
     assert agents_by_id[agent_c].final_score is None
 
 
@@ -727,6 +736,12 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
         )
         await _insert_approved_agent(conn, agent_id=agent_id_a, set_id=1, approved_at=approved_at_a)
         await _insert_approved_agent(conn, agent_id=agent_id_b, set_id=1, approved_at=approved_at_b)
+        await conn.execute(
+            "UPDATE approved_agents SET initial_reward_score = $1 WHERE agent_id = $2 AND set_id = $3",
+            2.34567,
+            agent_id_a,
+            1,
+        )
 
         # Insert validator evaluations + runs so validator_metrics CTE can compute cost/runtime
         eval_id_a = await _insert_evaluation(conn, agent_id=agent_id_a, set_id=1, set_group="validator")
@@ -749,6 +764,7 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     assert result[0].emission == pytest.approx(147.600823658)
     assert result[0].reward_weight == pytest.approx(0.7)
     assert result[0].approved_at == approved_at_a
+    assert result[0].initial_reward_score == 2.3457
     assert result[0].average_cost_usd == 0.5
     assert result[0].average_runtime_seconds == 120
 
@@ -758,6 +774,7 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     assert result[1].emission == pytest.approx(2.037068052)
     assert result[1].reward_weight == pytest.approx(0.3)
     assert result[1].approved_at == approved_at_b
+    assert result[1].initial_reward_score is None
     assert result[1].average_cost_usd == 0.3
     assert result[1].average_runtime_seconds == 60
 
@@ -776,6 +793,7 @@ async def test_live_approved_agents_show_individual_weights_for_shared_hotkey(mo
         emission=None,
         reward_weight=None,
         approved_at=AGENT_TS_SET_1,
+        initial_reward_score=None,
         average_runtime_seconds=None,
         average_cost_usd=None,
     )
@@ -819,6 +837,7 @@ async def test_live_approved_agent_data_degrades_when_chain_lookup_fails(monkeyp
         emission=None,
         reward_weight=None,
         approved_at=AGENT_TS_SET_1,
+        initial_reward_score=None,
         average_runtime_seconds=None,
         average_cost_usd=None,
     )
