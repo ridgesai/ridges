@@ -614,6 +614,7 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
             aa.relative_improvement_units,
             aa.time_multiplier,
             aa.initial_reward_score,
+            aa.approved_at,
             baseline.name AS baseline_agent_name,
             baseline.version_num AS baseline_agent_version_num,
             rs.final_score,
@@ -717,6 +718,7 @@ async def get_approved_agents_for_set(conn: DatabaseConnection, set_id: int) -> 
             a.created_at,
             ass.final_score,
             aa.approved_at,
+            aa.initial_reward_score,
             vm.average_cost_usd,
             vm.average_runtime_seconds
         FROM approved_agents aa

@@ -135,6 +135,7 @@ class EvaluationSetDetailLeaderboardAgent(BaseModel):
     relative_improvement_units: Float4 | None
     time_multiplier: Float4 | None
     initial_reward_score: Float4 | None
+    approved_at: datetime.datetime | None
     baseline_agent_name: str | None
     baseline_agent_version_num: int | None
     final_score: Float4 | None
@@ -171,5 +172,6 @@ class ApprovedAgent(BaseModel):
     emission: float | None
     reward_weight: float | None
     approved_at: datetime.datetime
+    initial_reward_score: Float4 | None
     average_runtime_seconds: Float4 | None
     average_cost_usd: Float4 | None
