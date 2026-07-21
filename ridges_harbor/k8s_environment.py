@@ -967,6 +967,9 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                 )
             ],
             volume_mounts=[k8s_client.V1VolumeMount(name="context", mount_path="/workspace")],
+            resources=k8s_client.V1ResourceRequirements(
+                requests={"cpu": "100m", "memory": "256Mi"},
+            ),
         )
 
         kaniko_args = [
@@ -997,6 +1000,9 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
             image="gcr.io/kaniko-project/executor:latest",
             args=kaniko_args,
             volume_mounts=kaniko_volume_mounts,
+            resources=k8s_client.V1ResourceRequirements(
+                requests={"cpu": "700m", "memory": "1536Mi"},
+            ),
         )
 
         volumes = [
