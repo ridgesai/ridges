@@ -94,10 +94,6 @@ class KubernetesEnvironment(BaseEnvironment):
         self._owner_pod_uid = owner_pod_uid
 
         # Resource sizing.
-        # Requests are scaled down via *_request_fraction to allow overcommit on
-        # I/O-bound LLM benchmark workloads (pods mostly wait on API responses).
-        # The memory limit is set to memory_mb * memory_limit_multiplier (default
-        # 1.0), matching Docker's compose limit and providing OOM protection.
         self.cpu_request = str(round(max(task_env_config.cpus * cpu_request_fraction, 0.1), 3))
         self.memory_request = f"{max(int(task_env_config.memory_mb * memory_request_fraction), 128)}Mi"
         self.ephemeral_storage_request = f"{task_env_config.storage_mb}Mi"
