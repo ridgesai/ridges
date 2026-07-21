@@ -250,6 +250,17 @@ if RIDGES_ENVIRONMENT_TYPE == "kubernetes":
     K8S_REGISTRY_PASSWORD = os.getenv("K8S_REGISTRY_PASSWORD")  # for HEAD check Basic Auth
     K8S_REGISTRY_INSECURE = os.getenv("K8S_REGISTRY_INSECURE", "true").lower() == "true"
 
+# Resource overcommit knobs for K8s eval pods.
+# Requests are scaled down from the task's memory_mb/cpus so the scheduler can
+# pack more pods onto a node (LLM benchmark workloads are mostly I/O-bound and
+# burst rarely).  The limit always matches memory_mb (multiplier=1.0) so pods
+# get OOM-killed before starving the node, same as Docker's compose limit.
+#   Prod (24 GB, 20 pods): fraction=0.25 → 1 GB request, 4 GB limit → fits 20 pods
+#   Local dev:             fraction=0.1  → ~400 MB request → fits 15+ pods
+K8S_MEMORY_REQUEST_FRACTION: float = float(os.getenv("K8S_MEMORY_REQUEST_FRACTION", "0.25"))
+K8S_CPU_REQUEST_FRACTION: float = float(os.getenv("K8S_CPU_REQUEST_FRACTION", "0.25"))
+K8S_MEMORY_LIMIT_MULTIPLIER: float = float(os.getenv("K8S_MEMORY_LIMIT_MULTIPLIER", "1.0"))
+
 logger.info(f"Execution Backend: {RIDGES_ENVIRONMENT_TYPE}")
 
 logger.info("===============================")

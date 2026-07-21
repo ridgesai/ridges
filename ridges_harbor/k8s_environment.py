@@ -65,7 +65,9 @@ class KubernetesEnvironment(BaseEnvironment):
         kubeconfig_context: str | None = None,
         node_selector: dict[str, str] | None = None,
         service_account_name: str | None = None,
-        memory_limit_multiplier: float | None = None,
+        memory_limit_multiplier: float | None = 1.0,
+        memory_request_fraction: float = 1.0,
+        cpu_request_fraction: float = 1.0,
         labels: dict[str, str] | None = None,
         image_pull_secrets: list[str] | None = None,
         owner_pod_name: str | None = None,
@@ -91,9 +93,13 @@ class KubernetesEnvironment(BaseEnvironment):
         self._owner_pod_name = owner_pod_name
         self._owner_pod_uid = owner_pod_uid
 
-        # Resource sizing
-        self.cpu_request = str(task_env_config.cpus)
-        self.memory_request = f"{task_env_config.memory_mb}Mi"
+        # Resource sizing.
+        # Requests are scaled down via *_request_fraction to allow overcommit on
+        # I/O-bound LLM benchmark workloads (pods mostly wait on API responses).
+        # The memory limit is set to memory_mb * memory_limit_multiplier (default
+        # 1.0), matching Docker's compose limit and providing OOM protection.
+        self.cpu_request = str(round(max(task_env_config.cpus * cpu_request_fraction, 0.1), 3))
+        self.memory_request = f"{max(int(task_env_config.memory_mb * memory_request_fraction), 128)}Mi"
         self.ephemeral_storage_request = f"{task_env_config.storage_mb}Mi"
 
         if memory_limit_multiplier is not None and memory_limit_multiplier > 0:
