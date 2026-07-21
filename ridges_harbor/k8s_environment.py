@@ -555,14 +555,14 @@ class KubernetesEnvironment(BaseEnvironment):
             for member in tar.getmembers():
                 if member.name == source_path or member.name.startswith(source_path.lstrip("/")):
                     member.name = target_path.name
-                    tar.extract(member, path=str(target_path.parent))
+                    tar.extract(member, path=str(target_path.parent), filter="data")
                     break
 
     def _extract_tar_all(self, tar_data: bytes, target_dir: Path) -> None:
         """Blocking: extract every member of an in-memory tar archive."""
         tar_buffer = io.BytesIO(tar_data)
         with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
-            tar.extractall(path=str(target_dir))
+            tar.extractall(path=str(target_dir), filter="data")
 
     async def _wait_for_container_exec_ready(self, max_attempts: int = 60) -> None:
         for attempt in range(max_attempts):
