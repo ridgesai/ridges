@@ -249,6 +249,9 @@ if RIDGES_ENVIRONMENT_TYPE == "kubernetes":
     K8S_REGISTRY_SECRET = os.getenv("K8S_REGISTRY_SECRET")  # e.g. "registry-creds"
     K8S_REGISTRY_PASSWORD = os.getenv("K8S_REGISTRY_PASSWORD")  # for HEAD check Basic Auth
     K8S_REGISTRY_INSECURE = os.getenv("K8S_REGISTRY_INSECURE", "true").lower() == "true"
+    K8S_MEMORY_REQUEST_FRACTION: float = float(os.getenv("K8S_MEMORY_REQUEST_FRACTION", "0.25"))
+    K8S_CPU_REQUEST_FRACTION: float = float(os.getenv("K8S_CPU_REQUEST_FRACTION", "0.25"))
+    K8S_MEMORY_LIMIT_MULTIPLIER: float = float(os.getenv("K8S_MEMORY_LIMIT_MULTIPLIER", "1.0"))
 
 logger.info(f"Execution Backend: {RIDGES_ENVIRONMENT_TYPE}")
 
