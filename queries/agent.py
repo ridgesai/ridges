@@ -90,6 +90,7 @@ async def get_possibly_benchmark_agent_by_id(
             latest_approval.relative_improvement_units,
             latest_approval.time_multiplier,
             latest_approval.initial_reward_score,
+            latest_approval.approved_at,
             latest_approval.baseline_agent_id,
             baseline.name AS baseline_agent_name,
             baseline.version_num AS baseline_agent_version_num
@@ -98,7 +99,8 @@ async def get_possibly_benchmark_agent_by_id(
         {LATEST_AGENT_APPROVAL_JOINS}
         LEFT JOIN LATERAL (
             SELECT aa.agent_id, aa.baseline_agent_id, aa.performance_delta, aa.cost_delta,
-                   aa.relative_improvement_units, aa.time_multiplier, aa.initial_reward_score
+                   aa.relative_improvement_units, aa.time_multiplier, aa.initial_reward_score,
+                   aa.approved_at
             FROM approved_agents aa
             WHERE aa.agent_id = a.agent_id
             ORDER BY aa.set_id DESC
