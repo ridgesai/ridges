@@ -918,7 +918,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
             else:
                 raise
 
-        await self._wait_for_build_job(job_name, secret_name, timeout_sec=600)
+        await self._wait_for_build_job(job_name, secret_name, timeout_sec=2000)
 
     async def _image_exists_in_registry(self, image_ref: str) -> bool:
         """HEAD-check the task image (self.task_name:self.digest_tag) in the registry."""
