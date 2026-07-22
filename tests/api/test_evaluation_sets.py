@@ -737,8 +737,31 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
         await _insert_approved_agent(conn, agent_id=agent_id_a, set_id=1, approved_at=approved_at_a)
         await _insert_approved_agent(conn, agent_id=agent_id_b, set_id=1, approved_at=approved_at_b)
         await conn.execute(
-            "UPDATE approved_agents SET initial_reward_score = $1 WHERE agent_id = $2 AND set_id = $3",
+            """
+            UPDATE approved_agents
+            SET baseline_agent_id = $1,
+                performance_delta = $2,
+                cost_delta = $3,
+                relative_improvement_units = $4,
+                time_multiplier = $5,
+                initial_reward_score = $6
+            WHERE agent_id = $7 AND set_id = $8
+            """,
+            agent_id_b,
+            0.123456,
+            0.065432,
+            1.234567,
+            1.456789,
             2.34567,
+            agent_id_a,
+            1,
+        )
+        await conn.execute(
+            """
+            INSERT INTO agent_approval_states (
+                agent_id, set_id, processing_status, system_verdict, published_verdict
+            ) VALUES ($1, $2, 'completed', 'approved', 'approved')
+            """,
             agent_id_a,
             1,
         )
@@ -764,7 +787,15 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     assert result[0].emission == pytest.approx(147.600823658)
     assert result[0].reward_weight == pytest.approx(0.7)
     assert result[0].approved_at == approved_at_a
+    assert result[0].approval_review_status == "approved"
+    assert result[0].performance_delta == 0.1235
+    assert result[0].cost_delta == 0.0654
+    assert result[0].relative_improvement_units == 1.2346
+    assert result[0].time_multiplier == 1.4568
     assert result[0].initial_reward_score == 2.3457
+    assert result[0].baseline_agent_id == agent_id_b
+    assert result[0].baseline_agent_name == "hotkey-b"
+    assert result[0].baseline_agent_version_num == 1
     assert result[0].average_cost_usd == 0.5
     assert result[0].average_runtime_seconds == 120
 
@@ -774,7 +805,15 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     assert result[1].emission == pytest.approx(2.037068052)
     assert result[1].reward_weight == pytest.approx(0.3)
     assert result[1].approved_at == approved_at_b
+    assert result[1].approval_review_status is None
+    assert result[1].performance_delta is None
+    assert result[1].cost_delta is None
+    assert result[1].relative_improvement_units is None
+    assert result[1].time_multiplier is None
     assert result[1].initial_reward_score is None
+    assert result[1].baseline_agent_id is None
+    assert result[1].baseline_agent_name is None
+    assert result[1].baseline_agent_version_num is None
     assert result[1].average_cost_usd == 0.3
     assert result[1].average_runtime_seconds == 60
 
@@ -793,7 +832,15 @@ async def test_live_approved_agents_show_individual_weights_for_shared_hotkey(mo
         emission=None,
         reward_weight=None,
         approved_at=AGENT_TS_SET_1,
+        approval_review_status=None,
+        performance_delta=None,
+        cost_delta=None,
+        relative_improvement_units=None,
+        time_multiplier=None,
         initial_reward_score=None,
+        baseline_agent_id=None,
+        baseline_agent_name=None,
+        baseline_agent_version_num=None,
         average_runtime_seconds=None,
         average_cost_usd=None,
     )
@@ -837,7 +884,15 @@ async def test_live_approved_agent_data_degrades_when_chain_lookup_fails(monkeyp
         emission=None,
         reward_weight=None,
         approved_at=AGENT_TS_SET_1,
+        approval_review_status=None,
+        performance_delta=None,
+        cost_delta=None,
+        relative_improvement_units=None,
+        time_multiplier=None,
         initial_reward_score=None,
+        baseline_agent_id=None,
+        baseline_agent_name=None,
+        baseline_agent_version_num=None,
         average_runtime_seconds=None,
         average_cost_usd=None,
     )
