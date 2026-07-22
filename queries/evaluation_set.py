@@ -717,8 +717,16 @@ async def get_approved_agents_for_set(conn: DatabaseConnection, set_id: int) -> 
             a.version_num,
             a.created_at,
             ass.final_score,
+            review.approval_review_status,
             aa.approved_at,
+            aa.performance_delta,
+            aa.cost_delta,
+            aa.relative_improvement_units,
+            aa.time_multiplier,
             aa.initial_reward_score,
+            aa.baseline_agent_id,
+            baseline.name AS baseline_agent_name,
+            baseline.version_num AS baseline_agent_version_num,
             vm.average_cost_usd,
             vm.average_runtime_seconds
         FROM approved_agents aa
@@ -727,6 +735,7 @@ async def get_approved_agents_for_set(conn: DatabaseConnection, set_id: int) -> 
         LEFT JOIN agent_final_review_statuses review
             ON review.agent_id = aa.agent_id
             AND review.set_id = aa.set_id
+        LEFT JOIN agents baseline ON baseline.agent_id = aa.baseline_agent_id
         LEFT JOIN validator_metrics vm ON vm.agent_id = aa.agent_id
         WHERE aa.set_id = $1
           AND aa.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
