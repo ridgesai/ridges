@@ -172,6 +172,14 @@ class ApprovedAgent(BaseModel):
     emission: float | None
     reward_weight: float | None
     approved_at: datetime.datetime
+    approval_review_status: str | None
+    performance_delta: Float4 | None
+    cost_delta: Float4 | None
+    relative_improvement_units: Float4 | None
+    time_multiplier: Float4 | None
     initial_reward_score: Float4 | None
+    baseline_agent_id: UUID | None
+    baseline_agent_name: str | None
+    baseline_agent_version_num: int | None
     average_runtime_seconds: Float4 | None
     average_cost_usd: Float4 | None

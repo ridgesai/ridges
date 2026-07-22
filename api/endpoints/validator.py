@@ -9,6 +9,7 @@ from functools import wraps
 from http import HTTPStatus
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
+from weakref import WeakValueDictionary
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer
@@ -123,20 +124,20 @@ class Validator(BaseModel):
 
 # Map of session IDs to validator objects
 SESSION_ID_TO_VALIDATOR: Dict[UUID, Validator] = {}
+SESSION_REGISTRATION_LOCKS: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
 
 
-# Returns True if a validator with the given hotkey is currently registered
-def is_validator_registered(validator_hotkey: str) -> str | None:
+def get_session_registration_lock(validator_hotkey: str) -> asyncio.Lock:
+    lock = SESSION_REGISTRATION_LOCKS.get(validator_hotkey)
+    if lock is None:
+        lock = asyncio.Lock()
+        SESSION_REGISTRATION_LOCKS[validator_hotkey] = lock
+    return lock
+
+
+def is_validator_registered(validator_hotkey: str) -> UUID | None:
     for session_id, validator in SESSION_ID_TO_VALIDATOR.items():
         if validator.hotkey == validator_hotkey:
-            return session_id
-    return None
-
-
-def delete_session_by_hotkey(validator_hotkey: str) -> Optional[UUID]:
-    for session_id, validator in SESSION_ID_TO_VALIDATOR.items():
-        if validator.hotkey == validator_hotkey:
-            del SESSION_ID_TO_VALIDATOR[session_id]
             return session_id
     return None
 
@@ -159,6 +160,44 @@ async def delete_validator(validator: Validator, reason: str) -> None:
     del SESSION_ID_TO_VALIDATOR[validator.session_id]
 
     logger.info(f"Deleted validator {validator.name} ({validator.hotkey})")
+
+
+async def register_session(
+    *,
+    name: str,
+    hotkey: str,
+    ip_address: str | None,
+    replacement_reason: str,
+    require_same_ip_for_replacement: bool = False,
+    different_ip_conflict_detail: str = "",
+) -> Validator:
+    if ip_address is None:
+        raise HTTPException(status_code=400, detail="The client IP address could not be determined.")
+
+    registration_lock = get_session_registration_lock(hotkey)
+    async with DebugLock(registration_lock, f"register_session() for {hotkey}"):
+        old_session_id = is_validator_registered(hotkey)
+        if old_session_id is not None:
+            old_validator = SESSION_ID_TO_VALIDATOR.get(old_session_id)
+            if old_validator is not None:
+                if require_same_ip_for_replacement and ip_address != old_validator.ip_address:
+                    raise HTTPException(status_code=409, detail=different_ip_conflict_detail)
+
+                async with DebugLock(old_validator._lock, f"register_session() for {old_validator.name}'s lock"):
+                    if SESSION_ID_TO_VALIDATOR.get(old_session_id) is old_validator:
+                        await delete_validator(old_validator, replacement_reason)
+                        logger.info(f"Deleted old session {old_session_id} for validator {hotkey}")
+
+        session_id = uuid4()
+        validator = Validator(
+            session_id=session_id,
+            name=name,
+            hotkey=hotkey,
+            time_connected=datetime.now(timezone.utc),
+            ip_address=ip_address,
+        )
+        SESSION_ID_TO_VALIDATOR[session_id] = validator
+        return validator
 
 
 # Deletes all validators that have not sent a heartbeat in long enough
@@ -265,33 +304,16 @@ async def validator_register_as_validator(
             status_code=400, detail="The provided timestamp is not within 1 minute of the current time."
         )
 
-    # Ensure that the validator is not already registered
     ip_address = request.client.host if request.client else None
-    if (old_session_id_ := is_validator_registered(registration_request.hotkey)) is not None:
-        old_validator = SESSION_ID_TO_VALIDATOR[old_session_id_]
-        if ip_address != old_validator.ip_address:
-            raise HTTPException(status_code=409, detail="There is already a validator connected with the given hotkey.")
-        else:
-            async with DebugLock(
-                old_validator._lock, f"validator_register_as_validator() for {old_validator.name}'s lock"
-            ):
-                current_validator = SESSION_ID_TO_VALIDATOR.get(old_session_id_)
-                if current_validator is not None:
-                    await delete_validator(
-                        current_validator,
-                        "Validator re-registered from the same IP address; replacing the old session.",
-                    )
-                    logger.info(f"Deleted old session {old_session_id_} for validator {registration_request.hotkey}")
-
-    # Register the validator with a new session ID
-    session_id = uuid4()
-    SESSION_ID_TO_VALIDATOR[session_id] = Validator(
-        session_id=session_id,
+    validator = await register_session(
         name=validator_hotkey_to_name(registration_request.hotkey),
         hotkey=registration_request.hotkey,
-        time_connected=datetime.now(timezone.utc),
         ip_address=ip_address,
+        replacement_reason="Validator re-registered from the same IP address; replacing the old session.",
+        require_same_ip_for_replacement=True,
+        different_ip_conflict_detail="There is already a validator connected with the given hotkey.",
     )
+    session_id = validator.session_id
 
     logger.info(
         f"Validator '{validator_hotkey_to_name(registration_request.hotkey)}' ({registration_request.hotkey}) was registered"
@@ -334,20 +356,14 @@ async def validator_register_as_screener(
     if registration_request.password != config.SCREENER_PASSWORD:
         raise HTTPException(status_code=403, detail="The provided password is incorrect.")
 
-    # Ensure that the screener is not already registered
-    if is_validator_registered(registration_request.name):
-        raise HTTPException(status_code=409, detail="There is already a screener connected with the given name.")
-
-    # Register the screener with a new session ID
-    session_id = uuid4()
     ip_address = request.client.host if request.client else None
-    SESSION_ID_TO_VALIDATOR[session_id] = Validator(
-        session_id=session_id,
+    screener = await register_session(
         name=registration_request.name,
         hotkey=registration_request.name,
-        time_connected=datetime.now(timezone.utc),
         ip_address=ip_address,
+        replacement_reason="Screener re-registered; replacing the old session.",
     )
+    session_id = screener.session_id
 
     logger.info(f"Screener {registration_request.name} was registered")
     logger.info(f"  Session ID: {session_id}")
