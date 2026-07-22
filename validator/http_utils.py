@@ -40,6 +40,15 @@ def _pretty_print_httpx_error(method: str, url: str, e: httpx.HTTPStatusError):
         logger.error(textwrap.indent(e.response.text, "  "))
 
 
+def _platform_headers(bearer_token: str = None) -> dict | None:
+    headers = {}
+    if bearer_token is not None:
+        headers["Authorization"] = f"Bearer {bearer_token}"
+    if config.SCREENER_EDGE_KEY:
+        headers["X-Screener-Edge-Key"] = config.SCREENER_EDGE_KEY
+    return headers or None
+
+
 async def get_ridges_platform(endpoint: str, *, quiet: int = 0) -> Any:
     """
     Helper function that sends a GET request to the Ridges platform.
@@ -63,7 +72,7 @@ async def get_ridges_platform(endpoint: str, *, quiet: int = 0) -> Any:
     try:
         # Send the request
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
-            response = await client.get(url)
+            response = await client.get(url, headers=_platform_headers())
             response.raise_for_status()
             response_json = response.json()
 
@@ -117,8 +126,7 @@ async def post_ridges_platform(
     try:
         # Send the request
         async with httpx.AsyncClient(timeout=timeout) as client:
-            headers = {"Authorization": f"Bearer {bearer_token}"} if bearer_token is not None else None
-            response = await client.post(url, json=body_dict, headers=headers)
+            response = await client.post(url, json=body_dict, headers=_platform_headers(bearer_token))
             response.raise_for_status()
             response_json = response.json()
 
