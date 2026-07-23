@@ -551,9 +551,7 @@ async def _pre_build_missing_images(request_evaluation_response: ValidatorReques
         return parsed.task_name, digest_tag, presigned_url
 
     try:
-        resolved = await asyncio.gather(
-            *(_resolve_task(run) for run in request_evaluation_response.evaluation_runs)
-        )
+        resolved = await asyncio.gather(*(_resolve_task(run) for run in request_evaluation_response.evaluation_runs))
         tasks = [task for task in resolved if task is not None]
         if not tasks:
             return
