@@ -853,7 +853,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         spec.init_containers = [
             k8s_client.V1Container(
                 name="iptables-init",
-                image="ghcr.io/ridgesai/ridges-iptables-init:pr-444",
+                image="ghcr.io/ridgesai/ridges-iptables-init:main",
                 image_pull_policy="IfNotPresent",
                 command=[
                     "sh",
