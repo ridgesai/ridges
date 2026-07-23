@@ -24,11 +24,12 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 import re
 import shlex
 import tarfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from harbor.environments.base import BaseEnvironment, ExecResult
 from harbor.models.environment_type import EnvironmentType
@@ -39,6 +40,8 @@ from kubernetes import config as k8s_config
 from kubernetes.client.rest import ApiException
 from kubernetes.stream import stream
 from tenacity import retry, stop_after_attempt, wait_exponential
+
+logger = logging.getLogger(__name__)
 
 # Build-Job memory tiers (request, limit), escalated on OOMKilled.
 BUILD_MEMORY_TIERS: list[tuple[str, str]] = [
@@ -720,6 +723,8 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         registry_credentials_secret: str | None = None,
         registry_password: str | None = None,
         registry_insecure: bool = True,
+        build_registry: str | None = None,
+        build_registry_insecure: bool | None = None,
         **kwargs,
     ):
         self.registry = registry
@@ -734,6 +739,18 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         self.registry_credentials_secret = registry_credentials_secret
         self._registry_password = registry_password
         self._registry_insecure = registry_insecure
+        # BuildKit push/cache-export target: defaults to the external `registry`
+        # for backward compat, but callers should pass the in-cluster registry
+        # Service address (e.g. "registry.<namespace>:5000") so BuildKit's push
+        # traffic never has to leave the cluster via the Hetzner Cloud Load
+        # Balancer / HAProxy Ingress, which impose idle timeouts that large
+        # blob uploads can't complete within. The eval pod's `image` field
+        # (below) always uses the external `registry`, since node-level
+        # kubelet pulls need a publicly-resolvable, TLS-valid hostname.
+        self.build_registry = build_registry if build_registry is not None else registry
+        self._build_registry_insecure = (
+            build_registry_insecure if build_registry_insecure is not None else registry_insecure
+        )
 
         image = f"{registry}/{task_name.lower()}:{digest_tag}"
         # Eval pods need credentials to pull the task image from the in-cluster registry.
@@ -906,7 +923,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
 
     async def _ensure_image(self, *, force_build: bool = False) -> None:
         """Check registry for the task image; build with BuildKit if missing."""
-        image_ref = f"{self.registry}/{self.task_name.lower()}:{self.digest_tag}"
+        image_ref = f"{self.build_registry}/{self.task_name.lower()}:{self.digest_tag}"
 
         if not force_build and await self._image_exists_in_registry(image_ref):
             self.logger.debug(f"Image {image_ref} already in registry – skipping build")
@@ -949,61 +966,24 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
 
     async def _image_exists_in_registry(self, image_ref: str) -> bool:
         """HEAD-check the task image (self.task_name:self.digest_tag) in the registry."""
-        import base64
-        import http.client
-        import ssl
-        import urllib.parse
-
-        name, tag = self.task_name, self.digest_tag
-        try:
-            scheme = "http" if self._registry_insecure else "https"
-            default_port = 5000 if self._registry_insecure else 443
-            parsed = urllib.parse.urlsplit(f"{scheme}://{self.registry}")
-            host = parsed.hostname or self.registry.split(":")[0]
-            port = parsed.port or default_port
-
-            def _head() -> bool:
-                if self._registry_insecure:
-                    conn: http.client.HTTPConnection = http.client.HTTPConnection(host, port, timeout=10)
-                else:
-                    ctx = ssl.create_default_context()
-                    conn = http.client.HTTPSConnection(host, port, timeout=10, context=ctx)
-                headers: dict[str, str] = {}
-                if self.registry_credentials_secret and self._registry_password:
-                    cred = base64.b64encode(b"kaniko:" + self._registry_password.encode()).decode()
-                    headers["Authorization"] = f"Basic {cred}"
-                conn.request("HEAD", f"/v2/{name}/manifests/{tag}", headers=headers)
-                resp = conn.getresponse()
-                conn.close()
-                return resp.status == 200
-
-            return await asyncio.to_thread(_head)
-        except Exception as exc:
-            self.logger.debug(f"Registry check failed for {name}:{tag}: {exc}")
-            return False
+        return await _registry_image_exists(
+            self.build_registry,
+            self.task_name,
+            self.digest_tag,
+            registry_insecure=self._build_registry_insecure,
+            registry_credentials_secret=self.registry_credentials_secret,
+            registry_password=self._registry_password,
+        )
 
     def _create_build_secret_sync(self, secret_name: str) -> None:
         """Create a Secret with the presigned archive URL and BuildKit's
         registry-mirror config (mounted read-only, avoids shell quoting)."""
-        buildkitd_toml_lines = [
-            '[registry."docker.io"]',
-            f'  mirrors = ["{self.registry}"]',
-            f'[registry."{self.registry}"]',
-        ]
-        if self._registry_insecure:
-            buildkitd_toml_lines.append("  http = true")
-        buildkitd_toml = "\n".join(buildkitd_toml_lines) + "\n"
-
-        secret = k8s_client.V1Secret(
-            metadata=k8s_client.V1ObjectMeta(
-                name=secret_name,
-                namespace=self.namespace,
-                labels={"ridges.ai/managed-by": "screener", "ridges.ai/build-url": "true"},
-            ),
-            string_data={
-                "url": self.task_archive_presigned_url,
-                "buildkitd.toml": buildkitd_toml,
-            },
+        secret = _build_secret_body(
+            secret_name,
+            self.namespace,
+            self.task_archive_presigned_url,
+            self.build_registry,
+            self._build_registry_insecure,
         )
         self._api.create_namespaced_secret(namespace=self.namespace, body=secret)
 
@@ -1014,167 +994,15 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         disk instead of memory, fixing OOM kills on heavy builds. ``tier``
         selects (request, limit) from ``BUILD_MEMORY_TIERS``.
         """
-        tier = max(0, min(tier, len(BUILD_MEMORY_TIERS) - 1))
-        memory_request, memory_limit = BUILD_MEMORY_TIERS[tier]
-
-        init_container = k8s_client.V1Container(
-            name="fetch-context",
-            image="curlimages/curl:latest",
-            command=["/bin/sh", "-c"],
-            args=[
-                'curl -sSfL "$PRESIGNED_URL" -o /tmp/task.tar.gz && '
-                "mkdir -p /workspace && "
-                "tar -xzf /tmp/task.tar.gz -C /workspace --strip-components=1 && "
-                "test -f /workspace/environment/Dockerfile"
-            ],
-            env=[
-                k8s_client.V1EnvVar(
-                    name="PRESIGNED_URL",
-                    value_from=k8s_client.V1EnvVarSource(
-                        secret_key_ref=k8s_client.V1SecretKeySelector(
-                            name=secret_name,
-                            key="url",
-                        )
-                    ),
-                )
-            ],
-            volume_mounts=[k8s_client.V1VolumeMount(name="context", mount_path="/workspace")],
-            resources=k8s_client.V1ResourceRequirements(
-                requests={"cpu": "100m", "memory": "256Mi"},
-            ),
-        )
-
-        cache_ref = f"{self.registry}/cache"
-        output_opt = f"type=image,name={image_ref},push=true"
-        export_cache_opt = f"type=registry,ref={cache_ref},mode=max"
-        import_cache_opt = f"type=registry,ref={cache_ref}"
-        if self._registry_insecure:
-            output_opt += ",registry.insecure=true"
-            export_cache_opt += ",registry.insecure=true"
-            import_cache_opt += ",registry.insecure=true"
-
-        buildkit_args = [
-            "build",
-            "--frontend=dockerfile.v0",
-            "--local=context=/workspace/environment",
-            "--local=dockerfile=/workspace/environment",
-            "--opt=filename=Dockerfile",
-            f"--output={output_opt}",
-            f"--export-cache={export_cache_opt}",
-            f"--import-cache={import_cache_opt}",
-        ]
-
-        buildkit_volume_mounts = [
-            k8s_client.V1VolumeMount(name="context", mount_path="/workspace"),
-            k8s_client.V1VolumeMount(
-                name="buildkit-store",
-                mount_path="/home/user/.local/share/buildkit",
-            ),
-            k8s_client.V1VolumeMount(
-                name="buildkit-config",
-                mount_path="/etc/buildkit/buildkitd.toml",
-                sub_path="buildkitd.toml",
-                read_only=True,
-            ),
-        ]
-        if self.registry_credentials_secret:
-            buildkit_volume_mounts.append(
-                k8s_client.V1VolumeMount(
-                    name="docker-config",
-                    mount_path="/home/user/.docker",
-                    read_only=True,
-                )
-            )
-
-        buildkit_container = k8s_client.V1Container(
-            name="buildkit",
-            image="moby/buildkit:v0.31.2-rootless",
-            command=["buildctl-daemonless.sh"],
-            args=buildkit_args,
-            env=[
-                k8s_client.V1EnvVar(
-                    name="BUILDKITD_FLAGS",
-                    value="--config /etc/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",
-                ),
-                k8s_client.V1EnvVar(name="DOCKER_CONFIG", value="/home/user/.docker"),
-            ],
-            volume_mounts=buildkit_volume_mounts,
-            # Rootless BuildKit needs seccomp relaxed; AppArmor is relaxed via
-            # the pod template annotation below.
-            security_context=k8s_client.V1SecurityContext(
-                run_as_user=1000,
-                run_as_group=1000,
-                seccomp_profile=k8s_client.V1SeccompProfile(type="Unconfined"),
-            ),
-            resources=k8s_client.V1ResourceRequirements(
-                requests={"cpu": "1", "memory": memory_request},
-                limits={"memory": memory_limit},
-            ),
-        )
-
-        volumes = [
-            k8s_client.V1Volume(
-                name="context",
-                empty_dir=k8s_client.V1EmptyDirVolumeSource(size_limit="1Gi"),
-            ),
-            k8s_client.V1Volume(
-                name="buildkit-store",
-                empty_dir=k8s_client.V1EmptyDirVolumeSource(size_limit="25Gi"),
-            ),
-            k8s_client.V1Volume(
-                name="buildkit-config",
-                secret=k8s_client.V1SecretVolumeSource(
-                    secret_name=secret_name,
-                    items=[
-                        k8s_client.V1KeyToPath(key="buildkitd.toml", path="buildkitd.toml"),
-                    ],
-                ),
-            ),
-        ]
-        if self.registry_credentials_secret:
-            volumes.append(
-                k8s_client.V1Volume(
-                    name="docker-config",
-                    secret=k8s_client.V1SecretVolumeSource(
-                        secret_name=self.registry_credentials_secret,
-                        items=[
-                            k8s_client.V1KeyToPath(
-                                key=".dockerconfigjson",
-                                path="config.json",
-                            )
-                        ],
-                    ),
-                )
-            )
-
-        job = k8s_client.V1Job(
-            api_version="batch/v1",
-            kind="Job",
-            metadata=k8s_client.V1ObjectMeta(
-                name=job_name,
-                namespace=self.namespace,
-                labels={"ridges.ai/managed-by": "screener", "ridges.ai/build-job": "true"},
-                annotations={BUILD_MEMORY_TIER_ANNOTATION: str(tier)},
-            ),
-            spec=k8s_client.V1JobSpec(
-                # Fail fast so OOM escalation kicks in instead of identical retries.
-                backoff_limit=1,
-                ttl_seconds_after_finished=300,
-                template=k8s_client.V1PodTemplateSpec(
-                    metadata=k8s_client.V1ObjectMeta(
-                        labels={"ridges.ai/managed-by": "screener", "ridges.ai/build-job": "true"},
-                        annotations={
-                            "container.apparmor.security.beta.kubernetes.io/buildkit": "unconfined",
-                        },
-                    ),
-                    spec=k8s_client.V1PodSpec(
-                        init_containers=[init_container],
-                        containers=[buildkit_container],
-                        restart_policy="Never",
-                        volumes=volumes,
-                    ),
-                ),
-            ),
+        job = _build_job_body(
+            job_name,
+            secret_name,
+            image_ref,
+            tier,
+            self.namespace,
+            self.build_registry,
+            self._build_registry_insecure,
+            self.registry_credentials_secret,
         )
         self._batch.create_namespaced_job(namespace=self.namespace, body=job)
 
@@ -1335,3 +1163,407 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         """Sanitise a task name for use in Kubernetes resource names."""
         slug = re.sub(r"[^a-z0-9-]", "-", name.lower())
         return slug[:40].strip("-")
+
+
+# ---------------------------------------------------------------------------
+# Module-level BuildKit helpers, shared by the per-task lazy build path above
+# and by ``pre_build_images`` below.
+# ---------------------------------------------------------------------------
+
+
+async def _registry_image_exists(
+    registry: str,
+    task_name: str,
+    digest_tag: str,
+    *,
+    registry_insecure: bool = True,
+    registry_credentials_secret: str | None = None,
+    registry_password: str | None = None,
+) -> bool:
+    """HEAD-check ``task_name:digest_tag`` in the registry.
+
+    Uses the lowercased task name to match how images are actually pushed
+    (OCI repository names must be lowercase; see ``_ensure_image``).
+    """
+    import base64
+    import http.client
+    import ssl
+    import urllib.parse
+
+    name, tag = task_name.lower(), digest_tag
+    try:
+        scheme = "http" if registry_insecure else "https"
+        default_port = 5000 if registry_insecure else 443
+        parsed = urllib.parse.urlsplit(f"{scheme}://{registry}")
+        host = parsed.hostname or registry.split(":")[0]
+        port = parsed.port or default_port
+
+        def _head() -> bool:
+            if registry_insecure:
+                conn: http.client.HTTPConnection = http.client.HTTPConnection(host, port, timeout=10)
+            else:
+                ctx = ssl.create_default_context()
+                conn = http.client.HTTPSConnection(host, port, timeout=10, context=ctx)
+            headers: dict[str, str] = {}
+            if registry_credentials_secret and registry_password:
+                cred = base64.b64encode(b"kaniko:" + registry_password.encode()).decode()
+                headers["Authorization"] = f"Basic {cred}"
+            conn.request("HEAD", f"/v2/{name}/manifests/{tag}", headers=headers)
+            resp = conn.getresponse()
+            conn.close()
+            return resp.status == 200
+
+        return await asyncio.to_thread(_head)
+    except Exception as exc:
+        logger.debug(f"Registry check failed for {name}:{tag}: {exc}")
+        return False
+
+
+def _build_secret_body(
+    secret_name: str,
+    namespace: str,
+    presigned_url: str,
+    registry: str,
+    registry_insecure: bool,
+) -> "k8s_client.V1Secret":
+    """Build the Secret spec holding the presigned archive URL and BuildKit's
+    registry-mirror config (mounted read-only, avoids shell quoting)."""
+    buildkitd_toml_lines = [
+        '[registry."docker.io"]',
+        f'  mirrors = ["{registry}"]',
+        f'[registry."{registry}"]',
+    ]
+    if registry_insecure:
+        buildkitd_toml_lines.append("  http = true")
+    buildkitd_toml = "\n".join(buildkitd_toml_lines) + "\n"
+
+    return k8s_client.V1Secret(
+        metadata=k8s_client.V1ObjectMeta(
+            name=secret_name,
+            namespace=namespace,
+            labels={"ridges.ai/managed-by": "screener", "ridges.ai/build-url": "true"},
+        ),
+        string_data={
+            "url": presigned_url,
+            "buildkitd.toml": buildkitd_toml,
+        },
+    )
+
+
+def _build_job_body(
+    job_name: str,
+    secret_name: str,
+    image_ref: str,
+    tier: int,
+    namespace: str,
+    registry: str,
+    registry_insecure: bool,
+    registry_credentials_secret: str | None,
+) -> "k8s_client.V1Job":
+    """Build the BuildKit (rootless) build Job spec at the given memory tier.
+
+    Drop-in replacement for the old Kaniko Job: BuildKit streams layers to
+    disk instead of memory, fixing OOM kills on heavy builds. ``tier``
+    selects (request, limit) from ``BUILD_MEMORY_TIERS``.
+    """
+    tier = max(0, min(tier, len(BUILD_MEMORY_TIERS) - 1))
+    memory_request, memory_limit = BUILD_MEMORY_TIERS[tier]
+
+    init_container = k8s_client.V1Container(
+        name="fetch-context",
+        image="curlimages/curl:latest",
+        command=["/bin/sh", "-c"],
+        args=[
+            'curl -sSfL "$PRESIGNED_URL" -o /tmp/task.tar.gz && '
+            "mkdir -p /workspace && "
+            "tar -xzf /tmp/task.tar.gz -C /workspace --strip-components=1 && "
+            "test -f /workspace/environment/Dockerfile"
+        ],
+        env=[
+            k8s_client.V1EnvVar(
+                name="PRESIGNED_URL",
+                value_from=k8s_client.V1EnvVarSource(
+                    secret_key_ref=k8s_client.V1SecretKeySelector(
+                        name=secret_name,
+                        key="url",
+                    )
+                ),
+            )
+        ],
+        volume_mounts=[k8s_client.V1VolumeMount(name="context", mount_path="/workspace")],
+        resources=k8s_client.V1ResourceRequirements(
+            requests={"cpu": "100m", "memory": "256Mi"},
+        ),
+    )
+
+    cache_ref = f"{registry}/cache"
+    output_opt = f"type=image,name={image_ref},push=true"
+    export_cache_opt = f"type=registry,ref={cache_ref},mode=max"
+    import_cache_opt = f"type=registry,ref={cache_ref}"
+    if registry_insecure:
+        output_opt += ",registry.insecure=true"
+        export_cache_opt += ",registry.insecure=true"
+        import_cache_opt += ",registry.insecure=true"
+
+    buildkit_args = [
+        "build",
+        "--frontend=dockerfile.v0",
+        "--local=context=/workspace/environment",
+        "--local=dockerfile=/workspace/environment",
+        "--opt=filename=Dockerfile",
+        f"--output={output_opt}",
+        f"--export-cache={export_cache_opt}",
+        f"--import-cache={import_cache_opt}",
+    ]
+
+    buildkit_volume_mounts = [
+        k8s_client.V1VolumeMount(name="context", mount_path="/workspace"),
+        k8s_client.V1VolumeMount(
+            name="buildkit-store",
+            mount_path="/home/user/.local/share/buildkit",
+        ),
+        k8s_client.V1VolumeMount(
+            name="buildkit-config",
+            mount_path="/etc/buildkit/buildkitd.toml",
+            sub_path="buildkitd.toml",
+            read_only=True,
+        ),
+    ]
+    if registry_credentials_secret:
+        buildkit_volume_mounts.append(
+            k8s_client.V1VolumeMount(
+                name="docker-config",
+                mount_path="/home/user/.docker",
+                read_only=True,
+            )
+        )
+
+    buildkit_container = k8s_client.V1Container(
+        name="buildkit",
+        image="moby/buildkit:v0.31.2-rootless",
+        command=["buildctl-daemonless.sh"],
+        args=buildkit_args,
+        env=[
+            k8s_client.V1EnvVar(
+                name="BUILDKITD_FLAGS",
+                value="--config /etc/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",
+            ),
+            k8s_client.V1EnvVar(name="DOCKER_CONFIG", value="/home/user/.docker"),
+        ],
+        volume_mounts=buildkit_volume_mounts,
+        # Rootless BuildKit needs seccomp relaxed; AppArmor is relaxed via
+        # the pod template annotation below.
+        security_context=k8s_client.V1SecurityContext(
+            run_as_user=1000,
+            run_as_group=1000,
+            seccomp_profile=k8s_client.V1SeccompProfile(type="Unconfined"),
+        ),
+        resources=k8s_client.V1ResourceRequirements(
+            requests={"cpu": "1", "memory": memory_request},
+            limits={"memory": memory_limit},
+        ),
+    )
+
+    volumes = [
+        k8s_client.V1Volume(
+            name="context",
+            empty_dir=k8s_client.V1EmptyDirVolumeSource(size_limit="1Gi"),
+        ),
+        k8s_client.V1Volume(
+            name="buildkit-store",
+            empty_dir=k8s_client.V1EmptyDirVolumeSource(size_limit="25Gi"),
+        ),
+        k8s_client.V1Volume(
+            name="buildkit-config",
+            secret=k8s_client.V1SecretVolumeSource(
+                secret_name=secret_name,
+                items=[
+                    k8s_client.V1KeyToPath(key="buildkitd.toml", path="buildkitd.toml"),
+                ],
+            ),
+        ),
+    ]
+    if registry_credentials_secret:
+        volumes.append(
+            k8s_client.V1Volume(
+                name="docker-config",
+                secret=k8s_client.V1SecretVolumeSource(
+                    secret_name=registry_credentials_secret,
+                    items=[
+                        k8s_client.V1KeyToPath(
+                            key=".dockerconfigjson",
+                            path="config.json",
+                        )
+                    ],
+                ),
+            )
+        )
+
+    return k8s_client.V1Job(
+        api_version="batch/v1",
+        kind="Job",
+        metadata=k8s_client.V1ObjectMeta(
+            name=job_name,
+            namespace=namespace,
+            labels={"ridges.ai/managed-by": "screener", "ridges.ai/build-job": "true"},
+            annotations={BUILD_MEMORY_TIER_ANNOTATION: str(tier)},
+        ),
+        spec=k8s_client.V1JobSpec(
+            # Fail fast so OOM escalation kicks in instead of identical retries.
+            backoff_limit=1,
+            ttl_seconds_after_finished=300,
+            template=k8s_client.V1PodTemplateSpec(
+                metadata=k8s_client.V1ObjectMeta(
+                    labels={"ridges.ai/managed-by": "screener", "ridges.ai/build-job": "true"},
+                    annotations={
+                        "container.apparmor.security.beta.kubernetes.io/buildkit": "unconfined",
+                    },
+                ),
+                spec=k8s_client.V1PodSpec(
+                    init_containers=[init_container],
+                    containers=[buildkit_container],
+                    restart_policy="Never",
+                    volumes=volumes,
+                ),
+            ),
+        ),
+    )
+
+
+def _init_standalone_k8s_clients(
+    kubeconfig_context: str | None,
+) -> tuple["k8s_client.CoreV1Api", "k8s_client.BatchV1Api"]:
+    """Load kubeconfig (or in-cluster config) and create API clients, outside
+    the context of any particular Harbor environment instance."""
+    try:
+        k8s_config.load_incluster_config()
+    except k8s_config.ConfigException:
+        k8s_config.load_kube_config(context=kubeconfig_context)
+    return k8s_client.CoreV1Api(), k8s_client.BatchV1Api()
+
+
+async def pre_build_images(
+    tasks: Sequence[tuple[str, str, str]],
+    *,
+    namespace: str,
+    registry: str,
+    registry_insecure: bool = True,
+    registry_credentials_secret: str | None = None,
+    registry_password: str | None = None,
+    build_registry: str | None = None,
+    build_registry_insecure: bool | None = None,
+    kubeconfig_context: str | None = None,
+) -> None:
+    """Fire-and-forget: create BuildKit build Jobs for any task images
+    missing from the registry, before any evaluation runs start.
+
+    ``registry`` is only used here as a fallback for ``build_registry`` (for
+    backward compat); callers should pass the in-cluster registry Service
+    address as ``build_registry`` so BuildKit's push/cache-export traffic
+    never has to leave the cluster via the Hetzner Cloud Load Balancer /
+    HAProxy Ingress, which impose idle timeouts large blob uploads can't
+    complete within — see ``RidgesKubernetesEnvironment.build_registry``.
+
+    Intended to be called once per evaluation (e.g. from the validator's main
+    loop) with every task in the batch, so the cluster autoscaler sees the
+    full build demand immediately instead of learning about it in waves as
+    each task's turn comes up under the concurrency semaphore. Without this,
+    later-scheduled tasks can sit Pending long enough for their task-archive
+    presigned URL (short TTL, not configurable here) to expire before the
+    build Job's init container downloads it.
+
+    This function does not wait for builds to finish. Each task's own
+    ``RidgesKubernetesEnvironment._ensure_image()`` call (later, in the
+    normal lazy path) will find the Job already running — a 409 on create —
+    and just poll it to completion, or find the image already pushed.
+
+    Best-effort: each task is handled independently, so one failure (bad
+    task data, registry hiccup, etc.) never blocks the others.
+
+    Args:
+        tasks: ``(task_name, digest_tag, presigned_url)`` tuples.
+    """
+    if not tasks:
+        return
+
+    effective_build_registry = build_registry if build_registry is not None else registry
+    effective_build_registry_insecure = (
+        build_registry_insecure if build_registry_insecure is not None else registry_insecure
+    )
+
+    core_api, batch_api = await asyncio.to_thread(_init_standalone_k8s_clients, kubeconfig_context)
+
+    async def _pre_build_one(task_name: str, digest_tag: str, presigned_url: str) -> None:
+        image_ref = f"{effective_build_registry}/{task_name.lower()}:{digest_tag}"
+        try:
+            if await _registry_image_exists(
+                effective_build_registry,
+                task_name,
+                digest_tag,
+                registry_insecure=effective_build_registry_insecure,
+                registry_credentials_secret=registry_credentials_secret,
+                registry_password=registry_password,
+            ):
+                logger.debug(f"Pre-build: {image_ref} already in registry — skipping")
+                return
+
+            job_name = f"build-{RidgesKubernetesEnvironment._slug(task_name)}-{digest_tag}"
+            secret_name = f"{job_name}-url"
+
+            try:
+                await asyncio.to_thread(
+                    lambda: core_api.create_namespaced_secret(
+                        namespace=namespace,
+                        body=_build_secret_body(
+                            secret_name,
+                            namespace,
+                            presigned_url,
+                            effective_build_registry,
+                            effective_build_registry_insecure,
+                        ),
+                    )
+                )
+            except ApiException as exc:
+                if exc.status != 409:
+                    raise
+                # Stale secret from a previous attempt — recreate with this fresh URL.
+                await asyncio.to_thread(core_api.delete_namespaced_secret, name=secret_name, namespace=namespace)
+                await asyncio.to_thread(
+                    lambda: core_api.create_namespaced_secret(
+                        namespace=namespace,
+                        body=_build_secret_body(
+                            secret_name,
+                            namespace,
+                            presigned_url,
+                            effective_build_registry,
+                            effective_build_registry_insecure,
+                        ),
+                    )
+                )
+
+            try:
+                await asyncio.to_thread(
+                    lambda: batch_api.create_namespaced_job(
+                        namespace=namespace,
+                        body=_build_job_body(
+                            job_name,
+                            secret_name,
+                            image_ref,
+                            0,
+                            namespace,
+                            effective_build_registry,
+                            effective_build_registry_insecure,
+                            registry_credentials_secret,
+                        ),
+                    )
+                )
+                logger.info(f"Pre-build: started BuildKit job {job_name} for {image_ref}")
+            except ApiException as exc:
+                if exc.status == 409:
+                    logger.debug(f"Pre-build: build job {job_name} already exists — another screener is building")
+                else:
+                    raise
+        except Exception as exc:
+            logger.warning(f"Pre-build failed for {image_ref}: {type(exc).__name__}: {exc}")
+
+    await asyncio.gather(*(_pre_build_one(*t) for t in tasks))

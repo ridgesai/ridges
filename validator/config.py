@@ -237,6 +237,8 @@ K8S_NODE_SELECTOR: dict[str, str] | None = None
 K8S_REGISTRY_SECRET: str | None = None
 K8S_REGISTRY_PASSWORD: str | None = None
 K8S_REGISTRY_INSECURE: bool = True
+K8S_BUILD_REGISTRY: str = "registry.ridges:5000"
+K8S_BUILD_REGISTRY_INSECURE: bool = True
 
 PROXY_IMAGE: str = os.getenv("PROXY_IMAGE", "ghcr.io/ridgesai/sandbox-proxy:latest")
 
@@ -250,6 +252,8 @@ if RIDGES_ENVIRONMENT_TYPE == "kubernetes":
     K8S_REGISTRY_SECRET = os.getenv("K8S_REGISTRY_SECRET")  # e.g. "registry-creds"
     K8S_REGISTRY_PASSWORD = os.getenv("K8S_REGISTRY_PASSWORD")  # for HEAD check Basic Auth
     K8S_REGISTRY_INSECURE = os.getenv("K8S_REGISTRY_INSECURE", "true").lower() == "true"
+    K8S_BUILD_REGISTRY = os.getenv("K8S_BUILD_REGISTRY", f"registry.{K8S_NAMESPACE}:5000")
+    K8S_BUILD_REGISTRY_INSECURE = os.getenv("K8S_BUILD_REGISTRY_INSECURE", "true").lower() == "true"
     K8S_MEMORY_REQUEST_FRACTION: float = float(os.getenv("K8S_MEMORY_REQUEST_FRACTION", "0.25"))
     K8S_CPU_REQUEST_FRACTION: float = float(os.getenv("K8S_CPU_REQUEST_FRACTION", "0.25"))
     K8S_MEMORY_LIMIT_MULTIPLIER: float = float(os.getenv("K8S_MEMORY_LIMIT_MULTIPLIER", "1.0"))

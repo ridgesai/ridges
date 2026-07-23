@@ -520,6 +520,60 @@ async def _wait_for_evaluation_run_tasks(tasks: list[asyncio.Task]) -> None:
     await asyncio.gather(*tasks)
 
 
+async def _pre_build_missing_images(request_evaluation_response: ValidatorRequestEvaluationResponse) -> None:
+    """Fire off BuildKit builds for every task image not yet in the registry,
+    before any evaluation run starts.
+    Best-effort and non-blocking on failure: this never raises. If it fails
+    or is skipped, the normal per-task lazy build path in
+    ``RidgesKubernetesEnvironment._ensure_image()`` still runs as a fallback.
+    """
+    if config.RIDGES_ENVIRONMENT_TYPE != "kubernetes":
+        return
+
+    from models.harbor_task import HarborRemoteTaskExecutionSpec
+    from ridges_harbor.k8s_environment import pre_build_images
+
+    async def _resolve_task(evaluation_run) -> tuple[str, str, str] | None:
+        spec = evaluation_run.execution_spec
+        if not spec or spec.get("kind") != "harbor_remote_task":
+            return None
+        try:
+            parsed = HarborRemoteTaskExecutionSpec.model_validate(spec)
+        except Exception as exc:
+            logger.debug(f"Pre-build: skipping invalid execution spec for {evaluation_run.problem_name}: {exc}")
+            return None
+        try:
+            presigned_url = await _fetch_task_download_url(parsed.task_digest)
+        except Exception as exc:
+            logger.warning(f"Pre-build: failed to get download URL for {parsed.task_name}: {exc}")
+            return None
+        digest_tag = parsed.task_digest.split(":")[1][:12]
+        return parsed.task_name, digest_tag, presigned_url
+
+    try:
+        resolved = await asyncio.gather(
+            *(_resolve_task(run) for run in request_evaluation_response.evaluation_runs)
+        )
+        tasks = [task for task in resolved if task is not None]
+        if not tasks:
+            return
+
+        logger.info(f"Pre-building {len(tasks)} task image(s) ahead of evaluation runs...")
+        await pre_build_images(
+            tasks,
+            namespace=config.K8S_NAMESPACE,
+            registry=config.K8S_REGISTRY,
+            registry_insecure=config.K8S_REGISTRY_INSECURE,
+            registry_credentials_secret=config.K8S_REGISTRY_SECRET,
+            registry_password=config.K8S_REGISTRY_PASSWORD,
+            build_registry=config.K8S_BUILD_REGISTRY,
+            build_registry_insecure=config.K8S_BUILD_REGISTRY_INSECURE,
+            kubeconfig_context=config.K8S_CONTEXT,
+        )
+    except Exception as exc:
+        logger.warning(f"Pre-build step failed; falling back to per-task lazy builds: {type(exc).__name__}: {exc}")
+
+
 def _log_received_evaluation(request_evaluation_response: ValidatorRequestEvaluationResponse) -> None:
     """Log an evaluation assignment.
 
@@ -678,6 +732,8 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
 
     _log_received_evaluation(request_evaluation_response)
     logger.info("Starting evaluation...")
+
+    await _pre_build_missing_images(request_evaluation_response)
 
     tasks = _create_evaluation_run_tasks(request_evaluation_response)
 

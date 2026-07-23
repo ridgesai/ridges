@@ -184,6 +184,8 @@ async def _run_task_dir(
         from kubernetes import config as k8s_config_mod
 
         from validator.config import (
+            K8S_BUILD_REGISTRY,
+            K8S_BUILD_REGISTRY_INSECURE,
             K8S_CONTEXT,
             K8S_CPU_REQUEST_FRACTION,
             K8S_MEMORY_LIMIT_MULTIPLIER,
@@ -229,6 +231,8 @@ async def _run_task_dir(
                 "registry_credentials_secret": K8S_REGISTRY_SECRET,
                 "registry_password": K8S_REGISTRY_PASSWORD,
                 "registry_insecure": K8S_REGISTRY_INSECURE,
+                "build_registry": K8S_BUILD_REGISTRY,
+                "build_registry_insecure": K8S_BUILD_REGISTRY_INSECURE,
                 "owner_pod_name": K8S_OWNER_POD_NAME,
                 "owner_pod_uid": K8S_OWNER_POD_UID,
                 "memory_limit_multiplier": K8S_MEMORY_LIMIT_MULTIPLIER,
