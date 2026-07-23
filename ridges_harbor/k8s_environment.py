@@ -7,8 +7,9 @@ Two classes are defined here:
   could eventually be contributed upstream to Harbor.
 
 * ``RidgesKubernetesEnvironment`` – subclass that adds:
-  - On-demand image building via Kaniko + an in-cluster ``registry:2`` (no
-    pre-building, no shared PVCs; build context is fetched from S3).
+  - On-demand image building via a rootless BuildKit Job + an in-cluster
+    registry (no pre-building, no shared PVCs; build context is fetched
+    from S3; OOM failures escalate to a larger memory tier and retry).
   - Proxy sidecar container (MITM SSL, cost tracking, OpenRouter allow-list).
   - iptables init container (``NET_ADMIN``) to transparently redirect port-443
     traffic to the proxy SNI router on port 15443 (UID 1337 is exempt so the
@@ -23,11 +24,12 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 import re
 import shlex
 import tarfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from harbor.environments.base import BaseEnvironment, ExecResult
 from harbor.models.environment_type import EnvironmentType
@@ -38,6 +40,16 @@ from kubernetes import config as k8s_config
 from kubernetes.client.rest import ApiException
 from kubernetes.stream import stream
 from tenacity import retry, stop_after_attempt, wait_exponential
+
+logger = logging.getLogger(__name__)
+
+# Build-Job memory tiers (request, limit), escalated on OOMKilled.
+BUILD_MEMORY_TIERS: list[tuple[str, str]] = [
+    ("2Gi", "4Gi"),  # covers most builds
+    ("8Gi", "16Gi"),
+    ("16Gi", "28Gi"),  # fits ccx33 (32GB) evaluator nodes
+]
+BUILD_MEMORY_TIER_ANNOTATION = "ridges.ai/build-memory-tier"
 
 # ---------------------------------------------------------------------------
 # KubernetesEnvironment – generic base
@@ -323,7 +335,8 @@ class KubernetesEnvironment(BaseEnvironment):
                 user_arg = f"$(getent passwd {user} | cut -d: -f1)"
             else:
                 user_arg = shlex.quote(str(user))
-            full_command = f"su {user_arg} -s /bin/bash -c {shlex.quote(full_command)}"
+            inner = f'export PATH="$RIDGES_TASK_PATH:$PATH"; {full_command}'
+            full_command = f'RIDGES_TASK_PATH="$PATH" su {user_arg} -s /bin/bash -c {shlex.quote(inner)}'
 
         exec_command = ["sh", "-c", full_command]
 
@@ -667,7 +680,7 @@ class KubernetesEnvironment(BaseEnvironment):
 
 
 # ---------------------------------------------------------------------------
-# RidgesKubernetesEnvironment – adds proxy sidecar + on-demand Kaniko builds
+# RidgesKubernetesEnvironment – adds proxy sidecar + on-demand BuildKit builds
 # ---------------------------------------------------------------------------
 
 
@@ -675,10 +688,13 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
     """Kubernetes environment with the Ridges proxy sidecar and on-demand image building.
 
     Image building flow (on cache miss):
-    1. Screener creates a Kubernetes Secret with the S3 presigned URL.
-    2. A Kaniko Job is created; its init container downloads the task archive
-       from S3 and extracts it to an emptyDir.
-    3. Kaniko builds the image and pushes it to the in-cluster ``registry:2``.
+    1. Screener creates a Kubernetes Secret with the S3 presigned URL and the
+       BuildKit registry-mirror config.
+    2. A rootless BuildKit Job is created; its init container downloads the
+       task archive from S3 and extracts it to an emptyDir.
+    3. BuildKit builds the image and pushes it to the in-cluster registry. A
+       build that gets OOMKilled is recreated one memory tier up (see
+       ``BUILD_MEMORY_TIERS``) instead of failing outright.
     4. On success, the Pod is created to run the evaluation.
 
     Proxy data flow:
@@ -707,6 +723,8 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         registry_credentials_secret: str | None = None,
         registry_password: str | None = None,
         registry_insecure: bool = True,
+        build_registry: str | None = None,
+        build_registry_insecure: bool | None = None,
         **kwargs,
     ):
         self.registry = registry
@@ -721,8 +739,20 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         self.registry_credentials_secret = registry_credentials_secret
         self._registry_password = registry_password
         self._registry_insecure = registry_insecure
+        # BuildKit push/cache-export target: defaults to the external `registry`
+        # for backward compat, but callers should pass the in-cluster registry
+        # Service address (e.g. "registry.<namespace>:5000") so BuildKit's push
+        # traffic never has to leave the cluster via the Hetzner Cloud Load
+        # Balancer / HAProxy Ingress, which impose idle timeouts that large
+        # blob uploads can't complete within. The eval pod's `image` field
+        # (below) always uses the external `registry`, since node-level
+        # kubelet pulls need a publicly-resolvable, TLS-valid hostname.
+        self.build_registry = build_registry if build_registry is not None else registry
+        self._build_registry_insecure = (
+            build_registry_insecure if build_registry_insecure is not None else registry_insecure
+        )
 
-        image = f"{registry}/{task_name}:{digest_tag}"
+        image = f"{registry}/{task_name.lower()}:{digest_tag}"
         # Eval pods need credentials to pull the task image from the in-cluster registry.
         pull_secrets = [registry_credentials_secret] if registry_credentials_secret else []
         super().__init__(
@@ -818,17 +848,18 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         # itself).  This replaces the old hostAliases + socket.getaddrinfo patch
         # approach with the standard Istio-style transparent interception pattern.
         # Private CIDRs are excluded so in-cluster services are not intercepted.
+        # Image has iptables pre-installed (see Dockerfile.iptables-init) so pod
+        # startup never depends on reaching the Alpine package CDN at runtime.
         spec.init_containers = [
             k8s_client.V1Container(
                 name="iptables-init",
-                image="alpine:3.20",
+                image="ghcr.io/ridgesai/ridges-iptables-init:pr-444",
                 image_pull_policy="IfNotPresent",
                 command=[
                     "sh",
                     "-c",
                     " && ".join(
                         [
-                            "apk add --no-cache iptables",
                             "iptables -t nat -N PROXY_OUTPUT",
                             "iptables -t nat -A PROXY_OUTPUT -m owner --uid-owner 1337 -j RETURN",
                             "iptables -t nat -A PROXY_OUTPUT -d 127.0.0.0/8 -j RETURN",
@@ -887,12 +918,12 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         )
 
     # ------------------------------------------------------------------
-    # On-demand image building via Kaniko
+    # On-demand image building via BuildKit (rootless)
     # ------------------------------------------------------------------
 
     async def _ensure_image(self, *, force_build: bool = False) -> None:
-        """Check registry for the task image; build with Kaniko if missing."""
-        image_ref = f"{self.registry}/{self.task_name}:{self.digest_tag}"
+        """Check registry for the task image; build with BuildKit if missing."""
+        image_ref = f"{self.build_registry}/{self.task_name.lower()}:{self.digest_tag}"
 
         if not force_build and await self._image_exists_in_registry(image_ref):
             self.logger.debug(f"Image {image_ref} already in registry – skipping build")
@@ -900,186 +931,92 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
 
         job_name = f"build-{self._slug(self.task_name)}-{self.digest_tag}"
         secret_name = f"{job_name}-url"
-        self.logger.info(f"Building image {image_ref} via Kaniko job {job_name}")
+        self.logger.info(f"Building image {image_ref} via BuildKit job {job_name}")
 
         try:
             await asyncio.to_thread(self._create_build_secret_sync, secret_name)
-            await asyncio.to_thread(self._create_kaniko_job_sync, job_name, secret_name, image_ref)
         except ApiException as exc:
             if exc.status == 409:
-                if await self._is_job_failed(job_name):
-                    self.logger.warning(f"Kaniko job {job_name} previously failed — deleting and retrying")
-                    await self._delete_job(job_name)
-                    await self._delete_secret(secret_name)
-                    await asyncio.to_thread(self._create_build_secret_sync, secret_name)
-                    await asyncio.to_thread(self._create_kaniko_job_sync, job_name, secret_name, image_ref)
-                else:
-                    self.logger.debug(f"Kaniko job {job_name} already exists — another screener is building")
+                await self._delete_secret(secret_name)
+                await asyncio.to_thread(self._create_build_secret_sync, secret_name)
             else:
                 raise
 
-        await self._wait_for_build_job(job_name, secret_name, timeout_sec=2000)
+        try:
+            await asyncio.to_thread(self._create_build_job_sync, job_name, secret_name, image_ref, 0)
+        except ApiException as exc:
+            if exc.status == 409:
+                if await self._is_job_failed(job_name):
+                    was_oom, current_tier = await self._job_oom_tier(job_name)
+                    retry_tier = min(current_tier + 1, len(BUILD_MEMORY_TIERS) - 1) if was_oom else 0
+                    self.logger.warning(
+                        f"Build job {job_name} previously failed "
+                        f"({'OOMKilled' if was_oom else 'error'}) — deleting and retrying at tier {retry_tier}"
+                    )
+                    await self._delete_job(job_name)
+                    await self._delete_secret(secret_name)
+                    await asyncio.to_thread(self._create_build_secret_sync, secret_name)
+                    await asyncio.to_thread(self._create_build_job_sync, job_name, secret_name, image_ref, retry_tier)
+                else:
+                    self.logger.debug(f"Build job {job_name} already exists — another screener is building")
+            else:
+                raise
+
+        await self._wait_for_build_job(job_name, secret_name, image_ref, timeout_sec=2000)
 
     async def _image_exists_in_registry(self, image_ref: str) -> bool:
         """HEAD-check the task image (self.task_name:self.digest_tag) in the registry."""
-        import base64
-        import http.client
-        import ssl
-        import urllib.parse
-
-        name, tag = self.task_name, self.digest_tag
-        try:
-            scheme = "http" if self._registry_insecure else "https"
-            default_port = 5000 if self._registry_insecure else 443
-            parsed = urllib.parse.urlsplit(f"{scheme}://{self.registry}")
-            host = parsed.hostname or self.registry.split(":")[0]
-            port = parsed.port or default_port
-
-            def _head() -> bool:
-                if self._registry_insecure:
-                    conn: http.client.HTTPConnection = http.client.HTTPConnection(host, port, timeout=10)
-                else:
-                    ctx = ssl.create_default_context()
-                    conn = http.client.HTTPSConnection(host, port, timeout=10, context=ctx)
-                headers: dict[str, str] = {}
-                if self.registry_credentials_secret and self._registry_password:
-                    cred = base64.b64encode(b"kaniko:" + self._registry_password.encode()).decode()
-                    headers["Authorization"] = f"Basic {cred}"
-                conn.request("HEAD", f"/v2/{name}/manifests/{tag}", headers=headers)
-                resp = conn.getresponse()
-                conn.close()
-                return resp.status == 200
-
-            return await asyncio.to_thread(_head)
-        except Exception as exc:
-            self.logger.debug(f"Registry check failed for {name}:{tag}: {exc}")
-            return False
+        return await _registry_image_exists(
+            self.build_registry,
+            self.task_name,
+            self.digest_tag,
+            registry_insecure=self._build_registry_insecure,
+            registry_credentials_secret=self.registry_credentials_secret,
+            registry_password=self._registry_password,
+        )
 
     def _create_build_secret_sync(self, secret_name: str) -> None:
-        """Create a Secret holding the presigned URL for the Kaniko init container."""
-        secret = k8s_client.V1Secret(
-            metadata=k8s_client.V1ObjectMeta(
-                name=secret_name,
-                namespace=self.namespace,
-                labels={"ridges.ai/managed-by": "screener", "ridges.ai/build-url": "true"},
-            ),
-            string_data={"url": self.task_archive_presigned_url},
+        """Create a Secret with the presigned archive URL and BuildKit's
+        registry-mirror config (mounted read-only, avoids shell quoting)."""
+        secret = _build_secret_body(
+            secret_name,
+            self.namespace,
+            self.task_archive_presigned_url,
+            self.build_registry,
+            self._build_registry_insecure,
         )
         self._api.create_namespaced_secret(namespace=self.namespace, body=secret)
 
-    def _create_kaniko_job_sync(self, job_name: str, secret_name: str, image_ref: str) -> None:
-        """Create the Kaniko build Job."""
-        init_container = k8s_client.V1Container(
-            name="fetch-context",
-            image="curlimages/curl:latest",
-            command=["/bin/sh", "-c"],
-            args=[
-                'curl -sSfL "$PRESIGNED_URL" -o /tmp/task.tar.gz && '
-                "mkdir -p /workspace && "
-                "tar -xzf /tmp/task.tar.gz -C /workspace --strip-components=1 && "
-                "test -f /workspace/environment/Dockerfile"
-            ],
-            env=[
-                k8s_client.V1EnvVar(
-                    name="PRESIGNED_URL",
-                    value_from=k8s_client.V1EnvVarSource(
-                        secret_key_ref=k8s_client.V1SecretKeySelector(
-                            name=secret_name,
-                            key="url",
-                        )
-                    ),
-                )
-            ],
-            volume_mounts=[k8s_client.V1VolumeMount(name="context", mount_path="/workspace")],
-            resources=k8s_client.V1ResourceRequirements(
-                requests={"cpu": "100m", "memory": "256Mi"},
-            ),
-        )
+    def _create_build_job_sync(self, job_name: str, secret_name: str, image_ref: str, tier: int) -> None:
+        """Create the BuildKit (rootless) build Job at the given memory tier.
 
-        kaniko_args = [
-            "--dockerfile=Dockerfile",
-            "--context=dir:///workspace/environment",
-            f"--destination={image_ref}",
-            "--cache=true",
-            f"--cache-repo={self.registry}/cache",
-            f"--registry-mirror={self.registry}",
-        ]
-        if self._registry_insecure:
-            kaniko_args.append(f"--insecure-registry={self.registry}")
-
-        kaniko_volume_mounts = [
-            k8s_client.V1VolumeMount(name="context", mount_path="/workspace"),
-        ]
-        if self.registry_credentials_secret:
-            kaniko_volume_mounts.append(
-                k8s_client.V1VolumeMount(
-                    name="docker-config",
-                    mount_path="/kaniko/.docker",
-                    read_only=True,
-                )
-            )
-
-        kaniko_container = k8s_client.V1Container(
-            name="kaniko",
-            image="gcr.io/kaniko-project/executor:latest",
-            args=kaniko_args,
-            volume_mounts=kaniko_volume_mounts,
-            resources=k8s_client.V1ResourceRequirements(
-                requests={"cpu": "700m", "memory": "1536Mi"},
-            ),
-        )
-
-        volumes = [
-            k8s_client.V1Volume(
-                name="context",
-                empty_dir=k8s_client.V1EmptyDirVolumeSource(size_limit="200Mi"),
-            )
-        ]
-        if self.registry_credentials_secret:
-            volumes.append(
-                k8s_client.V1Volume(
-                    name="docker-config",
-                    secret=k8s_client.V1SecretVolumeSource(
-                        secret_name=self.registry_credentials_secret,
-                        items=[
-                            k8s_client.V1KeyToPath(
-                                key=".dockerconfigjson",
-                                path="config.json",
-                            )
-                        ],
-                    ),
-                )
-            )
-
-        job = k8s_client.V1Job(
-            api_version="batch/v1",
-            kind="Job",
-            metadata=k8s_client.V1ObjectMeta(
-                name=job_name,
-                namespace=self.namespace,
-                labels={"ridges.ai/managed-by": "screener", "ridges.ai/build-job": "true"},
-            ),
-            spec=k8s_client.V1JobSpec(
-                backoff_limit=2,
-                ttl_seconds_after_finished=300,
-                template=k8s_client.V1PodTemplateSpec(
-                    metadata=k8s_client.V1ObjectMeta(
-                        labels={"ridges.ai/managed-by": "screener", "ridges.ai/build-job": "true"},
-                    ),
-                    spec=k8s_client.V1PodSpec(
-                        init_containers=[init_container],
-                        containers=[kaniko_container],
-                        restart_policy="Never",
-                        volumes=volumes,
-                    ),
-                ),
-            ),
+        Drop-in replacement for the old Kaniko Job: BuildKit streams layers to
+        disk instead of memory, fixing OOM kills on heavy builds. ``tier``
+        selects (request, limit) from ``BUILD_MEMORY_TIERS``.
+        """
+        job = _build_job_body(
+            job_name,
+            secret_name,
+            image_ref,
+            tier,
+            self.namespace,
+            self.build_registry,
+            self._build_registry_insecure,
+            self.registry_credentials_secret,
         )
         self._batch.create_namespaced_job(namespace=self.namespace, body=job)
 
-    async def _wait_for_build_job(self, job_name: str, secret_name: str, timeout_sec: int = 600) -> None:
-        """Poll until the Kaniko Job succeeds or fails."""
-        self.logger.debug(f"Waiting for Kaniko build job {job_name} (timeout={timeout_sec}s)")
+    async def _wait_for_build_job(
+        self, job_name: str, secret_name: str, image_ref: str, timeout_sec: int = 600
+    ) -> None:
+        """Poll until the build Job succeeds or fails.
+
+        On OOMKilled below the max tier, recreates the Job one tier up
+        (fresh deadline) instead of raising; the registry cache lets it
+        resume rather than restart. The Secret is only deleted on a final
+        outcome, so a recreated Job can still read it.
+        """
+        self.logger.debug(f"Waiting for build job {job_name} (timeout={timeout_sec}s)")
         deadline = asyncio.get_event_loop().time() + timeout_sec
 
         while asyncio.get_event_loop().time() < deadline:
@@ -1095,21 +1032,91 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                     continue
                 raise
 
-            conditions = job.status.conditions or []
-            for cond in conditions:
-                if cond.type == "Complete" and cond.status == "True":
-                    self.logger.info(f"Kaniko build job {job_name} completed successfully")
-                    # Clean up the secret (best-effort)
-                    await self._delete_secret(secret_name)
-                    return
-                if cond.type == "Failed" and cond.status == "True":
-                    await self._delete_secret(secret_name)
-                    raise RuntimeError(f"Kaniko build job {job_name} failed: {cond.message}")
+            outcome = self._build_job_outcome(job)
 
-            await asyncio.sleep(5)
+            if outcome == "pending":
+                await asyncio.sleep(5)
+                continue
+
+            if outcome == "complete":
+                self.logger.info(f"Build job {job_name} completed successfully")
+                await self._delete_secret(secret_name)
+                return
+
+            # outcome == "failed"
+            fail_message = next(
+                (c.message for c in (job.status.conditions or []) if c.type == "Failed" and c.status == "True"),
+                "",
+            )
+            was_oom, tier = await self._job_oom_tier(job_name)
+
+            if was_oom and tier < len(BUILD_MEMORY_TIERS) - 1:
+                next_tier = tier + 1
+                mem_request, mem_limit = BUILD_MEMORY_TIERS[next_tier]
+                self.logger.warning(
+                    f"Build job {job_name} was OOMKilled at tier {tier} — escalating to tier "
+                    f"{next_tier} (request={mem_request}, limit={mem_limit})"
+                )
+                await self._delete_job(job_name)
+                try:
+                    await asyncio.to_thread(self._create_build_job_sync, job_name, secret_name, image_ref, next_tier)
+                except ApiException as exc:
+                    if exc.status != 409:
+                        raise
+                    self.logger.debug(f"Build job {job_name} recreate raced with another screener — continuing to poll")
+                deadline = asyncio.get_event_loop().time() + timeout_sec
+                continue
+
+            await self._delete_secret(secret_name)
+            if was_oom:
+                raise RuntimeError(
+                    f"Build job {job_name} was OOMKilled at the maximum memory tier "
+                    f"({BUILD_MEMORY_TIERS[-1][1]} limit): {fail_message}"
+                )
+            raise RuntimeError(f"Build job {job_name} failed: {fail_message}")
 
         await self._delete_secret(secret_name)
-        raise RuntimeError(f"Kaniko build job {job_name} did not complete within {timeout_sec}s")
+        raise RuntimeError(f"Build job {job_name} did not complete within {timeout_sec}s")
+
+    @staticmethod
+    def _build_job_outcome(job: "k8s_client.V1Job") -> str:
+        """Classify a build Job's status as 'complete', 'failed', or 'pending'."""
+        for cond in job.status.conditions or []:
+            if cond.type == "Complete" and cond.status == "True":
+                return "complete"
+            if cond.type == "Failed" and cond.status == "True":
+                return "failed"
+        return "pending"
+
+    async def _job_oom_tier(self, job_name: str) -> tuple[bool, int]:
+        """Return (was_oom_killed, memory_tier) for a build Job's pod(s)."""
+        tier = 0
+        try:
+            job = await asyncio.to_thread(
+                self._batch.read_namespaced_job,
+                name=job_name,
+                namespace=self.namespace,
+            )
+            tier = int((job.metadata.annotations or {}).get(BUILD_MEMORY_TIER_ANNOTATION, "0"))
+        except (ApiException, ValueError, TypeError):
+            pass
+
+        try:
+            pods = await asyncio.to_thread(
+                self._api.list_namespaced_pod,
+                namespace=self.namespace,
+                label_selector=f"job-name={job_name}",
+            )
+        except ApiException:
+            return False, tier
+
+        for pod in pods.items:
+            for status in pod.status.container_statuses or []:
+                terminated = status.state.terminated if status.state else None
+                if terminated and (terminated.reason == "OOMKilled" or terminated.exit_code == 137):
+                    return True, tier
+
+        return False, tier
 
     async def _is_job_failed(self, job_name: str) -> bool:
         """Return True if the named Job exists and is in Failed state."""
@@ -1127,7 +1134,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
             return False
 
     async def _delete_job(self, job_name: str) -> None:
-        """Delete a Kaniko Job (background propagation so pods are also removed)."""
+        """Delete a build Job (background propagation so pods are also removed)."""
         try:
             await asyncio.to_thread(
                 self._batch.delete_namespaced_job,
@@ -1156,3 +1163,407 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         """Sanitise a task name for use in Kubernetes resource names."""
         slug = re.sub(r"[^a-z0-9-]", "-", name.lower())
         return slug[:40].strip("-")
+
+
+# ---------------------------------------------------------------------------
+# Module-level BuildKit helpers, shared by the per-task lazy build path above
+# and by ``pre_build_images`` below.
+# ---------------------------------------------------------------------------
+
+
+async def _registry_image_exists(
+    registry: str,
+    task_name: str,
+    digest_tag: str,
+    *,
+    registry_insecure: bool = True,
+    registry_credentials_secret: str | None = None,
+    registry_password: str | None = None,
+) -> bool:
+    """HEAD-check ``task_name:digest_tag`` in the registry.
+
+    Uses the lowercased task name to match how images are actually pushed
+    (OCI repository names must be lowercase; see ``_ensure_image``).
+    """
+    import base64
+    import http.client
+    import ssl
+    import urllib.parse
+
+    name, tag = task_name.lower(), digest_tag
+    try:
+        scheme = "http" if registry_insecure else "https"
+        default_port = 5000 if registry_insecure else 443
+        parsed = urllib.parse.urlsplit(f"{scheme}://{registry}")
+        host = parsed.hostname or registry.split(":")[0]
+        port = parsed.port or default_port
+
+        def _head() -> bool:
+            if registry_insecure:
+                conn: http.client.HTTPConnection = http.client.HTTPConnection(host, port, timeout=10)
+            else:
+                ctx = ssl.create_default_context()
+                conn = http.client.HTTPSConnection(host, port, timeout=10, context=ctx)
+            headers: dict[str, str] = {}
+            if registry_credentials_secret and registry_password:
+                cred = base64.b64encode(b"kaniko:" + registry_password.encode()).decode()
+                headers["Authorization"] = f"Basic {cred}"
+            conn.request("HEAD", f"/v2/{name}/manifests/{tag}", headers=headers)
+            resp = conn.getresponse()
+            conn.close()
+            return resp.status == 200
+
+        return await asyncio.to_thread(_head)
+    except Exception as exc:
+        logger.debug(f"Registry check failed for {name}:{tag}: {exc}")
+        return False
+
+
+def _build_secret_body(
+    secret_name: str,
+    namespace: str,
+    presigned_url: str,
+    registry: str,
+    registry_insecure: bool,
+) -> "k8s_client.V1Secret":
+    """Build the Secret spec holding the presigned archive URL and BuildKit's
+    registry-mirror config (mounted read-only, avoids shell quoting)."""
+    buildkitd_toml_lines = [
+        '[registry."docker.io"]',
+        f'  mirrors = ["{registry}"]',
+        f'[registry."{registry}"]',
+    ]
+    if registry_insecure:
+        buildkitd_toml_lines.append("  http = true")
+    buildkitd_toml = "\n".join(buildkitd_toml_lines) + "\n"
+
+    return k8s_client.V1Secret(
+        metadata=k8s_client.V1ObjectMeta(
+            name=secret_name,
+            namespace=namespace,
+            labels={"ridges.ai/managed-by": "screener", "ridges.ai/build-url": "true"},
+        ),
+        string_data={
+            "url": presigned_url,
+            "buildkitd.toml": buildkitd_toml,
+        },
+    )
+
+
+def _build_job_body(
+    job_name: str,
+    secret_name: str,
+    image_ref: str,
+    tier: int,
+    namespace: str,
+    registry: str,
+    registry_insecure: bool,
+    registry_credentials_secret: str | None,
+) -> "k8s_client.V1Job":
+    """Build the BuildKit (rootless) build Job spec at the given memory tier.
+
+    Drop-in replacement for the old Kaniko Job: BuildKit streams layers to
+    disk instead of memory, fixing OOM kills on heavy builds. ``tier``
+    selects (request, limit) from ``BUILD_MEMORY_TIERS``.
+    """
+    tier = max(0, min(tier, len(BUILD_MEMORY_TIERS) - 1))
+    memory_request, memory_limit = BUILD_MEMORY_TIERS[tier]
+
+    init_container = k8s_client.V1Container(
+        name="fetch-context",
+        image="curlimages/curl:latest",
+        command=["/bin/sh", "-c"],
+        args=[
+            'curl -sSfL "$PRESIGNED_URL" -o /tmp/task.tar.gz && '
+            "mkdir -p /workspace && "
+            "tar -xzf /tmp/task.tar.gz -C /workspace --strip-components=1 && "
+            "test -f /workspace/environment/Dockerfile"
+        ],
+        env=[
+            k8s_client.V1EnvVar(
+                name="PRESIGNED_URL",
+                value_from=k8s_client.V1EnvVarSource(
+                    secret_key_ref=k8s_client.V1SecretKeySelector(
+                        name=secret_name,
+                        key="url",
+                    )
+                ),
+            )
+        ],
+        volume_mounts=[k8s_client.V1VolumeMount(name="context", mount_path="/workspace")],
+        resources=k8s_client.V1ResourceRequirements(
+            requests={"cpu": "100m", "memory": "256Mi"},
+        ),
+    )
+
+    cache_ref = f"{registry}/cache"
+    output_opt = f"type=image,name={image_ref},push=true"
+    export_cache_opt = f"type=registry,ref={cache_ref},mode=max"
+    import_cache_opt = f"type=registry,ref={cache_ref}"
+    if registry_insecure:
+        output_opt += ",registry.insecure=true"
+        export_cache_opt += ",registry.insecure=true"
+        import_cache_opt += ",registry.insecure=true"
+
+    buildkit_args = [
+        "build",
+        "--frontend=dockerfile.v0",
+        "--local=context=/workspace/environment",
+        "--local=dockerfile=/workspace/environment",
+        "--opt=filename=Dockerfile",
+        f"--output={output_opt}",
+        f"--export-cache={export_cache_opt}",
+        f"--import-cache={import_cache_opt}",
+    ]
+
+    buildkit_volume_mounts = [
+        k8s_client.V1VolumeMount(name="context", mount_path="/workspace"),
+        k8s_client.V1VolumeMount(
+            name="buildkit-store",
+            mount_path="/home/user/.local/share/buildkit",
+        ),
+        k8s_client.V1VolumeMount(
+            name="buildkit-config",
+            mount_path="/etc/buildkit/buildkitd.toml",
+            sub_path="buildkitd.toml",
+            read_only=True,
+        ),
+    ]
+    if registry_credentials_secret:
+        buildkit_volume_mounts.append(
+            k8s_client.V1VolumeMount(
+                name="docker-config",
+                mount_path="/home/user/.docker",
+                read_only=True,
+            )
+        )
+
+    buildkit_container = k8s_client.V1Container(
+        name="buildkit",
+        image="moby/buildkit:v0.31.2-rootless",
+        command=["buildctl-daemonless.sh"],
+        args=buildkit_args,
+        env=[
+            k8s_client.V1EnvVar(
+                name="BUILDKITD_FLAGS",
+                value="--config /etc/buildkit/buildkitd.toml --oci-worker-no-process-sandbox",
+            ),
+            k8s_client.V1EnvVar(name="DOCKER_CONFIG", value="/home/user/.docker"),
+        ],
+        volume_mounts=buildkit_volume_mounts,
+        # Rootless BuildKit needs seccomp relaxed; AppArmor is relaxed via
+        # the pod template annotation below.
+        security_context=k8s_client.V1SecurityContext(
+            run_as_user=1000,
+            run_as_group=1000,
+            seccomp_profile=k8s_client.V1SeccompProfile(type="Unconfined"),
+        ),
+        resources=k8s_client.V1ResourceRequirements(
+            requests={"cpu": "1", "memory": memory_request},
+            limits={"memory": memory_limit},
+        ),
+    )
+
+    volumes = [
+        k8s_client.V1Volume(
+            name="context",
+            empty_dir=k8s_client.V1EmptyDirVolumeSource(size_limit="1Gi"),
+        ),
+        k8s_client.V1Volume(
+            name="buildkit-store",
+            empty_dir=k8s_client.V1EmptyDirVolumeSource(size_limit="25Gi"),
+        ),
+        k8s_client.V1Volume(
+            name="buildkit-config",
+            secret=k8s_client.V1SecretVolumeSource(
+                secret_name=secret_name,
+                items=[
+                    k8s_client.V1KeyToPath(key="buildkitd.toml", path="buildkitd.toml"),
+                ],
+            ),
+        ),
+    ]
+    if registry_credentials_secret:
+        volumes.append(
+            k8s_client.V1Volume(
+                name="docker-config",
+                secret=k8s_client.V1SecretVolumeSource(
+                    secret_name=registry_credentials_secret,
+                    items=[
+                        k8s_client.V1KeyToPath(
+                            key=".dockerconfigjson",
+                            path="config.json",
+                        )
+                    ],
+                ),
+            )
+        )
+
+    return k8s_client.V1Job(
+        api_version="batch/v1",
+        kind="Job",
+        metadata=k8s_client.V1ObjectMeta(
+            name=job_name,
+            namespace=namespace,
+            labels={"ridges.ai/managed-by": "screener", "ridges.ai/build-job": "true"},
+            annotations={BUILD_MEMORY_TIER_ANNOTATION: str(tier)},
+        ),
+        spec=k8s_client.V1JobSpec(
+            # Fail fast so OOM escalation kicks in instead of identical retries.
+            backoff_limit=1,
+            ttl_seconds_after_finished=300,
+            template=k8s_client.V1PodTemplateSpec(
+                metadata=k8s_client.V1ObjectMeta(
+                    labels={"ridges.ai/managed-by": "screener", "ridges.ai/build-job": "true"},
+                    annotations={
+                        "container.apparmor.security.beta.kubernetes.io/buildkit": "unconfined",
+                    },
+                ),
+                spec=k8s_client.V1PodSpec(
+                    init_containers=[init_container],
+                    containers=[buildkit_container],
+                    restart_policy="Never",
+                    volumes=volumes,
+                ),
+            ),
+        ),
+    )
+
+
+def _init_standalone_k8s_clients(
+    kubeconfig_context: str | None,
+) -> tuple["k8s_client.CoreV1Api", "k8s_client.BatchV1Api"]:
+    """Load kubeconfig (or in-cluster config) and create API clients, outside
+    the context of any particular Harbor environment instance."""
+    try:
+        k8s_config.load_incluster_config()
+    except k8s_config.ConfigException:
+        k8s_config.load_kube_config(context=kubeconfig_context)
+    return k8s_client.CoreV1Api(), k8s_client.BatchV1Api()
+
+
+async def pre_build_images(
+    tasks: Sequence[tuple[str, str, str]],
+    *,
+    namespace: str,
+    registry: str,
+    registry_insecure: bool = True,
+    registry_credentials_secret: str | None = None,
+    registry_password: str | None = None,
+    build_registry: str | None = None,
+    build_registry_insecure: bool | None = None,
+    kubeconfig_context: str | None = None,
+) -> None:
+    """Fire-and-forget: create BuildKit build Jobs for any task images
+    missing from the registry, before any evaluation runs start.
+
+    ``registry`` is only used here as a fallback for ``build_registry`` (for
+    backward compat); callers should pass the in-cluster registry Service
+    address as ``build_registry`` so BuildKit's push/cache-export traffic
+    never has to leave the cluster via the Hetzner Cloud Load Balancer /
+    HAProxy Ingress, which impose idle timeouts large blob uploads can't
+    complete within — see ``RidgesKubernetesEnvironment.build_registry``.
+
+    Intended to be called once per evaluation (e.g. from the validator's main
+    loop) with every task in the batch, so the cluster autoscaler sees the
+    full build demand immediately instead of learning about it in waves as
+    each task's turn comes up under the concurrency semaphore. Without this,
+    later-scheduled tasks can sit Pending long enough for their task-archive
+    presigned URL (short TTL, not configurable here) to expire before the
+    build Job's init container downloads it.
+
+    This function does not wait for builds to finish. Each task's own
+    ``RidgesKubernetesEnvironment._ensure_image()`` call (later, in the
+    normal lazy path) will find the Job already running — a 409 on create —
+    and just poll it to completion, or find the image already pushed.
+
+    Best-effort: each task is handled independently, so one failure (bad
+    task data, registry hiccup, etc.) never blocks the others.
+
+    Args:
+        tasks: ``(task_name, digest_tag, presigned_url)`` tuples.
+    """
+    if not tasks:
+        return
+
+    effective_build_registry = build_registry if build_registry is not None else registry
+    effective_build_registry_insecure = (
+        build_registry_insecure if build_registry_insecure is not None else registry_insecure
+    )
+
+    core_api, batch_api = await asyncio.to_thread(_init_standalone_k8s_clients, kubeconfig_context)
+
+    async def _pre_build_one(task_name: str, digest_tag: str, presigned_url: str) -> None:
+        image_ref = f"{effective_build_registry}/{task_name.lower()}:{digest_tag}"
+        try:
+            if await _registry_image_exists(
+                effective_build_registry,
+                task_name,
+                digest_tag,
+                registry_insecure=effective_build_registry_insecure,
+                registry_credentials_secret=registry_credentials_secret,
+                registry_password=registry_password,
+            ):
+                logger.debug(f"Pre-build: {image_ref} already in registry — skipping")
+                return
+
+            job_name = f"build-{RidgesKubernetesEnvironment._slug(task_name)}-{digest_tag}"
+            secret_name = f"{job_name}-url"
+
+            try:
+                await asyncio.to_thread(
+                    lambda: core_api.create_namespaced_secret(
+                        namespace=namespace,
+                        body=_build_secret_body(
+                            secret_name,
+                            namespace,
+                            presigned_url,
+                            effective_build_registry,
+                            effective_build_registry_insecure,
+                        ),
+                    )
+                )
+            except ApiException as exc:
+                if exc.status != 409:
+                    raise
+                # Stale secret from a previous attempt — recreate with this fresh URL.
+                await asyncio.to_thread(core_api.delete_namespaced_secret, name=secret_name, namespace=namespace)
+                await asyncio.to_thread(
+                    lambda: core_api.create_namespaced_secret(
+                        namespace=namespace,
+                        body=_build_secret_body(
+                            secret_name,
+                            namespace,
+                            presigned_url,
+                            effective_build_registry,
+                            effective_build_registry_insecure,
+                        ),
+                    )
+                )
+
+            try:
+                await asyncio.to_thread(
+                    lambda: batch_api.create_namespaced_job(
+                        namespace=namespace,
+                        body=_build_job_body(
+                            job_name,
+                            secret_name,
+                            image_ref,
+                            0,
+                            namespace,
+                            effective_build_registry,
+                            effective_build_registry_insecure,
+                            registry_credentials_secret,
+                        ),
+                    )
+                )
+                logger.info(f"Pre-build: started BuildKit job {job_name} for {image_ref}")
+            except ApiException as exc:
+                if exc.status == 409:
+                    logger.debug(f"Pre-build: build job {job_name} already exists — another screener is building")
+                else:
+                    raise
+        except Exception as exc:
+            logger.warning(f"Pre-build failed for {image_ref}: {type(exc).__name__}: {exc}")
+
+    await asyncio.gather(*(_pre_build_one(*t) for t in tasks))
