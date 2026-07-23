@@ -905,7 +905,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
 
     async def _ensure_image(self, *, force_build: bool = False) -> None:
         """Check registry for the task image; build with BuildKit if missing."""
-        image_ref = f"{self.registry}/{self.task_name}:{self.digest_tag}"
+        image_ref = f"{self.registry}/{self.task_name.lower()}:{self.digest_tag}"
 
         if not force_build and await self._image_exists_in_registry(image_ref):
             self.logger.debug(f"Image {image_ref} already in registry – skipping build")
