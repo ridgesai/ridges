@@ -735,7 +735,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         self._registry_password = registry_password
         self._registry_insecure = registry_insecure
 
-        image = f"{registry}/{task_name}:{digest_tag}"
+        image = f"{registry}/{task_name.lower()}:{digest_tag}"
         # Eval pods need credentials to pull the task image from the in-cluster registry.
         pull_secrets = [registry_credentials_secret] if registry_credentials_secret else []
         super().__init__(
