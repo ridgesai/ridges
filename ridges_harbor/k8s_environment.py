@@ -1171,6 +1171,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                         containers=[buildkit_container],
                         restart_policy="Never",
                         volumes=volumes,
+                        host_users=False,
                     ),
                 ),
             ),
