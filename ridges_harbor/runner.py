@@ -204,7 +204,7 @@ async def _run_task_dir(
 
         digest_tag = task_digest.split(":")[1][:12]
 
-        # Generate a fresh presigned URL for the Kaniko init container (5-min TTL).
+        # Generate a fresh presigned URL for the build Job's init container (5-min TTL).
         if fetch_task_url is None:
             raise RuntimeError("fetch_task_url callback is required in Kubernetes mode")
         presigned_url = await fetch_task_url(task_digest)
