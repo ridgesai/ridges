@@ -917,6 +917,14 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
 
         try:
             await asyncio.to_thread(self._create_build_secret_sync, secret_name)
+        except ApiException as exc:
+            if exc.status == 409:
+                await self._delete_secret(secret_name)
+                await asyncio.to_thread(self._create_build_secret_sync, secret_name)
+            else:
+                raise
+
+        try:
             await asyncio.to_thread(self._create_build_job_sync, job_name, secret_name, image_ref, 0)
         except ApiException as exc:
             if exc.status == 409:
