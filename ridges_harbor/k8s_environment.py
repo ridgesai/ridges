@@ -831,17 +831,18 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         # itself).  This replaces the old hostAliases + socket.getaddrinfo patch
         # approach with the standard Istio-style transparent interception pattern.
         # Private CIDRs are excluded so in-cluster services are not intercepted.
+        # Image has iptables pre-installed (see Dockerfile.iptables-init) so pod
+        # startup never depends on reaching the Alpine package CDN at runtime.
         spec.init_containers = [
             k8s_client.V1Container(
                 name="iptables-init",
-                image="alpine:3.20",
+                image="ghcr.io/ridgesai/ridges-iptables-init:pr-444",
                 image_pull_policy="IfNotPresent",
                 command=[
                     "sh",
                     "-c",
                     " && ".join(
                         [
-                            "apk add --no-cache iptables",
                             "iptables -t nat -N PROXY_OUTPUT",
                             "iptables -t nat -A PROXY_OUTPUT -m owner --uid-owner 1337 -j RETURN",
                             "iptables -t nat -A PROXY_OUTPUT -d 127.0.0.0/8 -j RETURN",

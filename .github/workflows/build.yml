@@ -26,6 +26,8 @@ jobs:
             dockerfile: Dockerfile.api
           - image: ridges-validator
             dockerfile: Dockerfile.validator
+          - image: ridges-iptables-init
+            dockerfile: Dockerfile.iptables-init
 
     steps:
       - name: Checkout
