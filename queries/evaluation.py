@@ -242,6 +242,7 @@ class AgentRankingProfile:
     agent_id: UUID | None = None
     approved_at: datetime | None = None
     miner_coldkey: str | None = None
+    observed_at: datetime | None = None
 
     def beats(self, other: "AgentRankingProfile") -> bool:
         """Check if an AgentRankingProfile instance can beat
@@ -288,7 +289,7 @@ class AgentRankingProfile:
 async def get_approved_leader_ranking_for_set(
     conn: DatabaseConnection,
     set_id: int,
-    excluded_agent_id: UUID,
+    excluded_agent_id: UUID | None = None,
     required_validator_count: int = config.NUM_EVALS_PER_AGENT,
 ) -> Optional[AgentRankingProfile]:
     row = await conn.fetchrow(
@@ -299,7 +300,8 @@ async def get_approved_leader_ranking_for_set(
             rt.avg_cost_usd,
             ass.created_at,
             ass.approved_at,
-            agent.miner_coldkey
+            agent.miner_coldkey,
+            clock_timestamp() AS observed_at
         FROM agent_scores ass
         INNER JOIN agents agent ON agent.agent_id = ass.agent_id
         LEFT JOIN agent_final_review_statuses review
@@ -318,7 +320,7 @@ async def get_approved_leader_ranking_for_set(
           AND ass.approved_at <= clock_timestamp()
           AND ass.validator_count = $2
           AND ass.status::text = 'finished'
-          AND ass.agent_id <> $3
+          AND ($3::uuid IS NULL OR ass.agent_id <> $3)
           AND review.approval_review_status IS DISTINCT FROM 'rejected'
           AND NOT EXISTS (
               SELECT 1
@@ -346,6 +348,7 @@ async def get_approved_leader_ranking_for_set(
         agent_id=row["agent_id"],
         approved_at=row["approved_at"],
         miner_coldkey=row["miner_coldkey"],
+        observed_at=row["observed_at"],
     )
 
 
