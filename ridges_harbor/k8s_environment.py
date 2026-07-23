@@ -333,9 +333,7 @@ class KubernetesEnvironment(BaseEnvironment):
             else:
                 user_arg = shlex.quote(str(user))
             inner = f'export PATH="$RIDGES_TASK_PATH:$PATH"; {full_command}'
-            full_command = (
-                f'RIDGES_TASK_PATH="$PATH" su {user_arg} -s /bin/bash -c {shlex.quote(inner)}'
-            )
+            full_command = f'RIDGES_TASK_PATH="$PATH" su {user_arg} -s /bin/bash -c {shlex.quote(inner)}'
 
         exec_command = ["sh", "-c", full_command]
 
@@ -932,9 +930,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                     await self._delete_job(job_name)
                     await self._delete_secret(secret_name)
                     await asyncio.to_thread(self._create_build_secret_sync, secret_name)
-                    await asyncio.to_thread(
-                        self._create_build_job_sync, job_name, secret_name, image_ref, retry_tier
-                    )
+                    await asyncio.to_thread(self._create_build_job_sync, job_name, secret_name, image_ref, retry_tier)
                 else:
                     self.logger.debug(f"Build job {job_name} already exists — another screener is building")
             else:
@@ -1002,9 +998,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         )
         self._api.create_namespaced_secret(namespace=self.namespace, body=secret)
 
-    def _create_build_job_sync(
-        self, job_name: str, secret_name: str, image_ref: str, tier: int
-    ) -> None:
+    def _create_build_job_sync(self, job_name: str, secret_name: str, image_ref: str, tier: int) -> None:
         """Create the BuildKit (rootless) build Job at the given memory tier.
 
         Drop-in replacement for the old Kaniko Job: BuildKit streams layers to
@@ -1231,15 +1225,11 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                 )
                 await self._delete_job(job_name)
                 try:
-                    await asyncio.to_thread(
-                        self._create_build_job_sync, job_name, secret_name, image_ref, next_tier
-                    )
+                    await asyncio.to_thread(self._create_build_job_sync, job_name, secret_name, image_ref, next_tier)
                 except ApiException as exc:
                     if exc.status != 409:
                         raise
-                    self.logger.debug(
-                        f"Build job {job_name} recreate raced with another screener — continuing to poll"
-                    )
+                    self.logger.debug(f"Build job {job_name} recreate raced with another screener — continuing to poll")
                 deadline = asyncio.get_event_loop().time() + timeout_sec
                 continue
 
