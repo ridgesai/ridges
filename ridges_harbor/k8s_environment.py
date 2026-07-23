@@ -323,7 +323,10 @@ class KubernetesEnvironment(BaseEnvironment):
                 user_arg = f"$(getent passwd {user} | cut -d: -f1)"
             else:
                 user_arg = shlex.quote(str(user))
-            full_command = f"su {user_arg} -s /bin/bash -c {shlex.quote(full_command)}"
+            inner = f'export PATH="$RIDGES_TASK_PATH:$PATH"; {full_command}'
+            full_command = (
+                f'RIDGES_TASK_PATH="$PATH" su {user_arg} -s /bin/bash -c {shlex.quote(inner)}'
+            )
 
         exec_command = ["sh", "-c", full_command]
 
