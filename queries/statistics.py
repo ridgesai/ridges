@@ -8,61 +8,6 @@ from models.evaluation_set import EvaluationSetGroup
 from utils.database import DatabaseConnection, db_operation
 
 
-@db_operation
-async def top_score(conn: DatabaseConnection) -> Optional[float]:
-    return await conn.fetchval("""
-        SELECT MAX(agent_scores.final_score)
-        FROM agent_scores
-        JOIN agents a ON a.agent_id = agent_scores.agent_id
-        WHERE agent_scores.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-        AND agent_scores.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
-        AND NOT EXISTS (
-            SELECT 1 FROM banned_coldkeys bc
-            WHERE bc.miner_coldkey = a.miner_coldkey
-        )
-    """)
-
-
-@db_operation
-async def agents_created_24_hrs(conn: DatabaseConnection) -> int:
-    return await conn.fetchval("""
-        SELECT COUNT(*) FROM agents 
-        WHERE created_at >= NOW() - INTERVAL '24 hours'
-        AND NOT EXISTS (
-            SELECT 1 FROM banned_coldkeys bc
-            WHERE bc.miner_coldkey = agents.miner_coldkey
-        )
-        AND agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
-        AND agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
-    """)
-
-
-@db_operation
-async def score_improvement_24_hrs(conn: DatabaseConnection) -> float:
-    return await conn.fetchval(
-        """
-        WITH score_data AS (
-            SELECT
-                MAX(agent_scores.final_score) as max_score,
-                MAX(agent_scores.final_score) FILTER (
-                    WHERE agent_scores.created_at <= NOW() - INTERVAL '24 hours'
-                ) as max_score_24_hrs_ago
-            FROM agent_scores
-            JOIN agents a ON a.agent_id = agent_scores.agent_id
-            WHERE agent_scores.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-            AND agent_scores.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
-            AND NOT EXISTS (
-                SELECT 1 FROM banned_coldkeys bc
-                WHERE bc.miner_coldkey = a.miner_coldkey
-            )
-        )
-        SELECT
-            COALESCE(max_score - max_score_24_hrs_ago, 0)
-        FROM score_data
-        """
-    )
-
-
 class TopScoreOverTime(BaseModel):
     hour: datetime
     top_score: float
