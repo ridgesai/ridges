@@ -1090,14 +1090,12 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                 k8s_client.V1EnvVar(name="DOCKER_CONFIG", value="/home/user/.docker"),
             ],
             volume_mounts=buildkit_volume_mounts,
-            # Rootless BuildKit needs seccomp/procMount relaxed (no privileged
-            # mode, no node changes); AppArmor is relaxed via the pod
-            # template annotation below.
+            # Rootless BuildKit needs seccomp relaxed; AppArmor is relaxed via
+            # the pod template annotation below.
             security_context=k8s_client.V1SecurityContext(
                 run_as_user=1000,
                 run_as_group=1000,
                 seccomp_profile=k8s_client.V1SeccompProfile(type="Unconfined"),
-                proc_mount="Unmasked",
             ),
             resources=k8s_client.V1ResourceRequirements(
                 requests={"cpu": "1", "memory": memory_request},
@@ -1165,7 +1163,6 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                         containers=[buildkit_container],
                         restart_policy="Never",
                         volumes=volumes,
-                        host_users=False,
                     ),
                 ),
             ),
