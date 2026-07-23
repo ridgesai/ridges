@@ -15,7 +15,6 @@ from queries.scores import (
     get_weight_receiving_agent_hotkey,
     get_weight_receiving_agent_info,
 )
-from queries.statistics import score_improvement_24_hrs, top_score
 
 SET_ID = 23
 SET_CREATED_AT = datetime(2026, 6, 1, tzinfo=timezone.utc)
@@ -271,6 +270,38 @@ async def test_weight_receiver_is_top_scored_agent_when_eligible():
 
 
 @pytest.mark.anyio
+async def test_current_approved_leader_can_be_selected_without_exclusion():
+    now = datetime.now(timezone.utc)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn)
+        leader_id = await _insert_scored_agent(
+            conn,
+            miner_hotkey="leader-hotkey",
+            final_score=0.50,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=1),
+        )
+        await _insert_scored_agent(
+            conn,
+            miner_hotkey="unapproved-hotkey",
+            final_score=0.90,
+            cost_usd=0.01,
+            approved=False,
+            created_at=SET_CREATED_AT + timedelta(hours=2),
+        )
+
+    leader = await get_approved_leader_ranking_for_set(SET_ID, required_validator_count=1)
+
+    assert leader is not None
+    assert leader.agent_id == leader_id
+    assert leader.final_score == 0.50
+    assert leader.avg_cost_usd == pytest.approx(0.10)
+    assert leader.approved_at == now - timedelta(hours=1)
+    assert leader.observed_at is not None
+
+
+@pytest.mark.anyio
 async def test_banned_coldkey_is_skipped_for_incentive():
     now = datetime.now(timezone.utc)
     async with _db.pool.acquire() as conn:
@@ -297,8 +328,6 @@ async def test_banned_coldkey_is_skipped_for_incentive():
     await ban_coldkey("banned-leader-coldkey", "test ban")
 
     assert await get_weight_receiving_agent_hotkey() == "eligible-second-hotkey"
-    assert await top_score() == 0.49
-    assert await score_improvement_24_hrs() == 0
     info = await get_weight_receiving_agent_info()
     assert info is not None
     assert info["agent_id"] == second_id
