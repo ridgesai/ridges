@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 
@@ -20,20 +21,18 @@ from queries.agent import (
     get_possibly_benchmark_agent_by_id,
     get_top_agents,
 )
-from queries.evaluation import get_evaluations_for_agent_id
+from queries.evaluation import get_approved_leader_ranking_for_set, get_evaluations_for_agent_id
 from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
 from queries.evaluation_set import get_latest_set_id
 from queries.statistics import (
     PerfectlySolvedOverTime,
     ProblemSetCreationTime,
     TopScoreOverTime,
-    agents_created_24_hrs,
     get_perfectly_solved_over_time,
     get_problem_set_creation_times,
     get_top_scores_over_time,
-    score_improvement_24_hrs,
-    top_score,
 )
+from utils.incentives import calculate_time_multiplier
 from utils.problem_alias import add_test_aliases, make_problem_alias
 from utils.s3 import download_text_file_from_s3
 from utils.ttl import ttl_cache
@@ -189,16 +188,42 @@ async def perfectly_solved_over_time() -> PerfectlySolvedOverTimeResponse:
 
 # /retrieval/network-statistics
 class NetworkStatisticsResponse(BaseModel):
-    score_improvement_24_hrs: float
-    agents_created_24_hrs: int
     top_score: Optional[float]
+    top_cost: Optional[float]
+    perf_threshold: float
+    cost_threshold: float
+    last_approval: Optional[datetime]
+    time_multiplier: float
 
 
 @router.get("/network-statistics")
-@ttl_cache(ttl_seconds=60 * 15)  # 15 minutes
+@ttl_cache(ttl_seconds=60)
 async def network_statistics() -> NetworkStatisticsResponse:
+    latest_set_id = await get_latest_set_id()
+    leader = (
+        None
+        if latest_set_id is None
+        else await get_approved_leader_ranking_for_set(
+            latest_set_id,
+            required_validator_count=config.NUM_EVALS_PER_AGENT,
+        )
+    )
+
+    time_multiplier = 1.0
+    if leader is not None and leader.approved_at is not None:
+        observed_at = leader.observed_at or datetime.now(timezone.utc)
+        elapsed_hours = max(0.0, (observed_at - leader.approved_at).total_seconds() / 3600)
+        time_multiplier = calculate_time_multiplier(
+            elapsed_hours=elapsed_hours,
+            half_life_hours=config.INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS,
+            maximum=config.INCENTIVE_TIME_MULTIPLIER_MAX,
+        )
+
     return NetworkStatisticsResponse(
-        score_improvement_24_hrs=await score_improvement_24_hrs(),
-        agents_created_24_hrs=await agents_created_24_hrs(),
-        top_score=await top_score(),
+        top_score=None if leader is None else leader.final_score,
+        top_cost=None if leader is None else leader.avg_cost_usd,
+        perf_threshold=config.INCENTIVE_PERFORMANCE_THRESHOLD,
+        cost_threshold=config.INCENTIVE_COST_THRESHOLD,
+        last_approval=None if leader is None else leader.approved_at,
+        time_multiplier=time_multiplier,
     )
