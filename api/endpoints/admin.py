@@ -1,5 +1,6 @@
 import secrets
 from typing import Annotated
+from uuid import UUID
 
 from bittensor_wallet.keypair import Keypair
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -8,7 +9,10 @@ from pydantic import BaseModel, StringConstraints
 
 import api.config as config
 from models.banned_coldkey import BannedColdkey
+from models.disqualified_agent import DisqualifiedAgent
+from queries.agent import get_agent_by_id
 from queries.banned_coldkey import ban_coldkey, unban_coldkey
+from queries.disqualified_agent import disqualify_agent
 from utils.ttl import clear_all_ttl_caches
 
 router = APIRouter(tags=["admin"])
@@ -62,3 +66,17 @@ async def delete_banned_coldkey(miner_coldkey: str) -> Response:
     await unban_coldkey(miner_coldkey)
     clear_all_ttl_caches()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.put(
+    "/disqualified-agents/{agent_id}",
+    response_model=DisqualifiedAgent,
+    dependencies=[Depends(require_coldkey_ban_admin)],
+)
+async def put_disqualified_agent(agent_id: UUID, request: ColdkeyBanRequest) -> DisqualifiedAgent:
+    agent = await get_agent_by_id(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    disqualified = await disqualify_agent(agent_id, request.reason)
+    clear_all_ttl_caches()
+    return disqualified
