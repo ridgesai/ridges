@@ -68,6 +68,22 @@ class BannedColdkey(Base):
     )
 
 
+class DisqualifiedAgent(Base):
+    __tablename__ = "disqualified_agents"
+
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        sa.ForeignKey("agents.agent_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    reason: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    disqualified_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=sa.text("NOW()"),
+    )
+
+
 class BenchmarkAgentId(Base):
     __tablename__ = "benchmark_agent_ids"
 
