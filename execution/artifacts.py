@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree
 
 from harbor.models.trial.paths import TrialPaths
 from pydantic import BaseModel, Field, ValidationError
@@ -202,10 +203,8 @@ def parse_execution_artifacts(
     reward = extract_reward_value(summary, context=context)
 
     test_results = parse_structured_test_results(
-        trial_paths.verifier_dir / "test_results.json",
-        trial_paths.artifacts_dir / "test_results.json",
-        trial_paths.verifier_dir / "report.json",
-        trial_paths.artifacts_dir / "report.json",
+        trial_paths.verifier_dir,
+        trial_paths.artifacts_dir,
         context=context,
     )
 
@@ -264,20 +263,19 @@ def extract_reward_value(summary: HarborRunSummary, *, context: FailureContext) 
 
 
 def parse_structured_test_results(
-    verifier_test_results_path: Path,
-    artifact_test_results_path: Path,
-    verifier_report_path: Path,
-    artifact_report_path: Path,
+    verifier_dir: Path,
+    artifacts_dir: Path,
     *,
     context: FailureContext,
 ) -> list[ProblemTestResult]:
-    """Parse Ridges-shaped test_results.json, falling back to SWE-Bench report.json.
+    """Parse Ridges-shaped test_results.json, falling back to SWE-Bench
+    report.json, then to a junit.xml emitted by the verifier.
 
     Returns an empty list when nothing is found. A present-but-malformed
     test_results.json becomes a classified validator failure.
     """
 
-    for path in (verifier_test_results_path, artifact_test_results_path):
+    for path in (verifier_dir / "test_results.json", artifacts_dir / "test_results.json"):
         test_results_payload = read_json_artifact(path, context=context)
         if test_results_payload is None:
             continue
@@ -290,11 +288,15 @@ def parse_structured_test_results(
                 cause=exception,
             )
 
-    return parse_report_based_test_results(
-        verifier_report_path,
-        artifact_report_path,
+    report_results = parse_report_based_test_results(
+        verifier_dir / "report.json",
+        artifacts_dir / "report.json",
         context=context,
     )
+    if report_results:
+        return report_results
+
+    return parse_junit_test_results(verifier_dir, artifacts_dir)
 
 
 def parse_report_based_test_results(
@@ -362,6 +364,61 @@ def test_results_from_swebench_report(payload: Any) -> list[ProblemTestResult]:
                                 status=status,
                             )
                         )
+
+    return results
+
+
+def parse_junit_test_results(verifier_dir: Path, artifacts_dir: Path) -> list[ProblemTestResult]:
+    """Parse a verifier-emitted junit.xml/pytest.xml into Ridges"""
+    for root in (verifier_dir, artifacts_dir):
+        if not root.exists():
+            continue
+
+        for filename in ("junit.xml", "pytest.xml"):
+            for candidate in sorted(root.rglob(filename)):
+                if not candidate.is_file():
+                    continue
+
+                results = test_results_from_junit_xml(_read_text_best_effort(candidate))
+                if results:
+                    return results
+
+    return []
+
+
+def test_results_from_junit_xml(content: str) -> list[ProblemTestResult]:
+    """Translate junit XML testcases into Ridges"""
+    try:
+        root = ElementTree.fromstring(content)
+    except ElementTree.ParseError:
+        return []
+
+    outcome_map = {
+        "failure": ProblemTestResultStatus.FAIL,
+        "error": ProblemTestResultStatus.FAIL,
+        "skipped": ProblemTestResultStatus.SKIP,
+    }
+
+    results: list[ProblemTestResult] = []
+    for testcase in root.iter("testcase"):
+        name = testcase.get("name") or ""
+        classname = testcase.get("classname") or ""
+        if not name and not classname:
+            continue
+
+        status = ProblemTestResultStatus.PASS
+        for tag, mapped_status in outcome_map.items():
+            if testcase.find(tag) is not None:
+                status = mapped_status
+                break
+
+        results.append(
+            ProblemTestResult(
+                name=f"{classname}::{name}" if classname else name,
+                category=ProblemTestCategory.default,
+                status=status,
+            )
+        )
 
     return results
 
