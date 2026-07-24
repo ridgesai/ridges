@@ -34,8 +34,8 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOve
                     agent_scores.final_score IS NOT NULL
                     AND agent_scores.set_id = (SELECT set_id FROM max_set)
                     AND NOT EXISTS (
-                        SELECT 1 FROM banned_coldkeys bc
-                        WHERE bc.miner_coldkey = a.miner_coldkey
+                        SELECT 1 FROM disqualified_agent_ids dq
+                        WHERE dq.agent_id = a.agent_id
                     )
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                     AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
@@ -59,8 +59,8 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOve
                 AND agent_scores.created_at <= ts.hour
                 AND agent_scores.set_id = (SELECT set_id FROM max_set)
                 AND NOT EXISTS (
-                    SELECT 1 FROM banned_coldkeys bc
-                    WHERE bc.miner_coldkey = a.miner_coldkey
+                    SELECT 1 FROM disqualified_agent_ids dq
+                    WHERE dq.agent_id = a.agent_id
                 )
                 AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                 AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
@@ -107,8 +107,8 @@ async def get_perfectly_solved_over_time(conn: DatabaseConnection) -> list[Perfe
                     AND erh.benchmark_family <> ''
                     AND erh.benchmark_family <> 'custom'
                     AND NOT EXISTS (
-                        SELECT 1 FROM banned_coldkeys bc
-                        WHERE bc.miner_coldkey = a.miner_coldkey
+                        SELECT 1 FROM disqualified_agent_ids dq
+                        WHERE dq.agent_id = a.agent_id
                     )
                     AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                     AND e.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
@@ -167,8 +167,8 @@ async def get_average_score_per_evaluation_set_group(
         WHERE eh.status = 'success'
             AND eh.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
             AND NOT EXISTS (
-                SELECT 1 FROM banned_coldkeys bc
-                WHERE bc.miner_coldkey = a.miner_coldkey
+                SELECT 1 FROM disqualified_agent_ids dq
+                WHERE dq.agent_id = a.agent_id
             )
             AND eh.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
             AND eh.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
@@ -206,8 +206,8 @@ async def get_average_wait_time_per_evaluation_set_group(
             AND e.evaluation_set_group = '{EvaluationSetGroup.screener_1.value}'::EvaluationSetGroup
             AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
             AND NOT EXISTS (
-                SELECT 1 FROM banned_coldkeys bc
-                WHERE bc.miner_coldkey = a.miner_coldkey
+                SELECT 1 FROM disqualified_agent_ids dq
+                WHERE dq.agent_id = a.agent_id
             )
             AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
             AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
@@ -228,8 +228,8 @@ async def get_average_wait_time_per_evaluation_set_group(
             AND sc1_e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
             AND sc2_e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
             AND NOT EXISTS (
-                SELECT 1 FROM banned_coldkeys bc
-                WHERE bc.miner_coldkey = a.miner_coldkey
+                SELECT 1 FROM disqualified_agent_ids dq
+                WHERE dq.agent_id = a.agent_id
             )
             AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
             AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
@@ -259,8 +259,8 @@ async def get_average_wait_time_per_evaluation_set_group(
             AND sc2_e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
             AND v_e.validator_count = {config.NUM_EVALS_PER_AGENT}
             AND NOT EXISTS (
-                SELECT 1 FROM banned_coldkeys bc
-                WHERE bc.miner_coldkey = a.miner_coldkey
+                SELECT 1 FROM disqualified_agent_ids dq
+                WHERE dq.agent_id = a.agent_id
             )
             AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
             AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)

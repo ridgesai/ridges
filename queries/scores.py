@@ -37,8 +37,8 @@ async def get_weight_receiving_agent_hotkey(conn: DatabaseConnection) -> Optiona
                 AND ass.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
                 AND NOT EXISTS (
                     SELECT 1
-                    FROM banned_coldkeys bc
-                    WHERE bc.miner_coldkey = a.miner_coldkey
+                    FROM disqualified_agent_ids dq
+                    WHERE dq.agent_id = a.agent_id
                 )
             ORDER BY ass.final_score DESC, rt.avg_cost_usd ASC NULLS LAST, ass.created_at ASC
             LIMIT 1
@@ -84,8 +84,8 @@ async def get_weight_receiving_agent_info(conn: DatabaseConnection) -> Optional[
                 AND ass.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
                 AND NOT EXISTS (
                     SELECT 1
-                    FROM banned_coldkeys bc
-                    WHERE bc.miner_coldkey = a.miner_coldkey
+                    FROM disqualified_agent_ids dq
+                    WHERE dq.agent_id = a.agent_id
                 )
             ORDER BY ass.final_score DESC, rt.avg_cost_usd ASC NULLS LAST, ass.created_at ASC
             LIMIT 1
@@ -142,8 +142,8 @@ async def get_incentive_reward_candidates(
           )
           AND NOT EXISTS (
               SELECT 1
-              FROM banned_coldkeys banned
-              WHERE banned.miner_coldkey = agent.miner_coldkey
+              FROM disqualified_agent_ids dq
+              WHERE dq.agent_id = agent.agent_id
           )
         """,
         set_id,

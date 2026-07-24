@@ -5,16 +5,21 @@ from uuid import UUID, uuid4
 import pytest
 
 import utils.database as _db
+from queries.agent import get_top_agents
 from queries.disqualified_agent import disqualify_agent, get_disqualified_agent
 
 
 @pytest.fixture(autouse=True)
 async def clean_tables(postgres_db):
     async with _db.pool.acquire() as conn:
-        await conn.execute("TRUNCATE disqualified_agents, agents RESTART IDENTITY CASCADE")
+        await conn.execute(
+            "TRUNCATE disqualified_agents, agent_scores, evaluation_sets, agents RESTART IDENTITY CASCADE"
+        )
     yield
     async with _db.pool.acquire() as conn:
-        await conn.execute("TRUNCATE disqualified_agents, agents RESTART IDENTITY CASCADE")
+        await conn.execute(
+            "TRUNCATE disqualified_agents, agent_scores, evaluation_sets, agents RESTART IDENTITY CASCADE"
+        )
 
 
 async def _insert_agent() -> UUID:
@@ -69,3 +74,62 @@ async def test_disqualify_is_idempotent_and_updates_reason() -> None:
     async with _db.pool.acquire() as conn:
         count = await conn.fetchval("SELECT COUNT(*) FROM disqualified_agents WHERE agent_id = $1", agent_id)
     assert count == 1
+
+
+async def _insert_scored_agent(*, final_score: float, coldkey: str) -> UUID:
+    agent_id = uuid4()
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO agents (
+                agent_id, miner_hotkey, miner_coldkey, name, version_num,
+                status, created_at, ip_address
+            )
+            VALUES ($1, $2, $3, 'scored-agent', 0, 'finished', NOW(), '127.0.0.1')
+            """,
+            agent_id,
+            f"hotkey-{agent_id}",
+            coldkey,
+        )
+        max_set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
+        if max_set_id is None:
+            max_set_id = 1
+            await conn.execute(
+                """
+                INSERT INTO evaluation_sets (set_id, set_group, problem_name)
+                VALUES ($1, 'validator', 'p1')
+                ON CONFLICT (set_id, set_group, problem_name) DO NOTHING
+                """,
+                max_set_id,
+            )
+        await conn.execute(
+            """
+            INSERT INTO agent_scores (
+                agent_id, miner_hotkey, name, version_num, created_at, status,
+                set_id, approved, approved_at, validator_count, final_score
+            )
+            VALUES ($1, $2, 'scored-agent', 0, NOW(), 'finished',
+                    $3, TRUE, NOW(), 3, $4)
+            """,
+            agent_id,
+            f"hotkey-{agent_id}",
+            max_set_id,
+            final_score,
+        )
+    return agent_id
+
+
+@pytest.mark.anyio
+async def test_disqualified_agent_excluded_from_top_agents() -> None:
+    kept = await _insert_scored_agent(final_score=0.9, coldkey="ck-kept")
+    stopped = await _insert_scored_agent(final_score=0.8, coldkey="ck-stopped")
+
+    before = {agent.agent_id for agent in await get_top_agents(number_of_agents=10)}
+    assert kept in before
+    assert stopped in before
+
+    await disqualify_agent(stopped, "cheating")
+
+    after = {agent.agent_id for agent in await get_top_agents(number_of_agents=10)}
+    assert kept in after
+    assert stopped not in after

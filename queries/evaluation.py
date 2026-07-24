@@ -224,8 +224,8 @@ async def get_approved_validator_leader_score_for_set(
           )
           AND NOT EXISTS (
               SELECT 1
-              FROM banned_coldkeys banned_coldkey
-              WHERE banned_coldkey.miner_coldkey = agent.miner_coldkey
+              FROM disqualified_agent_ids dq
+              WHERE dq.agent_id = agent.agent_id
           )
         """,
         set_id,
@@ -329,8 +329,8 @@ async def get_approved_leader_ranking_for_set(
           )
           AND NOT EXISTS (
               SELECT 1
-              FROM banned_coldkeys banned_coldkey
-              WHERE banned_coldkey.miner_coldkey = agent.miner_coldkey
+              FROM disqualified_agent_ids dq
+              WHERE dq.agent_id = agent.agent_id
           )
         ORDER BY ass.final_score DESC, rt.avg_cost_usd ASC NULLS LAST, ass.created_at ASC
         LIMIT 1

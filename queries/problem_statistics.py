@@ -175,8 +175,8 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
                 JOIN agents a on e.agent_id = a.agent_id
             WHERE e.set_id = $1
                 AND NOT EXISTS (
-                    SELECT 1 FROM banned_coldkeys bc
-                    WHERE bc.miner_coldkey = a.miner_coldkey
+                    SELECT 1 FROM disqualified_agent_ids dq
+                    WHERE dq.agent_id = a.agent_id
                 )
                 AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                 AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
@@ -213,8 +213,8 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
                     er.status = 'finished'
                     AND e.set_id = $1
                     AND NOT EXISTS (
-                        SELECT 1 FROM banned_coldkeys bc
-                        WHERE bc.miner_coldkey = a.miner_coldkey
+                        SELECT 1 FROM disqualified_agent_ids dq
+                        WHERE dq.agent_id = a.agent_id
                     )
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                     AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
@@ -275,8 +275,8 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
                     WHERE er.status = 'error'
                         AND e.set_id = $1
                         AND NOT EXISTS (
-                            SELECT 1 FROM banned_coldkeys bc
-                            WHERE bc.miner_coldkey = a.miner_coldkey
+                            SELECT 1 FROM disqualified_agent_ids dq
+                            WHERE dq.agent_id = a.agent_id
                         )
                         AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                         AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
@@ -303,8 +303,8 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
                     JOIN agents a ON e.agent_id = a.agent_id 
                 WHERE e.set_id = $1
                     AND NOT EXISTS (
-                        SELECT 1 FROM banned_coldkeys bc
-                        WHERE bc.miner_coldkey = a.miner_coldkey
+                        SELECT 1 FROM disqualified_agent_ids dq
+                        WHERE dq.agent_id = a.agent_id
                     )
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                     AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
@@ -345,8 +345,8 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
                     AND erh.solved
                     AND e.set_id = $1
                     AND NOT EXISTS (
-                        SELECT 1 FROM banned_coldkeys bc
-                        WHERE bc.miner_coldkey = a.miner_coldkey
+                        SELECT 1 FROM disqualified_agent_ids dq
+                        WHERE dq.agent_id = a.agent_id
                     )
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                     AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
