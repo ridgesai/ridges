@@ -7,6 +7,7 @@ import pytest
 import utils.database as _db
 from queries.agent import get_top_agents
 from queries.disqualified_agent import disqualify_agent, get_disqualified_agent
+from queries.evaluation_set import get_evaluation_set_leaderboard_agents
 
 
 @pytest.fixture(autouse=True)
@@ -133,3 +134,22 @@ async def test_disqualified_agent_excluded_from_top_agents() -> None:
     after = {agent.agent_id for agent in await get_top_agents(number_of_agents=10)}
     assert kept in after
     assert stopped not in after
+
+
+@pytest.mark.anyio
+async def test_stopped_agent_marked_disqualified_on_leaderboard() -> None:
+    # Reuse the scored-agent helper; the agent must fall in the latest set window.
+    stopped = await _insert_scored_agent(final_score=0.8, coldkey="ck-lb-stopped")
+    max_set_id = None
+    async with _db.pool.acquire() as conn:
+        max_set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
+        # Pin the agent to the set explicitly so it falls in the leaderboard's window
+        # regardless of created_at ordering versus the set/competition row.
+        await conn.execute("UPDATE agents SET set_id = $1 WHERE agent_id = $2", max_set_id, stopped)
+
+    await disqualify_agent(stopped, "cheating")
+
+    rows = await get_evaluation_set_leaderboard_agents(max_set_id)
+    match = [r for r in rows if r["agent_id"] == stopped]
+    assert match, "stopped agent should still appear on the leaderboard"
+    assert match[0]["disqualified"] is True

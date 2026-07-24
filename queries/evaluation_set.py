@@ -48,8 +48,8 @@ def _sql_agents_in_window_cte(select_columns: str) -> str:
                 WHEN review.approval_review_status = 'rejected'
                     OR EXISTS (
                         SELECT 1
-                        FROM banned_coldkeys bc
-                        WHERE bc.miner_coldkey = a.miner_coldkey
+                        FROM disqualified_agent_ids dq
+                        WHERE dq.agent_id = a.agent_id
                     )
                 THEN true
                 ELSE false
@@ -456,8 +456,8 @@ async def get_evaluation_set_score_stats(conn: DatabaseConnection, set_id: int) 
                 )
                 AND NOT EXISTS (
                     SELECT 1
-                    FROM banned_coldkeys bc
-                    WHERE bc.miner_coldkey = previous_agent.miner_coldkey
+                    FROM disqualified_agent_ids dq
+                    WHERE dq.agent_id = previous_agent.agent_id
                 )
         )
         SELECT
@@ -741,8 +741,8 @@ async def get_approved_agents_for_set(conn: DatabaseConnection, set_id: int) -> 
           AND aa.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
           AND NOT EXISTS (
               SELECT 1
-              FROM banned_coldkeys bc
-              WHERE bc.miner_coldkey = a.miner_coldkey
+              FROM disqualified_agent_ids dq
+              WHERE dq.agent_id = a.agent_id
           )
           AND ass.status = 'finished'
           AND review.approval_review_status is distinct from 'rejected'
