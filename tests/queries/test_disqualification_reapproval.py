@@ -533,3 +533,84 @@ async def test_process_pending_stops_after_one_pass_on_permanent_failure(monkeyp
             b,
         )
     assert row_after["attempts"] > first_attempts
+
+
+@pytest.mark.anyio
+async def test_process_pending_skips_failing_job_and_processes_healthy_one(monkeypatch):
+    # A (older, permanently failing) must not starve B (newer, healthy) out of the same drain
+    # invocation: the claim query must advance past A once it has been attempted.
+    base = datetime.now(timezone.utc) - timedelta(days=2)
+    async with _db.pool.acquire() as conn:
+        a_leader = await _insert_scored_agent(
+            conn,
+            hotkey="A-leader",
+            final_score=0.50,
+            created_at=base,
+            approved=True,
+            approved_at=base,
+            system_verdict="approved",
+        )
+        failing_agent = await _insert_scored_agent(
+            conn,
+            hotkey="FAILING",
+            final_score=0.54,
+            created_at=base + timedelta(hours=1),
+            approved=True,
+            approved_at=base + timedelta(hours=1),
+            baseline_agent_id=a_leader,
+            system_verdict="approved",
+        )
+        healthy_agent = await _insert_scored_agent(
+            conn,
+            hotkey="HEALTHY",
+            final_score=0.70,
+            created_at=base + timedelta(hours=2),
+            approved=True,
+            approved_at=base + timedelta(hours=2),
+            baseline_agent_id=a_leader,
+            system_verdict="approved",
+        )
+        promotable = await _insert_scored_agent(
+            conn,
+            hotkey="PROMOTABLE",
+            final_score=0.75,
+            created_at=base + timedelta(hours=3),
+            approved=False,
+            system_verdict="rejected",
+        )
+        await _disqualify(conn, failing_agent)
+        await _disqualify(conn, healthy_agent)
+        async with conn.transaction():
+            # Enqueue the failing job FIRST (older) so it sits at the head of the pending queue.
+            await enqueue_disqualification_job(conn, agent_id=failing_agent, set_id=SET_ID)
+        async with conn.transaction():
+            await enqueue_disqualification_job(conn, agent_id=healthy_agent, set_id=SET_ID)
+
+    real_run_disqualification_reapproval = run_disqualification_reapproval
+
+    async def _fail_only_for_failing_agent(*, set_id, disqualified_agent_id):
+        if disqualified_agent_id == failing_agent:
+            raise RuntimeError("boom")
+        return await real_run_disqualification_reapproval(set_id=set_id, disqualified_agent_id=disqualified_agent_id)
+
+    monkeypatch.setattr(approval_module, "run_disqualification_reapproval", _fail_only_for_failing_agent)
+
+    processed = await process_pending_disqualification_jobs()
+    assert processed == 1
+
+    async with _db.pool.acquire() as conn:
+        failing_row = await conn.fetchrow(
+            "SELECT processed_at, error FROM disqualification_jobs WHERE agent_id = $1",
+            failing_agent,
+        )
+        healthy_row = await conn.fetchrow(
+            "SELECT processed_at, error FROM disqualification_jobs WHERE agent_id = $1",
+            healthy_agent,
+        )
+        assert await _is_approved(conn, promotable) is True  # proves healthy job's replay actually ran
+
+    assert failing_row["processed_at"] is None
+    assert failing_row["error"] is not None
+
+    assert healthy_row is not None
+    assert healthy_row["processed_at"] is not None  # B was NOT starved behind A

@@ -29,7 +29,15 @@ async def enqueue_disqualification_job(
 
 
 @db_operation
-async def claim_next_pending_disqualification_job(conn: DatabaseConnection) -> Record | None:
+async def claim_next_pending_disqualification_job(
+    conn: DatabaseConnection, exclude_ids: list[UUID] | None = None
+) -> Record | None:
+    """Claim the oldest pending job, optionally excluding ids already attempted this invocation.
+
+    The exclusion lets a single drain invocation skip past a job it already attempted (and that
+    failed, leaving it pending) so it advances to the next distinct pending job instead of being
+    starved behind it. See process_pending_disqualification_jobs in queries/approval.py.
+    """
     return await conn.fetchrow(
         """
         UPDATE disqualification_jobs
@@ -38,12 +46,14 @@ async def claim_next_pending_disqualification_job(conn: DatabaseConnection) -> R
             SELECT id
             FROM disqualification_jobs
             WHERE processed_at IS NULL
+              AND ($1::uuid[] IS NULL OR id <> ALL($1::uuid[]))
             ORDER BY created_at ASC
             FOR UPDATE SKIP LOCKED
             LIMIT 1
         )
         RETURNING id, agent_id, set_id
-        """
+        """,
+        exclude_ids,
     )
 
 

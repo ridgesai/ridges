@@ -431,23 +431,20 @@ async def process_pending_disqualification_jobs() -> int:
     claim + replay + mark commit independently and no row lock is held across the replay.
     A failure on one job records an error and the drain continues with the next.
 
-    Each invocation processes every currently-pending job at most once, then returns. A job
-    that fails its replay is left pending (error recorded) for a LATER invocation to retry,
-    but is not re-claimed again within this same invocation — otherwise a permanently-failing
-    job would be re-claimed forever (claim orders by created_at, filtering processed_at IS NULL)
-    and hang this drain.
+    Each invocation processes every DISTINCT currently-pending job at most once, then returns.
+    A job that fails its replay is left pending (error recorded) for a LATER invocation to retry.
+    The ids already attempted this invocation are passed to the claim query as an exclusion list,
+    so the claim advances past a stuck failing job to the next distinct pending job instead of
+    starving it forever behind the head-of-queue failure (claim orders by created_at, filtering
+    processed_at IS NULL, so without exclusion it would keep re-returning the same failing job).
     """
     processed = 0
-    seen: set = set()
+    attempted: list = []
     while True:
-        job = await claim_next_pending_disqualification_job()
+        job = await claim_next_pending_disqualification_job(attempted or None)
         if job is None:
             return processed
-        if job["id"] in seen:
-            # Only jobs we already attempted (and that failed, leaving them pending)
-            # remain — stop so a later invocation can retry them.
-            return processed
-        seen.add(job["id"])
+        attempted.append(job["id"])
         try:
             await run_disqualification_reapproval(
                 set_id=job["set_id"],
