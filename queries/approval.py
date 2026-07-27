@@ -196,6 +196,71 @@ async def project_next_approval_job_state(conn: DatabaseConnection) -> bool:
     return True
 
 
+async def _apply_incentive_decision(
+    conn: DatabaseConnection,
+    *,
+    agent_id: UUID,
+    set_id: int,
+    candidate: AgentRankingProfile,
+    leader: AgentRankingProfile | None,
+    decision_time: datetime,
+) -> str | None:
+    """Decide and record one incentive approval against an explicit leader.
+
+    Returns a rejection reason if the candidate does not qualify (nothing written),
+    or None on success (approved_agents row inserted).
+    """
+    improvement = calculate_relative_improvement(
+        candidate_score=candidate.final_score,
+        candidate_cost=candidate.avg_cost_usd,
+        leader_score=None if leader is None else leader.final_score,
+        leader_cost=None if leader is None else leader.avg_cost_usd,
+        performance_threshold=config.INCENTIVE_PERFORMANCE_THRESHOLD,
+        cost_threshold=config.INCENTIVE_COST_THRESHOLD,
+    )
+    if not improvement.qualified:
+        return "Candidate no longer meets the relative improvement threshold"
+
+    last_competition_improvement = None if leader is None else leader.approved_at
+    competition_elapsed_hours = _elapsed_hours(last_competition_improvement, decision_time)
+    time_multiplier = calculate_time_multiplier(
+        elapsed_hours=competition_elapsed_hours,
+        half_life_hours=config.INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS,
+        maximum=config.INCENTIVE_TIME_MULTIPLIER_MAX,
+    )
+    initial_reward_score = calculate_initial_reward_score(
+        relative_improvement_units=improvement.relative_improvement_units,
+        time_multiplier=time_multiplier,
+    )
+
+    await conn.execute(
+        """
+        INSERT INTO approved_agents (
+            agent_id,
+            set_id,
+            approved_at,
+            baseline_agent_id,
+            performance_delta,
+            cost_delta,
+            relative_improvement_units,
+            time_multiplier,
+            initial_reward_score
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (agent_id, set_id) DO NOTHING
+        """,
+        agent_id,
+        set_id,
+        decision_time,
+        None if leader is None else leader.agent_id,
+        improvement.performance_delta,
+        improvement.cost_delta,
+        improvement.relative_improvement_units,
+        time_multiplier,
+        initial_reward_score,
+    )
+    return None
+
+
 async def _insert_incentive_approval(
     conn: DatabaseConnection,
     agent_id: UUID,
@@ -237,57 +302,16 @@ async def _insert_incentive_approval(
         set_id,
         agent_id,
     )
-    improvement = calculate_relative_improvement(
-        candidate_score=candidate.final_score,
-        candidate_cost=candidate.avg_cost_usd,
-        leader_score=None if leader is None else leader.final_score,
-        leader_cost=None if leader is None else leader.avg_cost_usd,
-        performance_threshold=config.INCENTIVE_PERFORMANCE_THRESHOLD,
-        cost_threshold=config.INCENTIVE_COST_THRESHOLD,
-    )
-    if not improvement.qualified:
-        return "Candidate no longer meets the relative improvement threshold"
 
     decision_time: datetime = await conn.fetchval("SELECT NOW()")
-    last_competition_improvement = None if leader is None else leader.approved_at
-    competition_elapsed_hours = _elapsed_hours(last_competition_improvement, decision_time)
-    time_multiplier = calculate_time_multiplier(
-        elapsed_hours=competition_elapsed_hours,
-        half_life_hours=config.INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS,
-        maximum=config.INCENTIVE_TIME_MULTIPLIER_MAX,
+    return await _apply_incentive_decision(
+        conn,
+        agent_id=agent_id,
+        set_id=set_id,
+        candidate=candidate,
+        leader=leader,
+        decision_time=decision_time,
     )
-
-    initial_reward_score = calculate_initial_reward_score(
-        relative_improvement_units=improvement.relative_improvement_units,
-        time_multiplier=time_multiplier,
-    )
-
-    await conn.execute(
-        """
-        INSERT INTO approved_agents (
-            agent_id,
-            set_id,
-            approved_at,
-            baseline_agent_id,
-            performance_delta,
-            cost_delta,
-            relative_improvement_units,
-            time_multiplier,
-            initial_reward_score
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        ON CONFLICT (agent_id, set_id) DO NOTHING
-        """,
-        agent_id,
-        set_id,
-        decision_time,
-        None if leader is None else leader.agent_id,
-        improvement.performance_delta,
-        improvement.cost_delta,
-        improvement.relative_improvement_units,
-        time_multiplier,
-        initial_reward_score,
-    )
-    return None
 
 
 async def _get_ban_stable_leader(
