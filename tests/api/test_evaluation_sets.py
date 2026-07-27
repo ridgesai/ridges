@@ -31,6 +31,12 @@ async def remove_caching(monkeypatch):
     monkeypatch.setattr(
         evaluation_sets_endpoint, "_cached_build_approved_agents", evaluation_sets_endpoint._build_approved_agents
     )
+    monkeypatch.setattr(
+        evaluation_sets_endpoint, "_cached_build_live_overview", evaluation_sets_endpoint._build_overview
+    )
+    monkeypatch.setattr(
+        evaluation_sets_endpoint, "_cached_build_past_overview", evaluation_sets_endpoint._build_overview
+    )
     yield
     clear_hotkey_chain_cache()
 
@@ -107,6 +113,7 @@ async def _insert_finished_evaluation_run(
     problem_name: str = "problem-a",
     cost_usd: float = 0.1,
     runtime_seconds: int = 60,
+    verifier_reward: float = 1.0,
 ) -> None:
     started_at = datetime(2026, 5, 22, 2, tzinfo=timezone.utc)
     await conn.execute(
@@ -129,9 +136,44 @@ async def _insert_finished_evaluation_run(
         started_at,
         started_at,
         started_at + timedelta(seconds=runtime_seconds),
-        1.0,
+        verifier_reward,
         cost_usd,
     )
+
+
+async def _insert_scored_evaluation(
+    conn,
+    *,
+    agent_id,
+    set_id: int,
+    set_group: str,
+    solved: int,
+    total: int,
+    finished_at: datetime,
+    cost_usd: float = 0.1,
+    validator_hotkey: str = "validator-hotkey",
+):
+    evaluation_id = await _insert_evaluation(
+        conn,
+        agent_id=agent_id,
+        set_id=set_id,
+        set_group=set_group,
+        validator_hotkey=validator_hotkey,
+    )
+    for problem_index in range(total):
+        await _insert_finished_evaluation_run(
+            conn,
+            evaluation_id=evaluation_id,
+            problem_name=f"problem-{problem_index}",
+            cost_usd=cost_usd,
+            verifier_reward=1.0 if problem_index < solved else 0.0,
+        )
+    await conn.execute(
+        "UPDATE evaluations SET finished_at = $2 WHERE evaluation_id = $1",
+        evaluation_id,
+        finished_at,
+    )
+    return evaluation_id
 
 
 async def _insert_evaluations(conn, *, agent_id, set_id: int, set_groups: list[str]) -> None:
@@ -197,6 +239,217 @@ async def test_evaluation_sets_list_returns_all_sets():
 async def test_evaluation_sets_list_returns_empty_when_no_sets():
     result = await evaluation_sets_endpoint.evaluation_sets_list()
     assert result == []
+
+
+@pytest.mark.anyio
+async def test_evaluation_set_overview_returns_distributions_and_improvement_frontier():
+    finished_agent = uuid4()
+    screener_rejected_agent = uuid4()
+    pre_screening_rejected_agent = uuid4()
+    unresolved_agent = uuid4()
+    banned_agent = uuid4()
+    benchmark_agent = uuid4()
+    approved_at = datetime(2026, 5, 23, 4, tzinfo=timezone.utc)
+
+    async with _db.pool.acquire() as conn:
+        await conn.executemany(
+            """
+            INSERT INTO evaluation_sets (
+                set_id,
+                set_group,
+                problem_name,
+                created_at
+            ) VALUES ($1, $2, $3, $4)
+            """,
+            [
+                (2, set_group, f"problem-{problem_index}", SET_2_CREATED)
+                for set_group in ("screener_1", "screener_2", "validator")
+                for problem_index in range(4)
+            ],
+        )
+
+        await _insert_agent(
+            conn,
+            agent_id=finished_agent,
+            miner_hotkey="miner-finished",
+            status="finished",
+            created_at=AGENT_TS_SET_2,
+            set_id=2,
+        )
+        await _insert_agent(
+            conn,
+            agent_id=screener_rejected_agent,
+            miner_hotkey="miner-screener-rejected",
+            status="failed_screening_2",
+            created_at=AGENT_TS_SET_2 + timedelta(minutes=1),
+            set_id=2,
+        )
+        await _insert_agent(
+            conn,
+            agent_id=pre_screening_rejected_agent,
+            miner_hotkey="miner-pre-screening-rejected",
+            status="failed_pre_screening",
+            created_at=AGENT_TS_SET_2 + timedelta(minutes=2),
+            set_id=2,
+        )
+        await _insert_agent(
+            conn,
+            agent_id=unresolved_agent,
+            miner_hotkey="miner-unresolved",
+            status="pre_screening_needs_review",
+            created_at=AGENT_TS_SET_2 + timedelta(minutes=3),
+            set_id=2,
+        )
+        await _insert_agent(
+            conn,
+            agent_id=banned_agent,
+            miner_hotkey="miner-banned",
+            miner_coldkey="banned-coldkey",
+            status="finished",
+            created_at=AGENT_TS_SET_2 + timedelta(minutes=4),
+            set_id=2,
+        )
+        await _insert_agent(
+            conn,
+            agent_id=benchmark_agent,
+            miner_hotkey="miner-benchmark",
+            status="finished",
+            created_at=AGENT_TS_SET_2 + timedelta(minutes=5),
+            set_id=2,
+        )
+        await conn.execute(
+            "INSERT INTO banned_coldkeys (miner_coldkey, banned_reason) VALUES ($1, $2)",
+            "banned-coldkey",
+            "test",
+        )
+        await conn.execute(
+            "INSERT INTO benchmark_agent_ids (agent_id, description) VALUES ($1, $2)",
+            benchmark_agent,
+            "test benchmark",
+        )
+
+        # The later successful screener-1 retry scored higher, but the first
+        # successful completion is the score that advanced the agent.
+        await _insert_scored_evaluation(
+            conn,
+            agent_id=finished_agent,
+            set_id=2,
+            set_group="screener_1",
+            solved=1,
+            total=4,
+            finished_at=AGENT_TS_SET_2 + timedelta(hours=1),
+        )
+        await _insert_scored_evaluation(
+            conn,
+            agent_id=finished_agent,
+            set_id=2,
+            set_group="screener_1",
+            solved=3,
+            total=4,
+            finished_at=AGENT_TS_SET_2 + timedelta(hours=2),
+        )
+        await _insert_scored_evaluation(
+            conn,
+            agent_id=screener_rejected_agent,
+            set_id=2,
+            set_group="screener_1",
+            solved=2,
+            total=4,
+            finished_at=AGENT_TS_SET_2 + timedelta(hours=1),
+        )
+        await _insert_scored_evaluation(
+            conn,
+            agent_id=finished_agent,
+            set_id=2,
+            set_group="screener_2",
+            solved=3,
+            total=4,
+            finished_at=AGENT_TS_SET_2 + timedelta(hours=3),
+        )
+        await _insert_scored_evaluation(
+            conn,
+            agent_id=screener_rejected_agent,
+            set_id=2,
+            set_group="screener_2",
+            solved=1,
+            total=4,
+            finished_at=AGENT_TS_SET_2 + timedelta(hours=3),
+        )
+        await _insert_scored_evaluation(
+            conn,
+            agent_id=finished_agent,
+            set_id=2,
+            set_group="validator",
+            solved=3,
+            total=4,
+            finished_at=AGENT_TS_SET_2 + timedelta(hours=4),
+            cost_usd=0.2,
+        )
+
+        await _insert_approved_agent(
+            conn,
+            agent_id=finished_agent,
+            set_id=2,
+            approved_at=approved_at,
+        )
+        await _insert_agent_score(
+            conn,
+            agent_id=finished_agent,
+            miner_hotkey="miner-finished",
+            set_id=2,
+            final_score=0.75,
+        )
+
+    result = await evaluation_sets_endpoint.evaluation_set_overview(set_id=2)
+
+    pre_screening = result.performance_distribution.pre_screening
+    assert pre_screening.approved == 2
+    assert pre_screening.rejected == 1
+    assert pre_screening.unresolved == 1
+
+    assert len(result.performance_distribution.screener_1) == 10
+    assert len(result.performance_distribution.screener_2) == 10
+    assert len(result.performance_distribution.validator) == 10
+
+    assert result.performance_distribution.screener_1[2].agents == 1
+    assert result.performance_distribution.screener_1[5].agents == 1
+    assert sum(bucket.agents for bucket in result.performance_distribution.screener_1) == 2
+    assert result.performance_distribution.screener_2[2].agents == 1
+    assert result.performance_distribution.screener_2[7].agents == 1
+    assert result.performance_distribution.validator[7].agents == 1
+
+    assert result.performance_distribution.screener_1[2].min_score == 0.2
+    assert result.performance_distribution.screener_1[2].max_score == 0.3
+
+    assert len(result.performance_improvement) == 1
+    improvement = result.performance_improvement[0]
+    assert improvement.date == approved_at
+    assert improvement.agent_id == finished_agent
+    assert improvement.score == 0.75
+    assert improvement.cost == 0.2
+
+
+@pytest.mark.anyio
+async def test_evaluation_set_overview_returns_fixed_empty_buckets():
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
+
+    result = await evaluation_sets_endpoint.evaluation_set_overview(set_id=2)
+
+    assert result.performance_distribution.pre_screening.approved == 0
+    assert result.performance_distribution.pre_screening.rejected == 0
+    assert result.performance_distribution.pre_screening.unresolved == 0
+    assert result.performance_improvement == []
+
+    for buckets in (
+        result.performance_distribution.screener_1,
+        result.performance_distribution.screener_2,
+        result.performance_distribution.validator,
+    ):
+        assert len(buckets) == 10
+        assert sum(bucket.agents for bucket in buckets) == 0
+        assert buckets[0].min_score == 0
+        assert buckets[-1].max_score == 1
 
 
 @pytest.mark.anyio
