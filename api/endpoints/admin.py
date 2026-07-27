@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["admin"])
 admin_bearer = HTTPBearer(auto_error=False)
 
+# Retains references to fire-and-forget drain tasks so they can't be garbage-collected
+# before completion (asyncio only holds a weak reference to a bare create_task result).
+_background_tasks: set[asyncio.Task[None]] = set()
+
 
 class ColdkeyBanRequest(BaseModel):
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
@@ -89,7 +93,7 @@ async def put_disqualified_agent(agent_id: UUID, request: ColdkeyBanRequest) -> 
 
     set_id = await _enqueue_disqualification_job_operation(agent_id=agent_id)
     if set_id is not None:
-        asyncio.create_task(_run_disqualification_drain())
+        _fire_disqualification_drain()
 
     clear_all_ttl_caches()
     return disqualified
@@ -111,3 +115,10 @@ async def _run_disqualification_drain() -> None:
         await process_pending_disqualification_jobs()
     except Exception as exc:  # noqa: BLE001
         logger.error(f"Disqualification drain task failed: {type(exc).__name__}: {exc}")
+
+
+def _fire_disqualification_drain() -> None:
+    """Fire the drain as a background task, retaining a reference until it completes."""
+    task = asyncio.create_task(_run_disqualification_drain())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)

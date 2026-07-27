@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 import pytest
 
 import api.config as config
+import queries.approval as approval_module
 import utils.database as _db
 from queries.approval import process_pending_disqualification_jobs, run_disqualification_reapproval
 from queries.disqualification_job import count_pending_disqualification_jobs, enqueue_disqualification_job
@@ -482,3 +483,53 @@ async def test_process_pending_runs_enqueued_job():
     async with _db.pool.acquire() as conn:
         assert await _is_approved(conn, b) is False
         assert await _is_approved(conn, b1) is True  # 0.60 vs 0.50 = 20% > 3%
+
+
+@pytest.mark.anyio
+async def test_process_pending_stops_after_one_pass_on_permanent_failure(monkeypatch):
+    base = datetime.now(timezone.utc) - timedelta(days=2)
+    async with _db.pool.acquire() as conn:
+        b = await _insert_scored_agent(
+            conn,
+            hotkey="B",
+            final_score=0.54,
+            created_at=base,
+            approved=True,
+            approved_at=base,
+            system_verdict="approved",
+        )
+        await _disqualify(conn, b)
+        async with conn.transaction():
+            await enqueue_disqualification_job(conn, agent_id=b, set_id=SET_ID)
+
+    async def _always_raise(*, set_id, disqualified_agent_id):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(approval_module, "run_disqualification_reapproval", _always_raise)
+
+    processed = await process_pending_disqualification_jobs()
+    assert processed == 0
+
+    assert await count_pending_disqualification_jobs() == 1
+    async with _db.pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT attempts, error, processed_at FROM disqualification_jobs WHERE agent_id = $1",
+            b,
+        )
+    assert row is not None
+    assert row["processed_at"] is None
+    assert row["error"] is not None
+    assert row["attempts"] <= 2
+
+    first_attempts = row["attempts"]
+
+    # A second invocation (e.g. a later startup) must retry the still-pending failing job.
+    processed_again = await process_pending_disqualification_jobs()
+    assert processed_again == 0
+
+    async with _db.pool.acquire() as conn:
+        row_after = await conn.fetchrow(
+            "SELECT attempts FROM disqualification_jobs WHERE agent_id = $1",
+            b,
+        )
+    assert row_after["attempts"] > first_attempts

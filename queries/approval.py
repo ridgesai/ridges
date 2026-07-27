@@ -425,17 +425,29 @@ async def run_disqualification_reapproval(
 
 
 async def process_pending_disqualification_jobs() -> int:
-    """Drain all pending disqualification jobs. Safe to call on a task or at startup.
+    """Drain currently-pending disqualification jobs. Safe to call on a task or at startup.
 
     Not a @db_operation: each nested query acquires its own connection so a job's
     claim + replay + mark commit independently and no row lock is held across the replay.
     A failure on one job records an error and the drain continues with the next.
+
+    Each invocation processes every currently-pending job at most once, then returns. A job
+    that fails its replay is left pending (error recorded) for a LATER invocation to retry,
+    but is not re-claimed again within this same invocation — otherwise a permanently-failing
+    job would be re-claimed forever (claim orders by created_at, filtering processed_at IS NULL)
+    and hang this drain.
     """
     processed = 0
+    seen: set = set()
     while True:
         job = await claim_next_pending_disqualification_job()
         if job is None:
             return processed
+        if job["id"] in seen:
+            # Only jobs we already attempted (and that failed, leaving them pending)
+            # remain — stop so a later invocation can retry them.
+            return processed
+        seen.add(job["id"])
         try:
             await run_disqualification_reapproval(
                 set_id=job["set_id"],
