@@ -147,7 +147,9 @@ async def agent_code(agent_id: UUID) -> str:
         AgentStatus.failed_pre_screening,
         AgentStatus.pre_screening_needs_review,
         AgentStatus.screening_1,
+        AgentStatus.failed_screening_1,
         AgentStatus.screening_2,
+        AgentStatus.failed_screening_2,
         AgentStatus.evaluating,
     ]
     if agent.status in hidden_statuses:
