@@ -261,6 +261,209 @@ async def _apply_incentive_decision(
     return None
 
 
+def _relative_improvement_qualifies(candidate: AgentRankingProfile, leader: AgentRankingProfile | None) -> bool:
+    improvement = calculate_relative_improvement(
+        candidate_score=candidate.final_score,
+        candidate_cost=candidate.avg_cost_usd,
+        leader_score=None if leader is None else leader.final_score,
+        leader_cost=None if leader is None else leader.avg_cost_usd,
+        performance_threshold=config.INCENTIVE_PERFORMANCE_THRESHOLD,
+        cost_threshold=config.INCENTIVE_COST_THRESHOLD,
+    )
+    return improvement.qualified
+
+
+@db_operation
+async def run_disqualification_reapproval(
+    conn: DatabaseConnection,
+    *,
+    set_id: int,
+    disqualified_agent_id: UUID,
+) -> None:
+    """Replay downstream incentive decisions after an agent is disqualified.
+
+    Walks every agent whose incentive decision was made after the disqualified agent B's
+    decision, in decision order, re-running the approve/reject gate against a leader lineage
+    that no longer includes B.
+    """
+
+    async with conn.conn.transaction():
+        await conn.execute(
+            "SELECT pg_advisory_xact_lock($1, $2)",
+            INCENTIVE_APPROVAL_LOCK_NAMESPACE,
+            set_id,
+        )
+
+        # B's score and its decision moment. final_score comes from agent_scores; the decision
+        # time is approval_jobs.projected_at of B's latest decision job (write-once, exists for
+        # approved AND rejected agents). Do NOT use agent_scores.created_at (that is upload time).
+        b_row = await conn.fetchrow(
+            """
+            SELECT ass.final_score, job.projected_at
+            FROM agent_scores ass
+            LEFT JOIN agent_approval_states st
+                ON st.agent_id = ass.agent_id AND st.set_id = ass.set_id
+            LEFT JOIN approval_jobs job
+                ON job.job_id = st.latest_job_id
+            WHERE ass.agent_id = $1 AND ass.set_id = $2
+            """,
+            disqualified_agent_id,
+            set_id,
+        )
+        if b_row is None or b_row["projected_at"] is None:
+            # B was never scored, or never reached an incentive decision: nothing downstream
+            # was gated against it as leader.
+            return
+
+        b_approved = await conn.fetchrow(
+            "SELECT baseline_agent_id FROM approved_agents WHERE agent_id = $1 AND set_id = $2",
+            disqualified_agent_id,
+            set_id,
+        )
+        if b_approved is None:
+            # B never held an approved_agents row, so it never occupied the leader lineage:
+            # nothing downstream was ever gated against it as leader. Nothing to replay.
+            return
+        baseline_agent_id = b_approved["baseline_agent_id"]
+
+        await conn.execute(
+            "DELETE FROM approved_agents WHERE agent_id = $1 AND set_id = $2",
+            disqualified_agent_id,
+            set_id,
+        )
+
+        current_leader = await _ranking_profile_for_agent(conn, baseline_agent_id, set_id)
+
+        candidates = await conn.fetch(
+            """
+            SELECT
+                ass.agent_id,
+                ass.final_score,
+                ass.created_at,
+                job.projected_at,
+                rt.avg_cost_usd,
+                (aa.agent_id IS NOT NULL) AS is_approved
+            FROM agent_scores ass
+            INNER JOIN agents agent ON agent.agent_id = ass.agent_id
+            INNER JOIN agent_approval_states st
+                ON st.agent_id = ass.agent_id AND st.set_id = ass.set_id
+            INNER JOIN approval_jobs job
+                ON job.job_id = st.latest_job_id
+            LEFT JOIN approved_agents aa
+                ON aa.agent_id = ass.agent_id AND aa.set_id = ass.set_id
+            LEFT JOIN LATERAL (
+                SELECT AVG(eh.avg_cost_usd) AS avg_cost_usd
+                FROM evaluations_hydrated eh
+                WHERE eh.agent_id = ass.agent_id
+                  AND eh.set_id = ass.set_id
+                  AND eh.evaluation_set_group = 'validator'::EvaluationSetGroup
+                  AND eh.status = 'success'::EvaluationStatus
+            ) rt ON true
+            WHERE ass.set_id = $1
+              AND ass.agent_id <> $2
+              AND ass.final_score >= $3
+              AND job.projected_at > $4
+              AND ass.validator_count = $5
+              AND st.system_verdict IN ('approved', 'rejected')
+              AND NOT EXISTS (
+                  SELECT 1 FROM benchmark_agent_ids b WHERE b.agent_id = ass.agent_id
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM disqualified_agent_ids dq WHERE dq.agent_id = ass.agent_id
+              )
+            ORDER BY job.projected_at ASC, ass.agent_id ASC
+            """,
+            set_id,
+            disqualified_agent_id,
+            b_row["final_score"],
+            b_row["projected_at"],
+            config.NUM_EVALS_PER_AGENT,
+        )
+
+        decision_time: datetime = await conn.fetchval("SELECT NOW()")
+
+        for row in candidates:
+            candidate = AgentRankingProfile(
+                final_score=row["final_score"],
+                avg_cost_usd=row["avg_cost_usd"],
+                created_at=row["created_at"],
+                agent_id=row["agent_id"],
+            )
+            if row["is_approved"]:
+                if _relative_improvement_qualifies(candidate, current_leader):
+                    current_leader = candidate
+                else:
+                    await conn.execute(
+                        "DELETE FROM approved_agents WHERE agent_id = $1 AND set_id = $2",
+                        row["agent_id"],
+                        set_id,
+                    )
+                    await _set_system_verdict(conn, row["agent_id"], set_id, "rejected")
+            else:
+                reason = await _apply_incentive_decision(
+                    conn,
+                    agent_id=row["agent_id"],
+                    set_id=set_id,
+                    candidate=candidate,
+                    leader=current_leader,
+                    decision_time=decision_time,
+                )
+                if reason is None:
+                    await _set_system_verdict(conn, row["agent_id"], set_id, "approved")
+                    current_leader = AgentRankingProfile(
+                        final_score=candidate.final_score,
+                        avg_cost_usd=candidate.avg_cost_usd,
+                        created_at=candidate.created_at,
+                        agent_id=candidate.agent_id,
+                        approved_at=decision_time,
+                    )
+
+
+async def _ranking_profile_for_agent(
+    conn: DatabaseConnection, agent_id: UUID | None, set_id: int
+) -> AgentRankingProfile | None:
+    if agent_id is None:
+        return None
+    row = await conn.fetchrow(
+        """
+        SELECT ass.agent_id, ass.final_score, ass.approved_at, ass.created_at, rt.avg_cost_usd
+        FROM agent_scores ass
+        LEFT JOIN LATERAL (
+            SELECT AVG(eh.avg_cost_usd) AS avg_cost_usd
+            FROM evaluations_hydrated eh
+            WHERE eh.agent_id = ass.agent_id AND eh.set_id = ass.set_id
+              AND eh.evaluation_set_group = 'validator'::EvaluationSetGroup
+              AND eh.status = 'success'::EvaluationStatus
+        ) rt ON true
+        WHERE ass.agent_id = $1 AND ass.set_id = $2
+        """,
+        agent_id,
+        set_id,
+    )
+    if row is None:
+        return None
+    return AgentRankingProfile(
+        final_score=row["final_score"],
+        avg_cost_usd=row["avg_cost_usd"],
+        created_at=row["created_at"],
+        agent_id=row["agent_id"],
+        approved_at=row["approved_at"],
+    )
+
+
+async def _set_system_verdict(conn: DatabaseConnection, agent_id: UUID, set_id: int, verdict: str) -> None:
+    await conn.execute(
+        """
+        UPDATE agent_approval_states
+        SET system_verdict = $3, updated_at = NOW()
+        WHERE agent_id = $1 AND set_id = $2
+        """,
+        agent_id,
+        set_id,
+        verdict,
+    )
+
+
 async def _insert_incentive_approval(
     conn: DatabaseConnection,
     agent_id: UUID,
