@@ -15,6 +15,7 @@ WHITELISTED_VALIDATORS = [
     {"name": "Kraken", "hotkey": "5G8iwBWxPjCfu9Fc3jFP37j1Ax5KypDDmUPUSoS9aWAsSCGT"},
     {"name": "TAO.com", "hotkey": "5DP7gcGeTfGfmCzxVNCXQvWBxu58TrrkdikuHQNnGDYb7THU"},
     {"name": "TAOApp", "hotkey": "5F4U4P2j3ctdDS45naSUCxzYAHWTHarsY5JQdcRmMkc8UQZM"},
+    {"name": "WildSage Labs (RT21)", "hotkey": "5G3f2z52RVdSdjCftuW5t9WodCaEGik4zt3V8V9tpqqWSL62"},
     # Developer validators, used for testing
     {"name": "Adam's Validator", "hotkey": "5Dy9FDg5jshHS7MirAFrRsKiFa6GPRMaiHC4Zng4HAgyi8yf"},
     {"name": "Alex's Validator (1)", "hotkey": "5HpMvcM593HmizCA3ARLNifxjPSLbN3M5RHYy4GiEqmB3x9n"},
