@@ -433,6 +433,90 @@ def test_best_effort_verifier_report_is_appended_to_eval_logs(tmp_path: Path) ->
     assert '"suite": "swebench"' in result.eval_logs
 
 
+def test_junit_xml_fills_test_results_when_json_artifacts_are_missing(tmp_path: Path) -> None:
+    summary = make_summary(tmp_path, test_results=None, verifier_result={"rewards": {"reward": 0.0}})
+    write(
+        summary.trial_dir / "verifier" / "junit.xml",
+        """<testsuites><testsuite name="pytest">
+            <testcase classname="tests.test_store" name="test_reload" />
+            <testcase classname="tests.test_store" name="test_contract"><failure message="assert" /></testcase>
+            <testcase classname="tests.test_store" name="test_boom"><error message="crash" /></testcase>
+            <testcase classname="tests.test_store" name="test_later"><skipped message="not yet" /></testcase>
+        </testsuite></testsuites>""",
+    )
+
+    result = result_from_summary(summary)
+
+    assert [(test.name, test.status.value) for test in result.test_results] == [
+        ("tests.test_store::test_reload", "pass"),
+        ("tests.test_store::test_contract", "fail"),
+        ("tests.test_store::test_boom", "fail"),
+        ("tests.test_store::test_later", "skip"),
+    ]
+    assert {test.category.value for test in result.test_results} == {"default"}
+
+
+def test_junit_xml_with_zero_testcases_returns_empty_results(tmp_path: Path) -> None:
+    summary = make_summary(tmp_path, test_results=None, verifier_result={"rewards": {"reward": 0.0}})
+    write(
+        summary.trial_dir / "verifier" / "junit.xml",
+        '<testsuites><testsuite name="pytest" errors="1" tests="0" /></testsuites>',
+    )
+
+    result = result_from_summary(summary)
+
+    assert result.test_results == []
+
+
+def test_malformed_junit_xml_returns_empty_results(tmp_path: Path) -> None:
+    summary = make_summary(tmp_path, test_results=None, verifier_result={"rewards": {"reward": 0.0}})
+    write(summary.trial_dir / "verifier" / "junit.xml", "<testsuites><testsuite")
+
+    result = result_from_summary(summary)
+
+    assert result.test_results == []
+
+
+def test_test_results_json_takes_precedence_over_junit_xml(tmp_path: Path) -> None:
+    summary = make_summary(
+        tmp_path,
+        test_results=successful_test_results(),
+        verifier_result=successful_verifier_result(),
+    )
+    write(
+        summary.trial_dir / "verifier" / "junit.xml",
+        '<testsuite><testcase classname="tests" name="test_from_junit" /></testsuite>',
+    )
+
+    result = result_from_summary(summary)
+
+    assert [test.name for test in result.test_results] == ["status updated"]
+
+
+def test_nested_junit_xml_under_verifier_dir_is_discovered(tmp_path: Path) -> None:
+    summary = make_summary(tmp_path, test_results=None, verifier_result=successful_verifier_result())
+    write(
+        summary.trial_dir / "verifier" / "logs" / "verifier" / "junit.xml",
+        '<testsuite><testcase classname="tests" name="test_nested" /></testsuite>',
+    )
+
+    result = result_from_summary(summary)
+
+    assert [(test.name, test.status.value) for test in result.test_results] == [("tests::test_nested", "pass")]
+
+
+def test_pytest_xml_is_accepted_as_junit_fallback(tmp_path: Path) -> None:
+    summary = make_summary(tmp_path, test_results=None, verifier_result=successful_verifier_result())
+    write(
+        summary.trial_dir / "artifacts" / "pytest.xml",
+        '<testsuite><testcase name="test_bare_name" /></testsuite>',
+    )
+
+    result = result_from_summary(summary)
+
+    assert [(test.name, test.status.value) for test in result.test_results] == [("test_bare_name", "pass")]
+
+
 def test_missing_verifier_result_maps_to_validator_internal_error(tmp_path: Path) -> None:
     summary = make_summary(tmp_path, verifier_result=None)
 
