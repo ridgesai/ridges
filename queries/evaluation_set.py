@@ -320,6 +320,299 @@ async def get_all_evaluation_sets(
 
 
 @db_operation
+async def get_evaluation_set_pre_screening_distribution(
+    conn: DatabaseConnection,
+    set_id: int,
+) -> asyncpg.Record:
+    return await conn.fetchrow(
+        f"""
+        WITH {_SQL_SET_WINDOW_CTE},
+        {_sql_agents_in_window_cte("a.agent_id, a.status")}
+        SELECT
+            COUNT(*) FILTER (
+                WHERE aiw.status IS NOT NULL
+                  AND aiw.status NOT IN (
+                      'pre_screening',
+                      'failed_pre_screening',
+                      'pre_screening_needs_review'
+                  )
+            )::int AS approved,
+            COUNT(*) FILTER (
+                WHERE aiw.status = 'failed_pre_screening'
+            )::int AS rejected,
+            COUNT(*) FILTER (
+                WHERE aiw.status IS NULL
+                   OR aiw.status IN (
+                       'pre_screening',
+                       'pre_screening_needs_review'
+                   )
+            )::int AS unresolved
+        FROM agents_in_window aiw
+        WHERE NOT aiw.disqualified
+          AND NOT EXISTS (
+              SELECT 1
+              FROM unapproved_agent_ids unapproved
+              WHERE unapproved.agent_id = aiw.agent_id
+          )
+        """,
+        set_id,
+    )
+
+
+@db_operation
+async def get_evaluation_set_score_distribution(
+    conn: DatabaseConnection,
+    set_id: int,
+) -> list[asyncpg.Record]:
+    """Return one histogram count per populated score bucket and stage."""
+
+    return await conn.fetch(
+        f"""
+        WITH {_SQL_SET_WINDOW_CTE},
+        {_sql_agents_in_window_cte("a.agent_id, a.status")},
+        eligible_agents AS MATERIALIZED (
+            SELECT aiw.agent_id
+            FROM agents_in_window aiw
+            WHERE NOT aiw.disqualified
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM unapproved_agent_ids unapproved
+                  WHERE unapproved.agent_id = aiw.agent_id
+              )
+        ),
+        screening_scores AS (
+            SELECT DISTINCT ON (
+                evaluation.agent_id,
+                evaluation.evaluation_set_group
+            )
+                evaluation.agent_id,
+                evaluation.evaluation_set_group::text AS stage,
+                evaluation.score
+            FROM evaluations_hydrated evaluation
+            JOIN eligible_agents eligible
+                ON eligible.agent_id = evaluation.agent_id
+            WHERE evaluation.set_id = $1
+              AND evaluation.evaluation_set_group IN (
+                  'screener_1'::EvaluationSetGroup,
+                  'screener_2'::EvaluationSetGroup
+              )
+              AND evaluation.status = 'success'::EvaluationStatus
+              AND evaluation.score IS NOT NULL
+            ORDER BY
+                evaluation.agent_id,
+                evaluation.evaluation_set_group,
+                evaluation.finished_at ASC NULLS LAST,
+                evaluation.created_at ASC,
+                evaluation.evaluation_id ASC
+        ),
+        validator_evaluations AS MATERIALIZED (
+            SELECT
+                evaluation.evaluation_id,
+                evaluation.agent_id,
+                evaluation.validator_hotkey
+            FROM evaluations_hydrated evaluation
+            JOIN eligible_agents eligible
+                ON eligible.agent_id = evaluation.agent_id
+            WHERE evaluation.set_id = $1
+              AND evaluation.evaluation_set_group = 'validator'::EvaluationSetGroup
+              AND evaluation.status = 'success'::EvaluationStatus
+        ),
+        validator_counts AS (
+            SELECT
+                agent_id,
+                COUNT(DISTINCT validator_hotkey)::int AS validator_count
+            FROM validator_evaluations
+            GROUP BY agent_id
+        ),
+        validator_problem_count AS (
+            SELECT COUNT(*)::float AS problem_count
+            FROM evaluation_sets
+            WHERE set_id = $1
+              AND set_group = 'validator'::EvaluationSetGroup
+        ),
+        validator_consensus_by_problem AS (
+            SELECT
+                evaluation.agent_id,
+                evaluation_set.problem_name,
+                COUNT(DISTINCT evaluation.validator_hotkey) FILTER (
+                    WHERE run.solved IS TRUE
+                )::int AS solved_validator_count
+            FROM validator_evaluations evaluation
+            JOIN evaluation_runs_hydrated run
+                ON run.evaluation_id = evaluation.evaluation_id
+            JOIN evaluation_sets evaluation_set
+                ON evaluation_set.set_id = $1
+               AND evaluation_set.set_group = 'validator'::EvaluationSetGroup
+               AND evaluation_set.problem_name = run.problem_name
+            GROUP BY evaluation.agent_id, evaluation_set.problem_name
+        ),
+        validator_scores AS (
+            SELECT
+                validator.agent_id,
+                (
+                    COUNT(*) FILTER (
+                        WHERE problem.solved_validator_count = validator.validator_count
+                    )::float
+                    / problem_count.problem_count
+                ) AS score
+            FROM validator_counts validator
+            CROSS JOIN validator_problem_count problem_count
+            LEFT JOIN validator_consensus_by_problem problem
+                ON problem.agent_id = validator.agent_id
+            WHERE validator.validator_count >= $2
+              AND problem_count.problem_count > 0
+            GROUP BY
+                validator.agent_id,
+                validator.validator_count,
+                problem_count.problem_count
+        ),
+        stage_scores AS (
+            SELECT agent_id, stage, score
+            FROM screening_scores
+            UNION ALL
+            SELECT agent_id, 'validator'::text AS stage, score
+            FROM validator_scores
+        )
+        SELECT
+            stage,
+            LEAST(9, FLOOR(score * 10)::int) AS bucket_index,
+            COUNT(DISTINCT agent_id)::int AS agents
+        FROM stage_scores
+        WHERE score >= 0
+          AND score <= 1
+        GROUP BY stage, bucket_index
+        ORDER BY stage, bucket_index
+        """,
+        set_id,
+        NUM_EVALS_PER_AGENT,
+    )
+
+
+@db_operation
+async def get_evaluation_set_performance_improvement(
+    conn: DatabaseConnection,
+    set_id: int,
+) -> list[asyncpg.Record]:
+    """Return sparse approved-leader frontier changes for an evaluation set."""
+
+    return await conn.fetch(
+        """
+        WITH approved_metrics AS MATERIALIZED (
+            SELECT
+                approved.agent_id,
+                approved.approved_at AS date,
+                agent.created_at,
+                COALESCE(
+                    score.final_score,
+                    CASE
+                        WHEN jsonb_typeof(
+                            approval_job.input_snapshot
+                                #> '{evaluation_context,final_validator_score}'
+                        ) = 'number'
+                        THEN (
+                            approval_job.input_snapshot
+                                #>> '{evaluation_context,final_validator_score}'
+                        )::double precision
+                    END
+                ) AS score,
+                validator_cost.cost
+            FROM approved_agents approved
+            JOIN agents agent
+                ON agent.agent_id = approved.agent_id
+            LEFT JOIN agent_scores score
+                ON score.agent_id = approved.agent_id
+               AND score.set_id = approved.set_id
+            LEFT JOIN agent_approval_states approval_state
+                ON approval_state.agent_id = approved.agent_id
+               AND approval_state.set_id = approved.set_id
+            LEFT JOIN approval_jobs approval_job
+                ON approval_job.job_id = approval_state.latest_job_id
+            LEFT JOIN agent_final_review_statuses review
+                ON review.agent_id = approved.agent_id
+               AND review.set_id = approved.set_id
+            LEFT JOIN LATERAL (
+                SELECT AVG(evaluation.avg_cost_usd)::double precision AS cost
+                FROM evaluations_hydrated evaluation
+                WHERE evaluation.agent_id = approved.agent_id
+                  AND evaluation.set_id = approved.set_id
+                  AND evaluation.evaluation_set_group = 'validator'::EvaluationSetGroup
+                  AND evaluation.status = 'success'::EvaluationStatus
+            ) validator_cost ON TRUE
+            WHERE approved.set_id = $1
+              AND review.approval_review_status IS DISTINCT FROM 'rejected'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM benchmark_agent_ids benchmark
+                  WHERE benchmark.agent_id = approved.agent_id
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM banned_coldkeys banned
+                  WHERE banned.miner_coldkey = agent.miner_coldkey
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM unapproved_agent_ids unapproved
+                  WHERE unapproved.agent_id = approved.agent_id
+              )
+        ),
+        complete_metrics AS MATERIALIZED (
+            SELECT *
+            FROM approved_metrics
+            WHERE score >= 0
+              AND score <= 1
+        )
+        SELECT
+            metric.date,
+            metric.score,
+            metric.cost,
+            metric.agent_id
+        FROM complete_metrics metric
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM complete_metrics prior
+            WHERE (
+                    prior.date < metric.date
+                    OR (
+                        prior.date = metric.date
+                        AND prior.agent_id::text < metric.agent_id::text
+                    )
+                  )
+              AND (
+                    prior.score > metric.score
+                    OR (
+                        prior.score = metric.score
+                        AND (
+                            (
+                                prior.cost IS NOT NULL
+                                AND metric.cost IS NULL
+                            )
+                            OR (
+                                prior.cost IS NOT NULL
+                                AND metric.cost IS NOT NULL
+                                AND prior.cost < metric.cost
+                            )
+                            OR (
+                                prior.cost IS NOT DISTINCT FROM metric.cost
+                                AND (
+                                    prior.created_at < metric.created_at
+                                    OR (
+                                        prior.created_at = metric.created_at
+                                        AND prior.agent_id::text < metric.agent_id::text
+                                    )
+                                )
+                            )
+                        )
+                    )
+                  )
+        )
+        ORDER BY metric.date ASC, metric.agent_id ASC
+        """,
+        set_id,
+    )
+
+
+@db_operation
 async def get_evaluation_set_submission_stats(conn: DatabaseConnection, set_id: int) -> asyncpg.Record:
     """Retrieve submission statistics for a specific evaluation set.
 
