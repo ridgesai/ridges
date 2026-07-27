@@ -207,6 +207,7 @@ PRE_SCREENING_JUDGE_RUN_LOOP = PRE_SCREENING_PROJECTOR_RUN_LOOP
 PRE_SCREENING_PROJECTOR_POLL_INTERVAL_SECONDS = int(os.getenv("PRE_SCREENING_PROJECTOR_POLL_INTERVAL_SECONDS", "5"))
 AUTO_APPROVAL_ENABLED = os.getenv("AUTO_APPROVAL_ENABLED", "false").lower() == "true"
 AUTO_APPROVAL_RUN_LOOP = SHOULD_RUN_LOOPS and AUTO_APPROVAL_ENABLED
+DISQUALIFICATION_REAPPROVAL_RUN = SHOULD_RUN_LOOPS
 AUTO_APPROVAL_POLICY_VERSION = os.getenv("AUTO_APPROVAL_POLICY_VERSION", "approval-v1")
 APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS = int(os.getenv("APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS", "5"))
 
@@ -309,6 +310,7 @@ logger.info(f"Pre-Screening Projector Loop Enabled: {PRE_SCREENING_PROJECTOR_RUN
 logger.info(f"Pre-Screening Projector Poll Interval: {PRE_SCREENING_PROJECTOR_POLL_INTERVAL_SECONDS} second(s)")
 logger.info(f"Auto Approval Enabled: {AUTO_APPROVAL_ENABLED}")
 logger.info(f"Auto Approval Projector Loop Enabled: {AUTO_APPROVAL_RUN_LOOP}")
+logger.info(f"Disqualification Reapproval Enabled: {DISQUALIFICATION_REAPPROVAL_RUN}")
 logger.info(f"Approval Projector Poll Interval: {APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS} second(s)")
 logger.info(f"Earliest SET ID with good data: {EARLIEST_SET_ID_WITH_GOOD_DATA}")
 logger.info(f"Incentive Start Set ID: {INCENTIVE_START_SET_ID}")

@@ -18,10 +18,10 @@ from api.endpoints.admin import (
 @pytest.fixture
 async def clean_tables(postgres_db):
     async with _db.pool.acquire() as conn:
-        await conn.execute("TRUNCATE disqualified_agents, agents RESTART IDENTITY CASCADE")
+        await conn.execute("TRUNCATE disqualification_jobs, disqualified_agents, agents RESTART IDENTITY CASCADE")
     yield
     async with _db.pool.acquire() as conn:
-        await conn.execute("TRUNCATE disqualified_agents, agents RESTART IDENTITY CASCADE")
+        await conn.execute("TRUNCATE disqualification_jobs, disqualified_agents, agents RESTART IDENTITY CASCADE")
 
 
 async def _insert_agent() -> UUID:
@@ -78,3 +78,28 @@ async def test_disqualify_unknown_agent_returns_404(clean_tables) -> None:
     with pytest.raises(HTTPException) as exc:
         await put_disqualified_agent(uuid4(), ColdkeyBanRequest(reason="cheating"))
     assert exc.value.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_disqualify_enqueues_reapproval_job(clean_tables) -> None:
+    agent_id = uuid4()
+    async with _db.pool.acquire() as conn:
+        # seed competition + agent with a set_id
+        await conn.execute("INSERT INTO competitions (set_id) VALUES (71) ON CONFLICT DO NOTHING")
+        await conn.execute(
+            """
+            INSERT INTO agents (agent_id, miner_hotkey, miner_coldkey, name, version_num,
+                                status, created_at, ip_address, set_id)
+            VALUES ($1, $2, $3, 'test-agent', 0, 'evaluating', NOW(), '127.0.0.1', 71)
+            """,
+            agent_id,
+            f"hotkey-{agent_id}",
+            f"coldkey-{agent_id}",
+        )
+
+    result = await put_disqualified_agent(agent_id, ColdkeyBanRequest(reason="cheating"))
+    assert result.agent_id == agent_id
+
+    async with _db.pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT agent_id FROM disqualification_jobs WHERE agent_id = $1", agent_id)
+    assert row is not None

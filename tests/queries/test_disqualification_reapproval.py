@@ -5,7 +5,8 @@ import pytest
 
 import api.config as config
 import utils.database as _db
-from queries.approval import run_disqualification_reapproval
+from queries.approval import process_pending_disqualification_jobs, run_disqualification_reapproval
+from queries.disqualification_job import count_pending_disqualification_jobs, enqueue_disqualification_job
 
 SET_ID = 71
 
@@ -437,3 +438,47 @@ async def test_orders_by_decision_time_not_upload_time():
         # X decided before B → not in B's downstream set → untouched despite its high score/late upload.
         assert await _is_approved(conn, x) is False
         assert await _system_verdict(conn, x) == "rejected"
+
+
+@pytest.mark.anyio
+async def test_process_pending_runs_enqueued_job():
+    base = datetime.now(timezone.utc) - timedelta(days=2)
+    async with _db.pool.acquire() as conn:
+        a = await _insert_scored_agent(
+            conn,
+            hotkey="A",
+            final_score=0.50,
+            created_at=base,
+            approved=True,
+            approved_at=base,
+            system_verdict="approved",
+        )
+        b = await _insert_scored_agent(
+            conn,
+            hotkey="B",
+            final_score=0.54,
+            created_at=base + timedelta(hours=1),
+            approved=True,
+            approved_at=base + timedelta(hours=1),
+            baseline_agent_id=a,
+            system_verdict="approved",
+        )
+        b1 = await _insert_scored_agent(
+            conn,
+            hotkey="B1",
+            final_score=0.60,
+            created_at=base + timedelta(hours=2),
+            approved=False,
+            system_verdict="rejected",
+        )
+        await _disqualify(conn, b)
+        async with conn.transaction():
+            await enqueue_disqualification_job(conn, agent_id=b, set_id=SET_ID)
+
+    processed = await process_pending_disqualification_jobs()
+    assert processed == 1
+    assert await count_pending_disqualification_jobs() == 0
+
+    async with _db.pool.acquire() as conn:
+        assert await _is_approved(conn, b) is False
+        assert await _is_approved(conn, b1) is True  # 0.60 vs 0.50 = 20% > 3%

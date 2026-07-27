@@ -29,6 +29,7 @@ from api.loops.validator_heartbeat_timeout import validator_heartbeat_timeout_lo
 from api.src.endpoints.upload import router as upload_router
 from api.src.middleware.request_interceptor import RequestInterceptorMiddleware
 from api.src.utils.sentry import initialize_sentry
+from queries.approval import process_pending_disqualification_jobs
 from queries.evaluation import set_all_unfinished_evaluation_runs_to_errored
 from utils.bittensor import subtensor_client
 from utils.database import deinitialize_database, initialize_database
@@ -95,6 +96,14 @@ async def lifespan(app: FastAPI):
         await set_all_unfinished_evaluation_runs_to_errored(
             error_message="Platform crashed while running this evaluation"
         )
+
+    if config.DISQUALIFICATION_REAPPROVAL_RUN:
+        try:
+            drained = await process_pending_disqualification_jobs()
+            if drained:
+                logger.info(f"Drained {drained} pending disqualification job(s) on startup")
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"Startup disqualification drain failed: {type(exc).__name__}: {exc}")
 
     yield
 

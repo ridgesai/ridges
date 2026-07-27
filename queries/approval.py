@@ -17,6 +17,11 @@ from models.approval import (
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
 from queries.banned_coldkey import get_banned_coldkey, lock_coldkey_ban_state
+from queries.disqualification_job import (
+    claim_next_pending_disqualification_job,
+    mark_disqualification_job_processed,
+    record_disqualification_job_error,
+)
 from queries.evaluation import (
     AgentRankingProfile,
     get_approved_leader_ranking_for_set,
@@ -417,6 +422,30 @@ async def run_disqualification_reapproval(
                         agent_id=candidate.agent_id,
                         approved_at=decision_time,
                     )
+
+
+async def process_pending_disqualification_jobs() -> int:
+    """Drain all pending disqualification jobs. Safe to call on a task or at startup.
+
+    Not a @db_operation: each nested query acquires its own connection so a job's
+    claim + replay + mark commit independently and no row lock is held across the replay.
+    A failure on one job records an error and the drain continues with the next.
+    """
+    processed = 0
+    while True:
+        job = await claim_next_pending_disqualification_job()
+        if job is None:
+            return processed
+        try:
+            await run_disqualification_reapproval(
+                set_id=job["set_id"],
+                disqualified_agent_id=job["agent_id"],
+            )
+            await mark_disqualification_job_processed(job["id"])
+            processed += 1
+        except Exception as exc:  # noqa: BLE001 - one bad job must not wedge the drain
+            logger.error(f"Disqualification reapproval job {job['id']} failed: {type(exc).__name__}: {exc}")
+            await record_disqualification_job_error(job["id"], f"{type(exc).__name__}: {exc}")
 
 
 async def _ranking_profile_for_agent(
