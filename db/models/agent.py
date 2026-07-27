@@ -84,6 +84,24 @@ class DisqualifiedAgent(Base):
     )
 
 
+class DisqualificationJob(Base):
+    __tablename__ = "disqualification_jobs"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")
+    )
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), sa.ForeignKey("agents.agent_id", ondelete="CASCADE"), nullable=False
+    )
+    set_id: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")
+    )
+    processed_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
+    attempts: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
+    error: Mapped[Optional[str]] = mapped_column(sa.Text)
+
+
 class BenchmarkAgentId(Base):
     __tablename__ = "benchmark_agent_ids"
 
