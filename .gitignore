@@ -37,3 +37,5 @@ utils/registered_hotkeys.json
 
 .idea/
 /scripts/
+
+/eval-run-artifacts/
