@@ -21,6 +21,10 @@ class MinerPatchApplyError(RidgesAgentPhaseError):
     """Raised so Harbor skips verifier when applying the patch fails."""
 
 
+class ExecTransportError(RuntimeError):
+    """Raised when the exec transport to a task container dies mid-command."""
+
+
 class RidgesRuntimeExceptionChainItem(BaseModel):
     """One exception in the captured runtime exception chain."""
 

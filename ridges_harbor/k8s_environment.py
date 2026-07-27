@@ -27,6 +27,7 @@ import io
 import logging
 import re
 import shlex
+import ssl
 import tarfile
 from pathlib import Path
 from typing import Any, Sequence
@@ -40,6 +41,9 @@ from kubernetes import config as k8s_config
 from kubernetes.client.rest import ApiException
 from kubernetes.stream import stream
 from tenacity import retry, stop_after_attempt, wait_exponential
+from websocket import WebSocketException
+
+from ridges_harbor.runtime_contract import ExecTransportError
 
 logger = logging.getLogger(__name__)
 
@@ -357,24 +361,40 @@ class KubernetesEnvironment(BaseEnvironment):
             )
 
             if timeout_sec is not None:
-                stdout, stderr = await asyncio.wait_for(
-                    asyncio.to_thread(self._read_exec_output, resp),
-                    timeout=timeout_sec,
-                )
+                try:
+                    stdout, stderr = await asyncio.wait_for(
+                        asyncio.to_thread(self._read_exec_output, resp),
+                        timeout=timeout_sec,
+                    )
+                except asyncio.TimeoutError:
+                    return ExecResult(
+                        stdout=None,
+                        stderr=f"Command timed out after {timeout_sec} seconds",
+                        return_code=124,
+                    )
             else:
                 stdout, stderr = await asyncio.to_thread(self._read_exec_output, resp)
 
             resp.run_forever(timeout=0)
-            return_code = resp.returncode if resp.returncode is not None else 0
+            try:
+                return_code = resp.returncode
+            except (TypeError, ValueError, KeyError, IndexError) as exc:
+                raise ExecTransportError(
+                    f"Exec stream to Pod {self.pod_name} returned a malformed exit status: {exc!r}"
+                ) from exc
+            if return_code is None:
+                raise ExecTransportError(f"Exec stream to Pod {self.pod_name} closed without an exit status")
             return ExecResult(stdout=stdout, stderr=stderr, return_code=return_code)
 
-        except asyncio.TimeoutError:
-            return ExecResult(
-                stdout=None,
-                stderr=f"Command timed out after {timeout_sec} seconds",
-                return_code=124,
-            )
+        except ExecTransportError:
+            raise
+        except (WebSocketException, ConnectionError, TimeoutError, ssl.SSLError) as exc:
+            raise ExecTransportError(f"Exec stream to Pod {self.pod_name} died: {exc!r}") from exc
         except ApiException as exc:
+            if exc.status == 0:
+                raise ExecTransportError(
+                    f"Exec stream to Pod {self.pod_name} failed to establish: {exc.reason}"
+                ) from exc
             if exc.status == 404:
                 return ExecResult(stdout=None, stderr=f"Pod {self.pod_name} not found (404)", return_code=1)
             return ExecResult(
@@ -1187,7 +1207,6 @@ async def _registry_image_exists(
     """
     import base64
     import http.client
-    import ssl
     import urllib.parse
 
     name, tag = task_name.lower(), digest_tag

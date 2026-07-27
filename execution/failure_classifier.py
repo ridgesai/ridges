@@ -39,6 +39,7 @@ from ridges_harbor._stdlib_contract import (
 from ridges_harbor.docker_runtime import VerifierEgressSetupError
 from ridges_harbor.runner import HarborRunSummary
 from ridges_harbor.runtime_contract import (
+    ExecTransportError,
     MinerInvalidPatchError,
     MinerPatchApplyError,
     MinerRuntimeError,
@@ -104,6 +105,7 @@ VERIFIER_INTERNAL_EXCEPTION_NAMES = {
 ENVIRONMENT_INTERNAL_EXCEPTION_NAMES = {
     AgentSetupTimeoutError.__name__,
     EnvironmentStartTimeoutError.__name__,
+    ExecTransportError.__name__,
 }
 
 MINER_RUNTIME_EXCEPTION_NAMES = {MinerRuntimeError.__name__}
