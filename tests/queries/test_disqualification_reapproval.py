@@ -789,3 +789,71 @@ async def test_surviving_approved_agent_snapshot_unchanged():
     # b1 promoted as an independent sanity check that the replay actually ran.
     async with _db.pool.acquire() as conn:
         assert await _is_approved(conn, b1) is True
+
+
+@pytest.mark.anyio
+async def test_surviving_approved_agent_snapshot_updates_against_new_leader():
+    """C stays approved after B is disqualified and B1 becomes the new leader, but C's
+    relative_improvement_units/time_multiplier/initial_reward_score/baseline_agent_id must be
+    recomputed against B1 — not left as originally computed against B. C's own approved_at must
+    NOT change.
+    """
+    base = datetime.now(timezone.utc) - timedelta(days=10)
+    async with _db.pool.acquire() as conn:
+        a = await _insert_scored_agent(
+            conn,
+            hotkey="A",
+            final_score=0.50,
+            created_at=base,
+            approved=True,
+            approved_at=base,
+            system_verdict="approved",
+        )
+        b = await _insert_scored_agent(
+            conn,
+            hotkey="B",
+            final_score=0.54,
+            created_at=base + timedelta(hours=1),
+            approved=True,
+            approved_at=base + timedelta(hours=1),
+            baseline_agent_id=a,
+            system_verdict="approved",
+        )
+        b1 = await _insert_scored_agent(
+            conn,
+            hotkey="B1",
+            final_score=0.60,
+            created_at=base + timedelta(hours=2),
+            approved=False,
+            system_verdict="rejected",
+        )
+        c_approved_at = base + timedelta(hours=3)
+        c = await _insert_scored_agent(
+            conn,
+            hotkey="C",
+            final_score=0.62,
+            created_at=base + timedelta(hours=3),
+            approved=True,
+            approved_at=c_approved_at,
+            baseline_agent_id=b,
+            system_verdict="approved",
+        )
+        # capture C's snapshot BEFORE the reapproval, computed against B (per the
+        # fixture's default relative_improvement_units=1/time_multiplier=1/initial_reward_score=1)
+        before = await conn.fetchrow("SELECT * FROM approved_agents WHERE agent_id = $1 AND set_id = $2", c, SET_ID)
+        await _disqualify(conn, b)
+
+    await run_disqualification_reapproval(set_id=SET_ID, disqualified_agent_id=b)
+
+    async with _db.pool.acquire() as conn:
+        # B1 promoted against A (0.60 vs 0.50 = 20% > 3% threshold), becomes leader.
+        assert await _is_approved(conn, b1) is True
+        # C still qualifies against B1 (0.62 vs 0.60 = 3.33% > 3% threshold) -> stays approved.
+        assert await _is_approved(conn, c) is True
+
+        after = await conn.fetchrow("SELECT * FROM approved_agents WHERE agent_id = $1 AND set_id = $2", c, SET_ID)
+        # Snapshot fields must have been recomputed against B1, not left as-computed against B.
+        assert after["baseline_agent_id"] == b1
+        assert after["relative_improvement_units"] != before["relative_improvement_units"]
+        # C's OWN approved_at must be untouched.
+        assert after["approved_at"] == c_approved_at == before["approved_at"]

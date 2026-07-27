@@ -266,18 +266,6 @@ async def _apply_incentive_decision(
     return None
 
 
-def _relative_improvement_qualifies(candidate: AgentRankingProfile, leader: AgentRankingProfile | None) -> bool:
-    improvement = calculate_relative_improvement(
-        candidate_score=candidate.final_score,
-        candidate_cost=candidate.avg_cost_usd,
-        leader_score=None if leader is None else leader.final_score,
-        leader_cost=None if leader is None else leader.avg_cost_usd,
-        performance_threshold=config.INCENTIVE_PERFORMANCE_THRESHOLD,
-        cost_threshold=config.INCENTIVE_COST_THRESHOLD,
-    )
-    return improvement.qualified
-
-
 @db_operation
 async def run_disqualification_reapproval(
     conn: DatabaseConnection,
@@ -397,7 +385,46 @@ async def run_disqualification_reapproval(
                 approved_at=row["approved_at"],
             )
             if row["is_approved"]:
-                if _relative_improvement_qualifies(candidate, current_leader):
+                improvement = calculate_relative_improvement(
+                    candidate_score=candidate.final_score,
+                    candidate_cost=candidate.avg_cost_usd,
+                    leader_score=None if current_leader is None else current_leader.final_score,
+                    leader_cost=None if current_leader is None else current_leader.avg_cost_usd,
+                    performance_threshold=config.INCENTIVE_PERFORMANCE_THRESHOLD,
+                    cost_threshold=config.INCENTIVE_COST_THRESHOLD,
+                )
+                if improvement.qualified:
+                    last_leader_approved_at = None if current_leader is None else current_leader.approved_at
+                    elapsed_hours = _elapsed_hours(last_leader_approved_at, decision_time)
+                    time_multiplier = calculate_time_multiplier(
+                        elapsed_hours=elapsed_hours,
+                        half_life_hours=config.INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS,
+                        maximum=config.INCENTIVE_TIME_MULTIPLIER_MAX,
+                    )
+                    initial_reward_score = calculate_initial_reward_score(
+                        relative_improvement_units=improvement.relative_improvement_units,
+                        time_multiplier=time_multiplier,
+                    )
+                    await conn.execute(
+                        """
+                        UPDATE approved_agents
+                        SET baseline_agent_id = $3,
+                            performance_delta = $4,
+                            cost_delta = $5,
+                            relative_improvement_units = $6,
+                            time_multiplier = $7,
+                            initial_reward_score = $8
+                        WHERE agent_id = $1 AND set_id = $2
+                        """,
+                        row["agent_id"],
+                        set_id,
+                        None if current_leader is None else current_leader.agent_id,
+                        improvement.performance_delta,
+                        improvement.cost_delta,
+                        improvement.relative_improvement_units,
+                        time_multiplier,
+                        initial_reward_score,
+                    )
                     current_leader = candidate
                 else:
                     await conn.execute(
