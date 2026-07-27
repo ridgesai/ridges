@@ -29,6 +29,7 @@ from ridges_harbor._stdlib_contract import (
     SETUP_LOG_FILENAME,
 )
 from ridges_harbor.runtime_contract import (
+    ExecTransportError,
     MinerInvalidPatchError,
     MinerPatchApplyError,
     MinerRuntimeError,
@@ -188,6 +189,10 @@ class RidgesMinerAgent(BaseInstalledAgent):
                 log_filename,
                 f"[state] cancelled\n[detail] {cancelled_detail}\n",
             )
+            raise
+
+        except ExecTransportError as exception:
+            self._append_log(log_filename, f"[exception]\n{exception}\n")
             raise
 
         except Exception as exception:
