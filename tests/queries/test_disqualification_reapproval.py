@@ -8,6 +8,7 @@ import queries.approval as approval_module
 import utils.database as _db
 from queries.approval import process_pending_disqualification_jobs, run_disqualification_reapproval
 from queries.disqualification_job import count_pending_disqualification_jobs, enqueue_disqualification_job
+from utils.incentives import calculate_time_multiplier
 
 SET_ID = 71
 
@@ -614,3 +615,177 @@ async def test_process_pending_skips_failing_job_and_processes_healthy_one(monke
 
     assert healthy_row is not None
     assert healthy_row["processed_at"] is not None  # B was NOT starved behind A
+
+
+@pytest.mark.anyio
+async def test_kept_leader_preserves_approved_at_for_time_multiplier():
+    # Regression test for the bug where a kept already-approved leader lost its real
+    # `approved_at` (rebuilt via a fresh AgentRankingProfile defaulting to None), flooring
+    # `time_multiplier` to 1.0 for whatever gets promoted against it later.
+    #
+    # Chain: A (seed leader) -> B (disqualified) -> D (already-approved, still qualifies,
+    # kept as the new leader with its REAL approved_at far in the past) -> E (rejected,
+    # promoted against D).
+    #
+    # Threshold check (INCENTIVE_PERFORMANCE_THRESHOLD = 3%):
+    #   D=0.55 vs seeded leader A=0.50  -> +10%    -> qualifies (kept as leader)
+    #   E=0.60 vs new leader D=0.55     -> +9.09%  -> qualifies (promoted)
+    base = datetime.now(timezone.utc) - timedelta(days=2)
+    d_approved_at = datetime.now(timezone.utc) - timedelta(days=5)
+    async with _db.pool.acquire() as conn:
+        a = await _insert_scored_agent(
+            conn,
+            hotkey="A",
+            final_score=0.50,
+            created_at=base,
+            approved=True,
+            approved_at=base,
+            system_verdict="approved",
+        )
+        b = await _insert_scored_agent(
+            conn,
+            hotkey="B",
+            final_score=0.54,
+            created_at=base + timedelta(hours=1),
+            approved=True,
+            approved_at=base + timedelta(hours=1),
+            baseline_agent_id=a,
+            system_verdict="approved",
+        )
+        d = await _insert_scored_agent(
+            conn,
+            hotkey="D",
+            final_score=0.55,
+            created_at=base + timedelta(hours=2),
+            approved=True,
+            approved_at=d_approved_at,
+            baseline_agent_id=b,
+            system_verdict="approved",
+        )
+        e = await _insert_scored_agent(
+            conn,
+            hotkey="E",
+            final_score=0.60,
+            created_at=base + timedelta(hours=3),
+            approved=False,
+            system_verdict="rejected",
+        )
+        await _disqualify(conn, b)
+
+    before = datetime.now(timezone.utc)
+    await run_disqualification_reapproval(set_id=SET_ID, disqualified_agent_id=b)
+    after = datetime.now(timezone.utc)
+
+    async with _db.pool.acquire() as conn:
+        assert await _is_approved(conn, a) is True
+        assert await _is_approved(conn, b) is False
+        assert await _is_approved(conn, d) is True  # kept: still qualifies against A
+        assert await _system_verdict(conn, d) == "approved"
+        assert await _is_approved(conn, e) is True  # promoted against D
+        assert await _system_verdict(conn, e) == "approved"
+
+        e_row = await conn.fetchrow(
+            "SELECT time_multiplier, baseline_agent_id FROM approved_agents WHERE agent_id = $1 AND set_id = $2",
+            e,
+            SET_ID,
+        )
+        assert e_row["baseline_agent_id"] == d
+
+        # If the bug were present, current_leader for D would have approved_at=None, so
+        # E's elapsed_hours would floor to 0.0 and time_multiplier would be exactly 1.0.
+        floored_multiplier = calculate_time_multiplier(
+            elapsed_hours=0.0,
+            half_life_hours=config.INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS,
+            maximum=config.INCENTIVE_TIME_MULTIPLIER_MAX,
+        )
+        assert floored_multiplier == pytest.approx(1.0)
+        assert e_row["time_multiplier"] > floored_multiplier + 0.1
+
+        # Sanity bound: elapsed_hours must reflect D's real approved_at (~5 days), not 0.
+        min_elapsed_hours = (before - d_approved_at).total_seconds() / 3600
+        max_elapsed_hours = (after - d_approved_at).total_seconds() / 3600
+        expected_min = calculate_time_multiplier(
+            elapsed_hours=min_elapsed_hours,
+            half_life_hours=config.INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS,
+            maximum=config.INCENTIVE_TIME_MULTIPLIER_MAX,
+        )
+        expected_max = calculate_time_multiplier(
+            elapsed_hours=max_elapsed_hours,
+            half_life_hours=config.INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS,
+            maximum=config.INCENTIVE_TIME_MULTIPLIER_MAX,
+        )
+        assert expected_min - 1e-9 <= e_row["time_multiplier"] <= expected_max + 1e-9
+
+
+@pytest.mark.anyio
+async def test_surviving_approved_agent_snapshot_unchanged():
+    # Spec test: byte-for-byte frozen-snapshot proof that a surviving (still-qualifying,
+    # untouched) approved agent's approved_agents row is left completely alone by the replay,
+    # not merely that it is still present (_is_approved only checks existence).
+    base = datetime.now(timezone.utc) - timedelta(days=2)
+    async with _db.pool.acquire() as conn:
+        a = await _insert_scored_agent(
+            conn,
+            hotkey="A",
+            final_score=0.50,
+            created_at=base,
+            approved=True,
+            approved_at=base,
+            system_verdict="approved",
+        )
+        b = await _insert_scored_agent(
+            conn,
+            hotkey="B",
+            final_score=0.54,
+            created_at=base + timedelta(hours=1),
+            approved=True,
+            approved_at=base + timedelta(hours=1),
+            baseline_agent_id=a,
+            system_verdict="approved",
+        )
+        b1 = await _insert_scored_agent(
+            conn,
+            hotkey="B1",
+            final_score=0.55,
+            created_at=base + timedelta(hours=2),
+            approved=False,
+            system_verdict="rejected",
+        )
+        await _disqualify(conn, b)
+
+    async with _db.pool.acquire() as conn:
+        # A is untouched by B's disqualification: it decided before B and never competes again.
+        before_row = dict(
+            await conn.fetchrow(
+                """
+                SELECT approved_at, baseline_agent_id, performance_delta, cost_delta,
+                       relative_improvement_units, time_multiplier, initial_reward_score
+                FROM approved_agents
+                WHERE agent_id = $1 AND set_id = $2
+                """,
+                a,
+                SET_ID,
+            )
+        )
+
+    await run_disqualification_reapproval(set_id=SET_ID, disqualified_agent_id=b)
+
+    async with _db.pool.acquire() as conn:
+        assert await _is_approved(conn, a) is True
+        after_row = dict(
+            await conn.fetchrow(
+                """
+                SELECT approved_at, baseline_agent_id, performance_delta, cost_delta,
+                       relative_improvement_units, time_multiplier, initial_reward_score
+                FROM approved_agents
+                WHERE agent_id = $1 AND set_id = $2
+                """,
+                a,
+                SET_ID,
+            )
+        )
+
+    assert after_row == before_row
+    # b1 promoted as an independent sanity check that the replay actually ran.
+    async with _db.pool.acquire() as conn:
+        assert await _is_approved(conn, b1) is True

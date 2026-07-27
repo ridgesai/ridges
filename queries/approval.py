@@ -345,6 +345,7 @@ async def run_disqualification_reapproval(
                 ass.agent_id,
                 ass.final_score,
                 ass.created_at,
+                ass.approved_at,
                 job.projected_at,
                 rt.avg_cost_usd,
                 (aa.agent_id IS NOT NULL) AS is_approved
@@ -393,6 +394,7 @@ async def run_disqualification_reapproval(
                 avg_cost_usd=row["avg_cost_usd"],
                 created_at=row["created_at"],
                 agent_id=row["agent_id"],
+                approved_at=row["approved_at"],
             )
             if row["is_approved"]:
                 if _relative_improvement_qualifies(candidate, current_leader):
