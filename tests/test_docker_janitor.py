@@ -72,7 +72,9 @@ class FakeImage:
 
 
 class FakeClient:
-    def __init__(self, containers=None, networks=None, images=None, *, vanished_container_ids=(), vanished_image_ids=()):
+    def __init__(
+        self, containers=None, networks=None, images=None, *, vanished_container_ids=(), vanished_image_ids=()
+    ):
         self._containers = containers or []
         self._networks = networks or []
         self._images = images or []
@@ -122,9 +124,7 @@ class FakeClient:
                 return [c.summary() for c in result]
 
             def images(self):
-                return [
-                    {"Id": i.id, "RepoTags": list(i.tags) if i.tags is not None else None} for i in client._images
-                ]
+                return [{"Id": i.id, "RepoTags": list(i.tags) if i.tags is not None else None} for i in client._images]
 
             def prune_builds(self):
                 client.pruned_builds = True
