@@ -326,6 +326,7 @@ async def validator_register_as_validator(
         running_agent_timeout_seconds=config.VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS,
         running_eval_timeout_seconds=config.VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS,
         max_evaluation_run_log_size_bytes=config.VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES,
+        environment_build_timeout_multiplier=config.VALIDATOR_ENVIRONMENT_BUILD_TIMEOUT_MULTIPLIER,
     )
 
 
@@ -374,6 +375,7 @@ async def validator_register_as_screener(
         running_agent_timeout_seconds=config.VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS,
         running_eval_timeout_seconds=config.VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS,
         max_evaluation_run_log_size_bytes=config.VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES,
+        environment_build_timeout_multiplier=config.VALIDATOR_ENVIRONMENT_BUILD_TIMEOUT_MULTIPLIER,
     )
 
 
