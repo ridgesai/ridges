@@ -52,6 +52,7 @@ session_id = None
 running_agent_timeout_seconds = None
 running_eval_timeout_seconds = None
 max_evaluation_run_log_size_bytes = None
+environment_build_timeout_multiplier = None
 
 
 execution_engine = None
@@ -782,6 +783,7 @@ async def main():
     global running_agent_timeout_seconds
     global running_eval_timeout_seconds
     global max_evaluation_run_log_size_bytes
+    global environment_build_timeout_multiplier
     global execution_engine
 
     setup_logging()
@@ -840,12 +842,14 @@ async def main():
     running_agent_timeout_seconds = register_response.running_agent_timeout_seconds
     running_eval_timeout_seconds = register_response.running_eval_timeout_seconds
     max_evaluation_run_log_size_bytes = register_response.max_evaluation_run_log_size_bytes
+    environment_build_timeout_multiplier = register_response.environment_build_timeout_multiplier
 
     logger.info("Registered validator:")
     logger.info(f"  Session ID: {session_id}")
     logger.info(f"  Running Agent Timeout: {running_agent_timeout_seconds} second(s)")
     logger.info(f"  Running Evaluation Timeout: {running_eval_timeout_seconds} second(s)")
     logger.info(f"  Max Evaluation Run Log Size: {max_evaluation_run_log_size_bytes} byte(s)")
+    logger.info(f"  Environment Build Timeout Multiplier: {environment_build_timeout_multiplier}x")
 
     execution_engine = ExecutionEngine(
         inference_url=config.RIDGES_INFERENCE_GATEWAY_URL,
@@ -854,6 +858,7 @@ async def main():
         max_agent_timeout_sec=running_agent_timeout_seconds,
         max_eval_timeout_sec=running_eval_timeout_seconds,
         max_cost_usd=config.RIDGES_MAX_COST_USD,
+        build_timeout_multiplier=environment_build_timeout_multiplier,
     )
 
     # Start the send heartbeat loop
