@@ -546,3 +546,77 @@ async def test_catch_all_never_raises_when_one_expected_log_path_is_a_directory(
     assert exc_info.value.error_code == EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR
     assert exc_info.value.__cause__ is original_error
     assert "job-level failure details" in exc_info.value.extra["agent_logs"]
+
+
+@pytest.mark.anyio
+async def test_evaluate_forwards_build_timeout_multiplier(tmp_path: Path, monkeypatch) -> None:
+    task_dir = tmp_path / "cache" / "sha256_fake" / "update-status-file"
+    task_dir.mkdir(parents=True)
+    agent_path = tmp_path / "agent.py"
+    write(agent_path, "def agent_main(_input):\n    return ''\n")
+    captured: dict[str, object] = {}
+
+    async def fake_resolve_task_dir(self, execution_spec, problem_name, fetch_task_url):
+        return task_dir
+
+    async def fake_run_task(task_dir_arg, **kwargs):
+        captured.update(kwargs)
+        return make_summary(
+            tmp_path,
+            test_results=None,
+            verifier_result=successful_verifier_result(),
+        )
+
+    monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
+    monkeypatch.setattr(engine_module, "run_task", fake_run_task)
+
+    engine = ExecutionEngine(
+        "http://inference",
+        harbor_results_dir=tmp_path / "results",
+        build_timeout_multiplier=2.5,
+    )
+
+    await engine.evaluate(
+        evaluation_run_id=uuid4(),
+        problem_name="update-status-file",
+        execution_spec=valid_execution_spec(),
+        agent_path=agent_path,
+        agent_code=None,
+    )
+
+    assert captured["environment_build_timeout_multiplier"] == 2.5
+
+
+@pytest.mark.anyio
+async def test_evaluate_defaults_build_timeout_multiplier_to_none(tmp_path: Path, monkeypatch) -> None:
+    task_dir = tmp_path / "cache" / "sha256_fake" / "update-status-file"
+    task_dir.mkdir(parents=True)
+    agent_path = tmp_path / "agent.py"
+    write(agent_path, "def agent_main(_input):\n    return ''\n")
+    captured: dict[str, object] = {}
+
+    async def fake_resolve_task_dir(self, execution_spec, problem_name, fetch_task_url):
+        return task_dir
+
+    async def fake_run_task(task_dir_arg, **kwargs):
+        captured.update(kwargs)
+        return make_summary(
+            tmp_path,
+            test_results=None,
+            verifier_result=successful_verifier_result(),
+        )
+
+    monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
+    monkeypatch.setattr(engine_module, "run_task", fake_run_task)
+
+    engine = ExecutionEngine("http://inference", harbor_results_dir=tmp_path / "results")
+
+    await engine.evaluate(
+        evaluation_run_id=uuid4(),
+        problem_name="update-status-file",
+        execution_spec=valid_execution_spec(),
+        agent_path=agent_path,
+        agent_code=None,
+    )
+
+    assert captured["environment_build_timeout_multiplier"] is None
