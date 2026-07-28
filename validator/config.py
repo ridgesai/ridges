@@ -5,6 +5,7 @@ import re
 from bittensor_wallet.wallet import Wallet
 from dotenv import load_dotenv
 
+from utils.docker import get_prune_timeout_seconds
 from utils.logger import setup_logging
 from utils.validator_hotkeys import validator_hotkey_to_name
 
@@ -230,13 +231,14 @@ CLEANUP_DOCKER_DRY_RUN = os.getenv("CLEANUP_DOCKER_DRY_RUN", "false").lower() ==
 CLEANUP_STOPPED_GRACE_MINUTES = max(5, int(os.getenv("CLEANUP_STOPPED_GRACE_MINUTES", "45")))
 CLEANUP_RUNNING_TTL_HOURS = max(2, int(os.getenv("CLEANUP_RUNNING_TTL_HOURS", "4")))
 CLEANUP_IMAGE_TAG_GRACE_HOURS = max(1, int(os.getenv("CLEANUP_IMAGE_TAG_GRACE_HOURS", "6")))
-CLEANUP_DISK_PRESSURE_PERCENT = min(100, max(50, int(os.getenv("CLEANUP_DISK_PRESSURE_PERCENT", "80"))))
+CLEANUP_DISK_PRESSURE_PERCENT = min(100, max(50, int(os.getenv("CLEANUP_DISK_PRESSURE_PERCENT", "75"))))
 if CLEANUP_ENABLED and CLEANUP_DOCKER_ENABLED:
     logger.info(f"Docker Janitor: dry_run={CLEANUP_DOCKER_DRY_RUN}")
     logger.info(f"Docker Janitor Stopped-Container Grace: {CLEANUP_STOPPED_GRACE_MINUTES} minute(s)")
     logger.info(f"Docker Janitor Running-Container TTL: {CLEANUP_RUNNING_TTL_HOURS} hour(s)")
     logger.info(f"Docker Janitor Image Tag Grace: {CLEANUP_IMAGE_TAG_GRACE_HOURS} hour(s)")
     logger.info(f"Docker Janitor Disk Pressure Threshold: {CLEANUP_DISK_PRESSURE_PERCENT}%")
+    logger.info(f"Docker Janitor Prune Timeout: {get_prune_timeout_seconds()} second(s)")
 
 # --- Environment Backend ---
 RIDGES_ENVIRONMENT_TYPE = os.getenv("RIDGES_ENVIRONMENT_TYPE", "docker")
