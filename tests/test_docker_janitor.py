@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from docker.errors import NotFound as docker_errors_NotFound
 
 import utils.docker as docker_utils
 from utils.docker import (
@@ -19,6 +20,7 @@ def _iso(age: timedelta) -> str:
 
 class FakeContainer:
     def __init__(self, name, status, *, labeled=True, age=timedelta(hours=2), image_id="sha256:aaa"):
+        self.id = f"id-{name}"
         self.name = name
         self.status = status
         self.labels = {TRIAL_LABEL: "t123"} if labeled else {}
@@ -30,6 +32,17 @@ class FakeContainer:
 
     def remove(self, force=False):
         self.removed = True
+
+    def summary(self):
+        """The bulk /containers/json representation of this container."""
+        names = self.summary_names if getattr(self, "summary_names", None) else [f"/{self.name}"]
+        return {
+            "Id": self.id,
+            "Names": names,
+            "ImageID": self.attrs.get("ImageID"),
+            "Image": self.attrs.get("Image"),
+            "Labels": self.labels,
+        }
 
 
 class FakeNetwork:
@@ -59,10 +72,12 @@ class FakeImage:
 
 
 class FakeClient:
-    def __init__(self, containers=None, networks=None, images=None):
+    def __init__(self, containers=None, networks=None, images=None, *, vanished_container_ids=(), vanished_image_ids=()):
         self._containers = containers or []
         self._networks = networks or []
         self._images = images or []
+        self.vanished_container_ids = set(vanished_container_ids)
+        self.vanished_image_ids = set(vanished_image_ids)
         self.removed_tags = []
         self.pruned_images = False
         self.pruned_builds = False
@@ -70,19 +85,26 @@ class FakeClient:
         client = self
 
         class Containers:
-            def list(self, all=False, filters=None):
-                result = client._containers
-                if filters and "label" in filters:
-                    result = [c for c in result if filters["label"] in c.labels]
-                return list(result)
+            def get(self, container_id):
+                if container_id in client.vanished_container_ids:
+                    raise docker_errors_NotFound(f"No such container: {container_id}")
+                for c in client._containers:
+                    if c.id == container_id or c.name == container_id:
+                        return c
+                raise docker_errors_NotFound(f"No such container: {container_id}")
 
         class Networks:
             def list(self):
                 return list(client._networks)
 
         class Images:
-            def list(self):
-                return list(client._images)
+            def get(self, image_id):
+                if image_id in client.vanished_image_ids:
+                    raise docker_errors_NotFound(f"No such image: {image_id}")
+                for i in client._images:
+                    if i.id == image_id:
+                        return i
+                raise docker_errors_NotFound(f"No such image: {image_id}")
 
             def remove(self, tag, force=False, noprune=False):
                 assert force is False and noprune is True
@@ -90,12 +112,23 @@ class FakeClient:
 
             def prune(self, filters=None):
                 client.pruned_images = True
-                return {"SpaceReclaimed": 0}
+                return {"SpaceReclaimed": 123}
 
         class Api:
+            def containers(self, all=False, filters=None):
+                result = client._containers
+                if filters and "label" in filters:
+                    result = [c for c in result if filters["label"] in c.labels]
+                return [c.summary() for c in result]
+
+            def images(self):
+                return [
+                    {"Id": i.id, "RepoTags": list(i.tags) if i.tags is not None else None} for i in client._images
+                ]
+
             def prune_builds(self):
                 client.pruned_builds = True
-                return {"SpaceReclaimed": 0}
+                return {"SpaceReclaimed": 456}
 
         self.containers = Containers()
         self.networks = Networks()
@@ -107,6 +140,7 @@ class FakeClient:
 def inject_client(monkeypatch):
     def _inject(client):
         monkeypatch.setattr(docker_utils, "docker_client", client)
+        monkeypatch.setattr(docker_utils, "docker_client_long_timeout", client)
         return client
 
     return _inject
@@ -316,7 +350,8 @@ def test_future_last_tag_time_kept(inject_client):
 
 
 def test_reference_via_inspect_image_key_protects(inject_client):
-    """Inspect-format containers expose the image id under 'Image', not 'ImageID'."""
+    """Bulk summaries carry an 'Image' reference field alongside 'ImageID';
+    either key protecting a referenced image keeps the belt-and-braces guard."""
     referenced = FakeImage("sha256:ref", ["task__x__abc-main:latest"], last_tag_age=timedelta(hours=12))
     holder = FakeContainer("task__x__abc-main-1", "exited")
     holder.attrs = {"Created": holder.attrs["Created"], "Image": "sha256:ref"}
@@ -332,6 +367,26 @@ def test_image_dry_run_counts_without_removing(inject_client):
 
     assert _sweep_images(dry_run=True) == 1
     assert client.removed_tags == []
+
+
+def test_image_sweep_survives_image_vanishing_mid_sweep(inject_client):
+    """An image deleted between the bulk listing and its inspect must not abort the sweep."""
+    ghost = FakeImage("sha256:ghost", ["task__x__ghost-main:latest"], last_tag_age=timedelta(hours=12))
+    leaked = FakeImage("sha256:leak", ["task__x__abc-main:latest"], last_tag_age=timedelta(hours=12))
+    client = inject_client(FakeClient(images=[ghost, leaked], vanished_image_ids={"sha256:ghost"}))
+
+    assert _sweep_images() == 1
+    assert client.removed_tags == ["task__x__abc-main:latest"]
+
+
+def test_container_sweep_survives_container_vanishing_mid_sweep(inject_client):
+    """A container deleted between the bulk listing and its inspect must not abort the sweep."""
+    ghost = FakeContainer("task__x__ghost-main-1", "exited")
+    stale = FakeContainer("task__x__abc-main-1", "exited")
+    inject_client(FakeClient(containers=[ghost, stale], vanished_container_ids={ghost.id}))
+
+    assert _sweep_containers() == 1
+    assert stale.removed and not ghost.removed
 
 
 # --- pressure-gated cache prune ---------------------------------------------
@@ -352,3 +407,55 @@ def test_cache_prune_dry_run_never_prunes(inject_client):
 
     prune_caches_under_disk_pressure(disk_used_percent=95, pressure_percent=80, dry_run=True)
     assert not client.pruned_images and not client.pruned_builds
+
+
+def test_cache_prune_returns_reclaim_summary(inject_client):
+    inject_client(FakeClient())
+
+    below = prune_caches_under_disk_pressure(disk_used_percent=50, pressure_percent=80, dry_run=False)
+    assert below == {"fired": False, "image_bytes": 0, "build_bytes": 0, "errors": 0}
+
+    fired = prune_caches_under_disk_pressure(disk_used_percent=95, pressure_percent=80, dry_run=False)
+    assert fired == {"fired": True, "image_bytes": 123, "build_bytes": 456, "errors": 0}
+
+
+def test_long_timeout_client_fallback_is_not_cached(monkeypatch):
+    """A transient init failure must not pin the short-timeout default client forever."""
+    default_client = object()
+    monkeypatch.setattr(docker_utils, "docker_client", default_client)
+    monkeypatch.setattr(docker_utils, "docker_client_long_timeout", None)
+
+    def failing_from_env(timeout=None):
+        raise RuntimeError("daemon hiccup")
+
+    monkeypatch.setattr(docker_utils.docker, "from_env", failing_from_env)
+    assert docker_utils.get_long_timeout_docker_client() is default_client
+    assert docker_utils.docker_client_long_timeout is None  # fallback not cached
+
+    long_client = object()
+    monkeypatch.setattr(docker_utils.docker, "from_env", lambda timeout=None: long_client)
+    assert docker_utils.get_long_timeout_docker_client() is long_client  # retried and cached
+    assert docker_utils.docker_client_long_timeout is long_client
+
+
+# --- bulk-summary edge cases -------------------------------------------------
+
+
+def test_image_sweep_tolerates_null_repo_tags(inject_client):
+    """Bulk /images/json may report RepoTags as null; the sweep must skip safely."""
+    untagged = FakeImage("sha256:none", None, last_tag_age=timedelta(hours=12))
+    leaked = FakeImage("sha256:leak", ["task__x__abc-main:latest"], last_tag_age=timedelta(hours=12))
+    client = inject_client(FakeClient(images=[untagged, leaked]))
+
+    assert _sweep_images() == 1
+    assert client.removed_tags == ["task__x__abc-main:latest"]
+
+
+def test_container_sweep_matches_when_alias_precedes_primary_name(inject_client):
+    """Names ordering is not guaranteed; an alias listed first must not hide a candidate."""
+    stale = FakeContainer("task__x__abc-main-1", "exited")
+    stale.summary_names = ["/other/link-alias", "/task__x__abc-main-1"]
+    inject_client(FakeClient(containers=[stale]))
+
+    assert _sweep_containers() == 1
+    assert stale.removed
