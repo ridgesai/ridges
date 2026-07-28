@@ -133,6 +133,10 @@ async def _code_hiding_score_cutoff(set_id: int) -> Optional[float]:
 
 _cached_code_hiding_score_cutoff = ttl_cache(ttl_seconds=60)(_code_hiding_score_cutoff)
 
+# Past-competition scores never change once the competition ends, so a long TTL is safe and
+# avoids recomputing the cutoff on every request for popular old agents.
+_cached_past_code_hiding_score_cutoff = ttl_cache(ttl_seconds=24 * 60 * 60)(_code_hiding_score_cutoff)
+
 
 # /retrieval/agent-code?agent_id=
 @router.get("/agent-code")
