@@ -178,6 +178,27 @@ if not VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES:
     logger.fatal("VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES is not set in .env")
 VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES = int(VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES)
 
+# Scales how long Harbor may spend building a task's environment before timing out.
+#
+# Harbor computes the ceiling as `task.config.environment.build_timeout_sec * multiplier`, where the
+# base value is declared by each task (Harbor defaults it to 600s when a task omits it). Harbor offers
+# no absolute cap for this phase, so a multiplier is the only lever available: it exists to compensate
+# for validators whose hardware is slower than task authors assumed (cold Docker cache, weak I/O),
+# scaling every task proportionally instead of editing each task config.
+#
+# 1.0 (the default when unset) keeps each task's declared value. 2.0 gives every build twice as long.
+# Sent to validators and screeners on registration, so the whole fleet uses one value.
+VALIDATOR_ENVIRONMENT_BUILD_TIMEOUT_MULTIPLIER = os.getenv("VALIDATOR_ENVIRONMENT_BUILD_TIMEOUT_MULTIPLIER")
+if VALIDATOR_ENVIRONMENT_BUILD_TIMEOUT_MULTIPLIER:
+    VALIDATOR_ENVIRONMENT_BUILD_TIMEOUT_MULTIPLIER = float(VALIDATOR_ENVIRONMENT_BUILD_TIMEOUT_MULTIPLIER)
+    if VALIDATOR_ENVIRONMENT_BUILD_TIMEOUT_MULTIPLIER <= 0:
+        raise ValueError(
+            "VALIDATOR_ENVIRONMENT_BUILD_TIMEOUT_MULTIPLIER must be greater than 0, "
+            f"got {VALIDATOR_ENVIRONMENT_BUILD_TIMEOUT_MULTIPLIER}"
+        )
+else:
+    VALIDATOR_ENVIRONMENT_BUILD_TIMEOUT_MULTIPLIER = 1.0
+
 
 MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS = os.getenv("MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS")
 if not MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS:
@@ -300,6 +321,7 @@ logger.info("-------------------------")
 logger.info(f"Validator Running Agent Timeout: {VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS} second(s)")
 logger.info(f"Validator Running Evaluation Timeout: {VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS} second(s)")
 logger.info(f"Validator Max Evaluation Run Log Size: {VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES} byte(s)")
+logger.info(f"Validator Environment Build Timeout Multiplier: {VALIDATOR_ENVIRONMENT_BUILD_TIMEOUT_MULTIPLIER}x")
 logger.info("-------------------------")
 
 logger.info(f"Miner Agent Upload Rate Limit: {MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS} second(s)")
