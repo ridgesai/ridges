@@ -129,13 +129,22 @@ async def cleanup_loop(active_task_digests: Set[str]):
 
             try:
                 metrics = await get_system_metrics()
-                if metrics.disk_percent is not None:
-                    await asyncio.to_thread(
+                if metrics.disk_percent is None:
+                    logger.warning("Janitor: skipping pressure prune (disk metrics unavailable)")
+                else:
+                    prune_summary = await asyncio.to_thread(
                         prune_caches_under_disk_pressure,
                         disk_used_percent=metrics.disk_percent,
                         pressure_percent=config.CLEANUP_DISK_PRESSURE_PERCENT,
                         dry_run=dry_run,
                     )
+                    if prune_summary.get("fired"):
+                        logger.info(
+                            f"Janitor: pressure prune at {metrics.disk_percent:.0f}% disk reclaimed "
+                            f"{prune_summary.get('image_bytes', 0) / 1e6:.0f} MB (images) + "
+                            f"{prune_summary.get('build_bytes', 0) / 1e6:.0f} MB (build cache), "
+                            f"errors={prune_summary.get('errors', 0)} (dry_run={dry_run})"
+                        )
             except Exception as e:
                 logger.warning(f"Janitor cache prune failed (best-effort): {type(e).__name__}: {e}")
 
