@@ -175,6 +175,69 @@ def test_agent_timeout_surfaces_runtime_log_when_run_log_only_records_cancellati
     assert "[state] cancelled" in exc_info.value.extra["agent_logs"]
 
 
+def test_agent_timeout_with_verified_reward_scores_the_run(tmp_path: Path) -> None:
+    """A wall-clock kill after the patch was staged+verified must not void the reward."""
+    summary = make_summary(
+        tmp_path,
+        exception_info={
+            "exception_type": "AgentTimeoutError",
+            "exception_message": "Agent execution timed out after 1500.0 seconds",
+            "exception_traceback": "Traceback...\n_execute_agent\n",
+        },
+        agent_execution={
+            "started_at": "2026-04-09T00:00:00Z",
+            "finished_at": "2026-04-09T00:25:00Z",
+        },
+        test_results=successful_test_results(),
+        eval_log="verifier output",
+        verifier_result=successful_verifier_result(),
+    )
+
+    result = result_from_summary(summary)
+
+    assert result.verifier_reward == 1.0
+
+
+def test_agent_timeout_with_verified_zero_reward_records_finished_zero(tmp_path: Path) -> None:
+    summary = make_summary(
+        tmp_path,
+        exception_info={
+            "exception_type": "AgentTimeoutError",
+            "exception_message": "Agent execution timed out after 1500.0 seconds",
+            "exception_traceback": "Traceback...\n_execute_agent\n",
+        },
+        test_results=successful_test_results(),
+        eval_log="verifier output",
+        verifier_result={"rewards": {"reward": 0.0}},
+    )
+
+    result = result_from_summary(summary)
+
+    assert result.verifier_reward == 0.0
+
+
+def test_non_timeout_exception_with_verified_reward_still_errors(tmp_path: Path) -> None:
+    """Only agent timeouts defer to the verifier; other exceptions keep the error path."""
+    summary = make_summary(
+        tmp_path,
+        exception_info={
+            "exception_type": "MinerRuntimeError",
+            "exception_message": "Miner runtime failed",
+            "exception_traceback": "Traceback...\nridges_harbor/agents.py\n",
+        },
+        agent_execution={
+            "started_at": "2026-04-09T00:00:00Z",
+            "finished_at": "2026-04-09T00:01:00Z",
+        },
+        test_results=successful_test_results(),
+        eval_log="verifier output",
+        verifier_result=successful_verifier_result(),
+    )
+
+    with pytest.raises(EvaluationRunException):
+        result_from_summary(summary)
+
+
 def test_reward_only_success_without_test_results_returns_empty_list(tmp_path: Path) -> None:
     summary = make_summary(tmp_path, test_results=None, verifier_result=successful_verifier_result())
 
