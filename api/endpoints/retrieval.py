@@ -12,10 +12,10 @@ from models.evaluation import Evaluation, EvaluationWithRuns
 from models.queue import QueueStage
 from queries.agent import (
     get_agent_by_id,
+    get_agent_score_and_set_id,
     get_agents_in_queue,
     get_all_agents_by_miner_hotkey,
     get_benchmark_agents,
-    get_code_hiding_candidate_score,
     get_code_hiding_score_cutoff,
     get_latest_agent_for_miner_hotkey,
     get_possibly_benchmark_agent_by_id,
@@ -157,13 +157,17 @@ async def agent_code(agent_id: UUID) -> str:
     if agent.status in hidden_statuses:
         raise HTTPException(status_code=403, detail=f"Agent {agent.agent_id} is still being screened/evaluated")
 
-    latest_set_id = await _get_latest_set_id()
-    if latest_set_id is not None:
-        candidate_score = await get_code_hiding_candidate_score(agent_id=agent_id, set_id=latest_set_id)
-        if candidate_score is not None:
-            cutoff = await _cached_code_hiding_score_cutoff(latest_set_id)
-            if cutoff is not None and candidate_score >= cutoff:
-                raise HTTPException(status_code=403, detail="Agent code is hidden for top agents")
+    score_and_set = await get_agent_score_and_set_id(agent_id)
+    if score_and_set is not None:
+        set_id, candidate_score = score_and_set
+        latest_set_id = await _get_latest_set_id()
+        cutoff = (
+            await _cached_code_hiding_score_cutoff(set_id)
+            if set_id == latest_set_id
+            else await _cached_past_code_hiding_score_cutoff(set_id)
+        )
+        if cutoff is not None and candidate_score >= cutoff:
+            raise HTTPException(status_code=403, detail="Agent code is hidden for top agents")
 
     return await download_text_file_from_s3(f"{agent_id}/agent.py")
 

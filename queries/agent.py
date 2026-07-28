@@ -607,23 +607,6 @@ async def get_code_hiding_score_cutoff(
 
 
 @db_operation
-async def get_code_hiding_candidate_score(conn: DatabaseConnection, agent_id: UUID, set_id: int) -> Optional[float]:
-    """Return the agent's rounded final score in the given set, or None if unscored or a benchmark agent."""
-    return await conn.fetchval(
-        """
-        SELECT ROUND(final_score::numeric, 6)::float
-        FROM agent_scores
-        WHERE agent_id = $1
-          AND set_id = $2
-          AND final_score IS NOT NULL
-          AND agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
-        """,
-        agent_id,
-        set_id,
-    )
-
-
-@db_operation
 async def get_agent_score_and_set_id(conn: DatabaseConnection, agent_id: UUID) -> Optional[tuple[int, float]]:
     """Return the agent's own (set_id, rounded final score), or None if unscored or a benchmark agent."""
     row = await conn.fetchrow(
