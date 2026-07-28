@@ -28,6 +28,9 @@ def bypass_cache_and_s3(monkeypatch):
     monkeypatch.setattr(
         retrieval_endpoint, "_cached_code_hiding_score_cutoff", retrieval_endpoint._code_hiding_score_cutoff
     )
+    monkeypatch.setattr(
+        retrieval_endpoint, "_cached_past_code_hiding_score_cutoff", retrieval_endpoint._code_hiding_score_cutoff
+    )
 
     async def _fake_download(key: str) -> str:
         return AGENT_CODE
