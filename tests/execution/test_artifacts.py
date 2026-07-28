@@ -175,8 +175,8 @@ def test_agent_timeout_surfaces_runtime_log_when_run_log_only_records_cancellati
     assert "[state] cancelled" in exc_info.value.extra["agent_logs"]
 
 
-def test_agent_timeout_with_verified_reward_scores_the_run(tmp_path: Path) -> None:
-    """A wall-clock kill after the patch was staged+verified must not void the reward."""
+def test_verifier_reward_after_agent_timeout_scores_the_run(tmp_path: Path) -> None:
+    """Harbor's earlier agent timeout must not void its later verifier reward."""
     summary = make_summary(
         tmp_path,
         exception_info={
@@ -198,7 +198,7 @@ def test_agent_timeout_with_verified_reward_scores_the_run(tmp_path: Path) -> No
     assert result.verifier_reward == 1.0
 
 
-def test_agent_timeout_with_verified_zero_reward_records_finished_zero(tmp_path: Path) -> None:
+def test_zero_verifier_reward_after_agent_timeout_records_finished_zero(tmp_path: Path) -> None:
     summary = make_summary(
         tmp_path,
         exception_info={

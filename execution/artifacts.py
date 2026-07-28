@@ -54,7 +54,7 @@ def result_from_summary(summary: HarborRunSummary) -> ExecutionResult:
 
     trial_exception = summary.trial_result.exception_info
     if trial_exception is not None:
-        if _agent_timed_out_after_verified_run(summary):
+        if _agent_timed_out_then_verifier_produced_reward(summary):
             return parse_execution_artifacts(summary, trial_paths=trial_paths, context=context)
 
         failure = classify_trial_failure(
@@ -72,9 +72,9 @@ def result_from_summary(summary: HarborRunSummary) -> ExecutionResult:
     return parse_execution_artifacts(summary, trial_paths=trial_paths, context=context)
 
 
-def _agent_timed_out_after_verified_run(summary: HarborRunSummary) -> bool:
-    """True when the trial's only recorded failure is an agent timeout and the
-    verifier still completed with a usable numeric reward.
+def _agent_timed_out_then_verifier_produced_reward(summary: HarborRunSummary) -> bool:
+    """True when Harbor recorded an agent timeout, then completed verification
+    with a usable numeric reward.
     """
     exception_type = (summary.trial_result.exception_info.exception_type or "").strip()
     if exception_type not in AGENT_TIMEOUT_EXCEPTION_NAMES:
