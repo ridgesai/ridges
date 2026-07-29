@@ -1,7 +1,10 @@
 import json
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from uuid import UUID, uuid4
+
+from asyncpg import Record
 
 import api.config as config
 from models.agent import AgentStatus
@@ -453,37 +456,51 @@ async def run_disqualification_reapproval(
                     )
 
 
-async def process_pending_disqualification_jobs() -> int:
-    """Drain currently-pending disqualification jobs. Safe to call on a task or at startup.
+async def _drain_jobs(
+    *,
+    claim: Callable[[list | None], Awaitable[Record | None]],
+    run: Callable[[Record], Awaitable[None]],
+    mark_processed: Callable[[object], Awaitable[None]],
+    record_error: Callable[[object, str], Awaitable[None]],
+    label: str,
+) -> int:
+    """Drain currently-pending jobs of one kind. Safe to call on a task or at startup.
 
-    Not a @db_operation: each nested query acquires its own connection so a job's
-    claim + replay + mark commit independently and no row lock is held across the replay.
-    A failure on one job records an error and the drain continues with the next.
-
-    Each invocation processes every DISTINCT currently-pending job at most once, then returns.
-    A job that fails its replay is left pending (error recorded) for a LATER invocation to retry.
-    The ids already attempted this invocation are passed to the claim query as an exclusion list,
-    so the claim advances past a stuck failing job to the next distinct pending job instead of
-    starving it forever behind the head-of-queue failure (claim orders by created_at, filtering
-    processed_at IS NULL, so without exclusion it would keep re-returning the same failing job).
+    Not a @db_operation: each job's claim + run + mark commits independently, so no row lock is
+    held across the (long) run. A failed job records its error and stays pending; its id is
+    excluded from later claims THIS invocation so a stuck head-of-queue job cannot starve the
+    rest. Each invocation processes every distinct pending job at most once, then returns.
     """
     processed = 0
     attempted: list = []
     while True:
-        job = await claim_next_pending_disqualification_job(attempted or None)
+        job = await claim(attempted or None)
         if job is None:
             return processed
         attempted.append(job["id"])
         try:
-            await run_disqualification_reapproval(
-                set_id=job["set_id"],
-                disqualified_agent_id=job["agent_id"],
-            )
-            await mark_disqualification_job_processed(job["id"])
+            await run(job)
+            await mark_processed(job["id"])
             processed += 1
         except Exception as exc:  # noqa: BLE001 - one bad job must not wedge the drain
-            logger.error(f"Disqualification reapproval job {job['id']} failed: {type(exc).__name__}: {exc}")
-            await record_disqualification_job_error(job["id"], f"{type(exc).__name__}: {exc}")
+            logger.error(f"{label} job {job['id']} failed: {type(exc).__name__}: {exc}")
+            await record_error(job["id"], f"{type(exc).__name__}: {exc}")
+
+
+async def process_pending_disqualification_jobs() -> int:
+    async def _run(job: Record) -> None:
+        await run_disqualification_reapproval(
+            set_id=job["set_id"],
+            disqualified_agent_id=job["agent_id"],
+        )
+
+    return await _drain_jobs(
+        claim=claim_next_pending_disqualification_job,
+        run=_run,
+        mark_processed=mark_disqualification_job_processed,
+        record_error=record_disqualification_job_error,
+        label="Disqualification reapproval",
+    )
 
 
 async def _ranking_profile_for_agent(
