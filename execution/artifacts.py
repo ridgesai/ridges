@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from execution.errors import EvaluationRunException
 from execution.failure_classifier import (
+    AGENT_TIMEOUT_EXCEPTION_NAMES,
     InvalidRuntimePayloadError,
     classify_trial_failure,
     extract_runtime_failure,
@@ -53,6 +54,9 @@ def result_from_summary(summary: HarborRunSummary) -> ExecutionResult:
 
     trial_exception = summary.trial_result.exception_info
     if trial_exception is not None:
+        if _agent_timed_out_then_verifier_produced_reward(summary):
+            return parse_execution_artifacts(summary, trial_paths=trial_paths, context=context)
+
         failure = classify_trial_failure(
             trial_result=summary.trial_result,
             trial_exception=trial_exception,
@@ -66,6 +70,30 @@ def result_from_summary(summary: HarborRunSummary) -> ExecutionResult:
         )
 
     return parse_execution_artifacts(summary, trial_paths=trial_paths, context=context)
+
+
+def _agent_timed_out_then_verifier_produced_reward(summary: HarborRunSummary) -> bool:
+    """True when Harbor recorded an agent timeout, then completed verification
+    with a usable numeric reward.
+    """
+    exception_type = (summary.trial_result.exception_info.exception_type or "").strip()
+    if exception_type not in AGENT_TIMEOUT_EXCEPTION_NAMES:
+        return False
+
+    verifier_result = summary.trial_result.verifier_result
+    if verifier_result is None:
+        return False
+
+    rewards = verifier_result.rewards
+    if not isinstance(rewards, dict) or not rewards:
+        return False
+    if "reward" in rewards:
+        raw_reward = rewards["reward"]
+    elif len(rewards) == 1:
+        raw_reward = next(iter(rewards.values()))
+    else:
+        return False
+    return isinstance(raw_reward, (int, float)) and not isinstance(raw_reward, bool)
 
 
 # Log collection
