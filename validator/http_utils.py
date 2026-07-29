@@ -1,6 +1,5 @@
 import json
 import logging
-import textwrap
 from typing import Any
 
 import httpx
@@ -16,10 +15,7 @@ HTTP_TIMEOUT_SECONDS = 120
 
 
 def _pretty_print_httpx_error(method: str, url: str, e: httpx.HTTPStatusError):
-    # HTTP error (4xx or 5xx)
-    logger.error(f"HTTP {e.response.status_code} {e.response.reason_phrase} during {method} {url}")
-
-    # Try and print the response as best as we can
+    # HTTP error (4xx or 5xx) — emit as a single log line to keep log entries intact
     try:
         response_json = e.response.json()
         if (
@@ -28,16 +24,15 @@ def _pretty_print_httpx_error(method: str, url: str, e: httpx.HTTPStatusError):
             and "detail" in response_json
             and isinstance(response_json["detail"], str)
         ):
-            # The response is a JSON that looks like {"detail": "..."}
-            logger.error(textwrap.indent(response_json["detail"], "  "))
+            detail = response_json["detail"]
         else:
-            # The response is a JSON
-            logger.error("Response (JSON):")
-            logger.error(textwrap.indent(json.dumps(response_json, indent=2), "  "))
+            detail = json.dumps(response_json)
     except Exception:
-        # The response is not a JSON
-        logger.error("Response:")
-        logger.error(textwrap.indent(e.response.text, "  "))
+        detail = e.response.text
+
+    logger.error(
+        f"HTTP {e.response.status_code} {e.response.reason_phrase} during {method} {url}: {detail}"
+    )
 
 
 def _platform_headers(bearer_token: str = None) -> dict | None:

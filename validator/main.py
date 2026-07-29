@@ -77,8 +77,7 @@ async def disconnect(reason: str):
         )
         logger.info("Disconnected validator")
     except Exception as e:
-        logger.error(f"Error in disconnect(): {type(e).__name__}: {e}")
-        logger.error(traceback.format_exc())
+        logger.error(f"Error in disconnect(): {type(e).__name__}: {e}", exc_info=True)
         os._exit(1)
 
 
@@ -392,9 +391,9 @@ async def _run_single_attempt(
 
     except Exception as e:
         logger.error(
-            f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}"
+            f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}",
+            exc_info=True,
         )
-        logger.error(traceback.format_exc())
 
         terminal_response = await update_evaluation_run(
             evaluation_run_id,
@@ -450,8 +449,7 @@ async def _run_evaluation_run(
         logger.info(f"Finished evaluation run {evaluation_run_id} for problem {problem_name}")
 
     except Exception as e:
-        logger.error(f"Error in _run_evaluation_run(): {type(e).__name__}: {e}")
-        logger.error(traceback.format_exc())
+        logger.error(f"Error in _run_evaluation_run(): {type(e).__name__}: {e}", exc_info=True)
         os._exit(1)
     finally:
         if task_digest:
@@ -901,7 +899,6 @@ if __name__ == "__main__":
         asyncio.run(disconnect("Keyboard interrupt"))
         os._exit(1)
     except Exception as e:
-        logger.error(f"Error in main(): {type(e).__name__}: {e}")
-        logger.error(traceback.format_exc())
+        logger.error(f"Error in main(): {type(e).__name__}: {e}", exc_info=True)
         asyncio.run(disconnect(f"Error in main(): {type(e).__name__}: {e}"))
         os._exit(1)
