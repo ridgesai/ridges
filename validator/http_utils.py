@@ -1,5 +1,6 @@
 import json
 import logging
+import textwrap
 from typing import Any
 
 import httpx
