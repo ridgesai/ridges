@@ -6,6 +6,7 @@ Create Date: 2026-07-28 00:00:00.000000
 
 """
 
+import re
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -19,9 +20,25 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-def _get_cutoff_set_id() -> int:
-    result = op.get_bind().execute(sa.text("SELECT COALESCE(MAX(set_id), 0) FROM evaluation_sets")).scalar_one()
-    return int(result)
+def _live_cutoff_set_id() -> int:
+    # Read the cutoff back out of the LIVE populate_agent_scores() function body rather than
+    # recomputing MAX(set_id) fresh. Recomputing would let the cutoff drift forward if any
+    # evaluation_sets rows were inserted between the prior scoring migration's deploy and this
+    # one's, which would (a) change which sets fall under old vs new scoring behavior on upgrade,
+    # and (b) make downgrade fail to exactly restore the pre-migration state. This mirrors
+    # alembic/versions/2026_07_10_add_coldkey_bans.py::_live_cutoff_set_id() exactly, for the same
+    # reason.
+    definition = (
+        op.get_bind()
+        .execute(sa.text("SELECT pg_get_functiondef(to_regprocedure('populate_agent_scores()'))"))
+        .scalar_one()
+    )
+    if definition is None:
+        raise RuntimeError("Missing function populate_agent_scores()")
+    cutoffs = {int(match) for match in re.findall(r"set_id > (\d+)", definition)}
+    if len(cutoffs) != 1:
+        raise RuntimeError(f"Could not determine the consensus cutoff from populate_agent_scores():\n{definition}")
+    return cutoffs.pop()
 
 
 # --- Scoring functions WITH the disqualified-problem exclusion.
@@ -524,7 +541,7 @@ $$ LANGUAGE plpgsql;
 
 
 def _restore_functions_without_dq() -> None:
-    cutoff_set_id = _get_cutoff_set_id()
+    cutoff_set_id = _live_cutoff_set_id()
     op.execute(_refresh_agent_scores_consensus_without_dq(cutoff_set_id))
     op.execute(_populate_agent_scores_consensus_without_dq(cutoff_set_id))
 
@@ -572,7 +589,7 @@ def upgrade() -> None:
         postgresql_where=sa.text("processed_at IS NULL"),
     )
 
-    cutoff_set_id = _get_cutoff_set_id()
+    cutoff_set_id = _live_cutoff_set_id()
     op.execute(_refresh_agent_scores_consensus_with_dq(cutoff_set_id))
     op.execute(_populate_agent_scores_consensus_with_dq(cutoff_set_id))
 
