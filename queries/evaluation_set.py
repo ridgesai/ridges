@@ -235,10 +235,16 @@ async def get_all_evaluation_set_problems_in_set_group_in_set_id(
 ) -> List[EvaluationSetProblem]:
     results = await conn.fetch(
         """
-        SELECT *
-        FROM evaluation_sets
-        WHERE set_id = $1 AND set_group = $2
-        ORDER BY problem_name
+        SELECT es.*
+        FROM evaluation_sets es
+        WHERE es.set_id = $1 AND es.set_group = $2
+          AND NOT EXISTS (
+              SELECT 1 FROM disqualified_problems dp
+              WHERE dp.set_id = es.set_id
+                AND dp.set_group = es.set_group
+                AND dp.problem_name = es.problem_name
+          )
+        ORDER BY es.problem_name
         """,
         set_id,
         set_group.value,
@@ -525,6 +531,12 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
                       SELECT 1 FROM agent_scores ass
                       WHERE ass.agent_id = eh.agent_id AND ass.set_id = $1
                   )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM disqualified_problems dp
+                      WHERE dp.set_id = eh.set_id
+                        AND dp.set_group = 'validator'::EvaluationSetGroup
+                        AND dp.problem_name = erh.problem_name
+                  )
             ),
             per_problem AS (
                 SELECT
@@ -540,8 +552,14 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
             ),
             problem_count AS (
                 SELECT COUNT(*)::float AS n
-                FROM evaluation_sets
-                WHERE set_id = $1 AND set_group = 'validator'::EvaluationSetGroup
+                FROM evaluation_sets es
+                WHERE es.set_id = $1 AND es.set_group = 'validator'::EvaluationSetGroup
+                  AND NOT EXISTS (
+                      SELECT 1 FROM disqualified_problems dp
+                      WHERE dp.set_id = es.set_id
+                        AND dp.set_group = es.set_group
+                        AND dp.problem_name = es.problem_name
+                  )
             ),
             validator_counts AS (
                 SELECT
