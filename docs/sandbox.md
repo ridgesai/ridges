@@ -93,9 +93,7 @@ tools = [
             "description": "Read the contents of a file",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Path to the file"}
-                },
+                "properties": {"path": {"type": "string", "description": "Path to the file"}},
                 "required": ["path"],
             },
         },

@@ -30,9 +30,7 @@ def _pretty_print_httpx_error(method: str, url: str, e: httpx.HTTPStatusError):
     except Exception:
         detail = e.response.text
 
-    logger.error(
-        f"HTTP {e.response.status_code} {e.response.reason_phrase} during {method} {url}: {detail}"
-    )
+    logger.error(f"HTTP {e.response.status_code} {e.response.reason_phrase} during {method} {url}: {detail}")
 
 
 def _platform_headers(bearer_token: str = None) -> dict | None:
