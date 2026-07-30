@@ -1,6 +1,8 @@
 import logging
+import os
 import re
 import subprocess
+from datetime import datetime, timezone
 
 import docker
 
@@ -10,9 +12,22 @@ DOCKER_PREFIX = "ridges-ai"
 SWEBENCH_DOCKER_PREFIX = "sweb"
 HARBOR_CONTAINER_NAME_PATTERN = re.compile(r".+__.+-(main|sandbox-proxy)-1$")
 HARBOR_NETWORK_NAME_PATTERN = re.compile(r".+__.+_sandbox_(internal|egress)$")
+HARBOR_IMAGE_REPO_PATTERN = re.compile(r".+__.+__.+-(main|env-main)$")
+RIDGES_TRIAL_ID_LABEL = "ridges.trial_id"
 
 
 docker_client = None
+docker_client_long_timeout = None
+
+
+def get_prune_timeout_seconds() -> int:
+    """Client timeout for prune operations, which can run for minutes on a
+    backlogged daemon (docker-py's 60s default would abandon them mid-flight).
+    """
+    try:
+        return max(60, int(os.getenv("CLEANUP_PRUNE_TIMEOUT_SECONDS", "1800")))
+    except ValueError:
+        return 1800
 
 
 def _initialize_docker():
@@ -30,6 +45,20 @@ def get_docker_client():
         _initialize_docker()
 
     return docker_client
+
+
+def get_long_timeout_docker_client():
+    """A docker client for slow bulk operations (prunes); lazily initialised."""
+
+    global docker_client_long_timeout
+    if docker_client_long_timeout is None:
+        try:
+            docker_client_long_timeout = docker.from_env(timeout=get_prune_timeout_seconds())
+        except Exception as e:
+            logger.warning(f"Failed to initialize long-timeout Docker client, falling back to default: {e}")
+            return get_docker_client()
+
+    return docker_client_long_timeout
 
 
 def build_docker_image(dockerfile_dir: str, tag: str) -> None:
@@ -114,7 +143,7 @@ def cleanup_harbor_docker_resources() -> None:
 
 
 def prune_docker_disk_resources(*, include_build_cache: bool = False) -> None:
-    docker_client = get_docker_client()
+    docker_client = get_long_timeout_docker_client()
 
     logger.info("Pruning dangling Docker images...")
     try:
@@ -132,6 +161,228 @@ def prune_docker_disk_resources(*, include_build_cache: bool = False) -> None:
         logger.info(f"Reclaimed {result.get('SpaceReclaimed', 0)} byte(s) from Docker build cache")
     except Exception as e:
         logger.warning(f"Failed to prune Docker build cache: {e}")
+
+
+def _parse_docker_time(value) -> datetime | None:
+    """Parse a docker RFC3339Nano timestamp into aware-UTC, or None if unusable.
+
+    Zero values ("0001-01-01T00:00:00Z") mean "never set" and return None.
+    """
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        text = value.strip()
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        match = re.match(r"^(.*?\.\d{1,6})\d*([+-]\d{2}:\d{2})$", text)
+        if match:
+            text = match.group(1) + match.group(2)
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.astimezone(timezone.utc)
+        if parsed.year <= 1:
+            return None
+        return parsed
+    except ValueError:
+        return None
+
+
+def _age_seconds(timestamp: datetime | None, now: datetime) -> float | None:
+    if timestamp is None:
+        return None
+    age = (now - timestamp).total_seconds()
+    return age if age >= 0 else None
+
+
+def sweep_stale_harbor_containers(
+    *,
+    stopped_grace_sec: float,
+    running_ttl_sec: float,
+    dry_run: bool,
+) -> int:
+    """
+    Remove leaked Harbor trial containers (and then detached Harbor networks).
+    Returns the number of containers removed (or that would be removed in dry-run mode).
+    """
+    docker_client = get_docker_client()
+    now = datetime.now(timezone.utc)
+    removed = 0
+
+    try:
+        summaries = docker_client.api.containers(all=True, filters={"label": RIDGES_TRIAL_ID_LABEL})
+    except Exception as e:
+        logger.warning(f"Janitor: failed to list containers: {e}")
+        return 0
+
+    for summary in summaries:
+        names = [n.lstrip("/") for n in (summary.get("Names") or [])]
+        name = names[0] if names else (summary.get("Id") or "")[:12]
+        try:
+            if not any(HARBOR_CONTAINER_NAME_PATTERN.fullmatch(n) for n in names):
+                continue
+
+            container = docker_client.containers.get(summary.get("Id") or name)
+            name = container.name
+            if not HARBOR_CONTAINER_NAME_PATTERN.fullmatch(container.name):
+                continue
+
+            def _qualifies(c) -> bool:
+                age = _age_seconds(_parse_docker_time(c.attrs.get("Created")), now)
+                if age is None:
+                    return False
+                if c.status in ("exited", "created", "dead"):
+                    return age > stopped_grace_sec
+                if c.status == "running":
+                    return age > running_ttl_sec
+                return False
+
+            if not _qualifies(container):
+                continue
+
+            container.reload()
+            if not _qualifies(container):
+                continue
+
+            if dry_run:
+                logger.info(
+                    f"Janitor (dry-run): would remove container {container.name} "
+                    f"(status={container.status}, created={container.attrs.get('Created')})"
+                )
+            else:
+                container.remove(force=container.status == "running")
+                logger.info(f"Janitor: removed leaked container {container.name} (status={container.status})")
+            removed += 1
+        except docker.errors.NotFound:
+            continue
+        except Exception as e:
+            logger.warning(f"Janitor: failed to remove container {name}: {e}")
+
+    try:
+        networks = docker_client.networks.list()
+    except Exception as e:
+        logger.warning(f"Janitor: failed to list networks: {e}")
+        return removed
+
+    for network in networks:
+        try:
+            if network.name in ("bridge", "host", "none"):
+                continue
+            if not HARBOR_NETWORK_NAME_PATTERN.fullmatch(network.name):
+                continue
+            age = _age_seconds(_parse_docker_time(network.attrs.get("Created")), now)
+            if age is None or age <= stopped_grace_sec:
+                continue
+            network.reload()
+            if network.attrs.get("Containers"):
+                continue
+            compose_network = (network.attrs.get("Labels") or {}).get("com.docker.compose.network")
+            if compose_network not in ("sandbox_internal", "sandbox_egress"):
+                continue
+            if dry_run:
+                logger.info(f"Janitor (dry-run): would remove network {network.name}")
+            else:
+                network.remove()
+                logger.info(f"Janitor: removed leaked network {network.name}")
+        except docker.errors.NotFound:
+            continue
+        except Exception as e:
+            logger.warning(f"Janitor: failed to remove network {network.name}: {e}")
+
+    return removed
+
+
+def sweep_leaked_harbor_images(*, tag_grace_sec: float, dry_run: bool) -> int:
+    """
+    Untag leaked Harbor trial env images (unique per trial, never reused).
+    Returns the number of image tags removed (or that would be removed in dry-run mode).
+    """
+    docker_client = get_docker_client()
+    now = datetime.now(timezone.utc)
+    removed = 0
+
+    try:
+        container_summaries = docker_client.api.containers(all=True)
+        image_summaries = docker_client.api.images()
+    except Exception as e:
+        logger.warning(f"Janitor: failed to list images/containers: {e}")
+        return 0
+
+    referenced_image_ids = set()
+    for summary in container_summaries:
+        for key in ("ImageID", "Image"):
+            value = summary.get(key)
+            if value:
+                referenced_image_ids.add(value)
+
+    for summary in image_summaries:
+        image_id = summary.get("Id") or ""
+        try:
+            harbor_tags = [
+                tag
+                for tag in (summary.get("RepoTags") or [])
+                if HARBOR_IMAGE_REPO_PATTERN.fullmatch(tag.rsplit(":", 1)[0])
+            ]
+            if not harbor_tags:
+                continue
+            if image_id in referenced_image_ids:
+                continue
+
+            image = docker_client.images.get(image_id)
+            last_tag_time = _parse_docker_time((image.attrs.get("Metadata") or {}).get("LastTagTime"))
+            age = _age_seconds(last_tag_time, now)
+            if age is None or age <= tag_grace_sec:
+                continue
+
+            size_mb = (image.attrs.get("Size") or 0) / 1e6
+            for tag in harbor_tags:
+                if dry_run:
+                    logger.info(f"Janitor (dry-run): would untag leaked image {tag} ({size_mb:.0f} MB)")
+                else:
+                    docker_client.images.remove(tag, force=False, noprune=True)
+                    logger.info(f"Janitor: removed leaked image tag {tag} ({size_mb:.0f} MB)")
+                removed += 1
+        except docker.errors.NotFound:
+            continue
+        except Exception as e:
+            logger.warning(f"Janitor: failed to remove image {image_id[:19]}: {e}")
+
+    return removed
+
+
+def prune_caches_under_disk_pressure(*, disk_used_percent: float, pressure_percent: float, dry_run: bool) -> dict:
+    """Aggressively prune build caches, but only when disk usage is at or above the threshold.
+
+    Returns a summary dict so the caller can log the outcome.
+    """
+    summary = {"fired": False, "image_bytes": 0, "build_bytes": 0, "errors": 0}
+    if disk_used_percent < pressure_percent:
+        return summary
+
+    summary["fired"] = True
+    docker_client = get_long_timeout_docker_client()
+    logger.info(f"Janitor: disk at {disk_used_percent:.0f}% (threshold {pressure_percent:.0f}%), pruning caches...")
+    if dry_run:
+        logger.info("Janitor (dry-run): would prune dangling images (until=1h) and the build cache")
+        return summary
+
+    try:
+        result = docker_client.images.prune(filters={"dangling": True, "until": "1h"})
+        summary["image_bytes"] = result.get("SpaceReclaimed", 0) or 0
+        logger.info(f"Janitor: reclaimed {summary['image_bytes']} byte(s) from dangling images")
+    except Exception as e:
+        summary["errors"] += 1
+        logger.warning(f"Janitor: failed to prune dangling images: {e}")
+
+    try:
+        result = docker_client.api.prune_builds()
+        summary["build_bytes"] = result.get("SpaceReclaimed", 0) or 0
+        logger.info(f"Janitor: reclaimed {summary['build_bytes']} byte(s) from the build cache")
+    except Exception as e:
+        summary["errors"] += 1
+        logger.warning(f"Janitor: failed to prune build cache: {e}")
+
+    return summary
 
 
 def create_internal_docker_network(name: str) -> None:

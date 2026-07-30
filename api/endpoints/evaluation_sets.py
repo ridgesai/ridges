@@ -19,6 +19,11 @@ from models.evaluation_set import (
     EvaluationSetDetailSubmissions,
     EvaluationSetDetailTopAgent,
     EvaluationSetDetailVsPreviousSet,
+    EvaluationSetOverview,
+    EvaluationSetOverviewPerformanceDistribution,
+    EvaluationSetOverviewPerformanceImprovementPoint,
+    EvaluationSetOverviewPreScreening,
+    EvaluationSetOverviewScoreBucket,
     EvaluationSetProblem,
 )
 from queries.competition import get_competition_for_set
@@ -28,6 +33,9 @@ from queries.evaluation_set import (
     get_approved_agents_for_set,
     get_evaluation_set_leaderboard_agents,
     get_evaluation_set_leaderboard_summary,
+    get_evaluation_set_performance_improvement,
+    get_evaluation_set_pre_screening_distribution,
+    get_evaluation_set_score_distribution,
     get_evaluation_set_score_stats,
     get_evaluation_set_submission_stats,
     get_latest_set_id,
@@ -38,6 +46,7 @@ from utils.ttl import ttl_cache
 router = APIRouter(tags=["evaluation-sets"])
 logger = logging.getLogger(__name__)
 CACHE_PAST_SET_DATA_TTL_SECONDS = 24 * 60 * 60  # Cache past set data for 24 hours, since it won't change
+CACHE_LIVE_SET_OVERVIEW_TTL_SECONDS = 5 * 60
 
 # Retrieve the latest set ID once and cache it for 30 seconds, since it's used in multiple places in the detail and leaderboard endpoints.
 _get_latest_set_id = ttl_cache(ttl_seconds=30)(get_latest_set_id)
@@ -244,6 +253,64 @@ async def evaluation_set_detail(
     if set_id != latest:
         return await _cached_build_detail(set_id)
     return await _build_detail(set_id)
+
+
+# GET evaluation-sets/{set_id}/overview
+async def _build_overview(set_id: int) -> EvaluationSetOverview:
+    pre_screening_row, score_rows, improvement_rows = await asyncio.gather(
+        get_evaluation_set_pre_screening_distribution(set_id),
+        get_evaluation_set_score_distribution(set_id),
+        get_evaluation_set_performance_improvement(set_id),
+    )
+
+    counts_by_stage_and_bucket = {(row["stage"], row["bucket_index"]): row["agents"] for row in score_rows}
+
+    def _score_buckets(stage: str) -> list[EvaluationSetOverviewScoreBucket]:
+        return [
+            EvaluationSetOverviewScoreBucket(
+                min_score=bucket_index / 10,
+                max_score=(bucket_index + 1) / 10,
+                agents=counts_by_stage_and_bucket.get((stage, bucket_index), 0),
+            )
+            for bucket_index in range(10)
+        ]
+
+    return EvaluationSetOverview(
+        set_id=set_id,
+        performance_distribution=EvaluationSetOverviewPerformanceDistribution(
+            pre_screening=EvaluationSetOverviewPreScreening(
+                approved=pre_screening_row["approved"],
+                rejected=pre_screening_row["rejected"],
+                unresolved=pre_screening_row["unresolved"],
+            ),
+            screener_1=_score_buckets("screener_1"),
+            screener_2=_score_buckets("screener_2"),
+            validator=_score_buckets("validator"),
+        ),
+        performance_improvement=[
+            EvaluationSetOverviewPerformanceImprovementPoint(
+                date=row["date"],
+                score=row["score"],
+                cost=row["cost"],
+                agent_id=row["agent_id"],
+            )
+            for row in improvement_rows
+        ],
+    )
+
+
+_cached_build_live_overview = ttl_cache(ttl_seconds=CACHE_LIVE_SET_OVERVIEW_TTL_SECONDS)(_build_overview)
+_cached_build_past_overview = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECONDS)(_build_overview)
+
+
+@router.get("/{set_id}/overview")
+async def evaluation_set_overview(
+    set_id: Annotated[int, Depends(resolve_set_id)],
+) -> EvaluationSetOverview:
+    latest = await _get_latest_set_id()
+    if set_id != latest:
+        return await _cached_build_past_overview(set_id)
+    return await _cached_build_live_overview(set_id)
 
 
 #

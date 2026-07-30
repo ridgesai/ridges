@@ -162,6 +162,38 @@ class EvaluationSetDetail(BaseModel):
     efficiency: EvaluationSetDetailEfficiency
 
 
+class EvaluationSetOverviewScoreBucket(BaseModel):
+    min_score: Float4
+    max_score: Float4
+    agents: int
+
+
+class EvaluationSetOverviewPreScreening(BaseModel):
+    approved: int
+    rejected: int
+    unresolved: int
+
+
+class EvaluationSetOverviewPerformanceDistribution(BaseModel):
+    pre_screening: EvaluationSetOverviewPreScreening
+    screener_1: list[EvaluationSetOverviewScoreBucket]
+    screener_2: list[EvaluationSetOverviewScoreBucket]
+    validator: list[EvaluationSetOverviewScoreBucket]
+
+
+class EvaluationSetOverviewPerformanceImprovementPoint(BaseModel):
+    date: datetime.datetime
+    score: Float4
+    cost: Float4 | None
+    agent_id: UUID
+
+
+class EvaluationSetOverview(BaseModel):
+    set_id: int
+    performance_distribution: EvaluationSetOverviewPerformanceDistribution
+    performance_improvement: list[EvaluationSetOverviewPerformanceImprovementPoint]
+
+
 class ApprovedAgent(BaseModel):
     id: UUID
     miner_hotkey: str

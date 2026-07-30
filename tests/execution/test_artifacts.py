@@ -175,6 +175,69 @@ def test_agent_timeout_surfaces_runtime_log_when_run_log_only_records_cancellati
     assert "[state] cancelled" in exc_info.value.extra["agent_logs"]
 
 
+def test_verifier_reward_after_agent_timeout_scores_the_run(tmp_path: Path) -> None:
+    """Harbor's earlier agent timeout must not void its later verifier reward."""
+    summary = make_summary(
+        tmp_path,
+        exception_info={
+            "exception_type": "AgentTimeoutError",
+            "exception_message": "Agent execution timed out after 1500.0 seconds",
+            "exception_traceback": "Traceback...\n_execute_agent\n",
+        },
+        agent_execution={
+            "started_at": "2026-04-09T00:00:00Z",
+            "finished_at": "2026-04-09T00:25:00Z",
+        },
+        test_results=successful_test_results(),
+        eval_log="verifier output",
+        verifier_result=successful_verifier_result(),
+    )
+
+    result = result_from_summary(summary)
+
+    assert result.verifier_reward == 1.0
+
+
+def test_zero_verifier_reward_after_agent_timeout_records_finished_zero(tmp_path: Path) -> None:
+    summary = make_summary(
+        tmp_path,
+        exception_info={
+            "exception_type": "AgentTimeoutError",
+            "exception_message": "Agent execution timed out after 1500.0 seconds",
+            "exception_traceback": "Traceback...\n_execute_agent\n",
+        },
+        test_results=successful_test_results(),
+        eval_log="verifier output",
+        verifier_result={"rewards": {"reward": 0.0}},
+    )
+
+    result = result_from_summary(summary)
+
+    assert result.verifier_reward == 0.0
+
+
+def test_non_timeout_exception_with_verified_reward_still_errors(tmp_path: Path) -> None:
+    """Only agent timeouts defer to the verifier; other exceptions keep the error path."""
+    summary = make_summary(
+        tmp_path,
+        exception_info={
+            "exception_type": "MinerRuntimeError",
+            "exception_message": "Miner runtime failed",
+            "exception_traceback": "Traceback...\nridges_harbor/agents.py\n",
+        },
+        agent_execution={
+            "started_at": "2026-04-09T00:00:00Z",
+            "finished_at": "2026-04-09T00:01:00Z",
+        },
+        test_results=successful_test_results(),
+        eval_log="verifier output",
+        verifier_result=successful_verifier_result(),
+    )
+
+    with pytest.raises(EvaluationRunException):
+        result_from_summary(summary)
+
+
 def test_reward_only_success_without_test_results_returns_empty_list(tmp_path: Path) -> None:
     summary = make_summary(tmp_path, test_results=None, verifier_result=successful_verifier_result())
 
@@ -431,6 +494,90 @@ def test_best_effort_verifier_report_is_appended_to_eval_logs(tmp_path: Path) ->
     assert "discovered_verifier_report" in result.eval_logs
     assert "verifier/report.json" in result.eval_logs
     assert '"suite": "swebench"' in result.eval_logs
+
+
+def test_junit_xml_fills_test_results_when_json_artifacts_are_missing(tmp_path: Path) -> None:
+    summary = make_summary(tmp_path, test_results=None, verifier_result={"rewards": {"reward": 0.0}})
+    write(
+        summary.trial_dir / "verifier" / "junit.xml",
+        """<testsuites><testsuite name="pytest">
+            <testcase classname="tests.test_store" name="test_reload" />
+            <testcase classname="tests.test_store" name="test_contract"><failure message="assert" /></testcase>
+            <testcase classname="tests.test_store" name="test_boom"><error message="crash" /></testcase>
+            <testcase classname="tests.test_store" name="test_later"><skipped message="not yet" /></testcase>
+        </testsuite></testsuites>""",
+    )
+
+    result = result_from_summary(summary)
+
+    assert [(test.name, test.status.value) for test in result.test_results] == [
+        ("tests.test_store::test_reload", "pass"),
+        ("tests.test_store::test_contract", "fail"),
+        ("tests.test_store::test_boom", "fail"),
+        ("tests.test_store::test_later", "skip"),
+    ]
+    assert {test.category.value for test in result.test_results} == {"default"}
+
+
+def test_junit_xml_with_zero_testcases_returns_empty_results(tmp_path: Path) -> None:
+    summary = make_summary(tmp_path, test_results=None, verifier_result={"rewards": {"reward": 0.0}})
+    write(
+        summary.trial_dir / "verifier" / "junit.xml",
+        '<testsuites><testsuite name="pytest" errors="1" tests="0" /></testsuites>',
+    )
+
+    result = result_from_summary(summary)
+
+    assert result.test_results == []
+
+
+def test_malformed_junit_xml_returns_empty_results(tmp_path: Path) -> None:
+    summary = make_summary(tmp_path, test_results=None, verifier_result={"rewards": {"reward": 0.0}})
+    write(summary.trial_dir / "verifier" / "junit.xml", "<testsuites><testsuite")
+
+    result = result_from_summary(summary)
+
+    assert result.test_results == []
+
+
+def test_test_results_json_takes_precedence_over_junit_xml(tmp_path: Path) -> None:
+    summary = make_summary(
+        tmp_path,
+        test_results=successful_test_results(),
+        verifier_result=successful_verifier_result(),
+    )
+    write(
+        summary.trial_dir / "verifier" / "junit.xml",
+        '<testsuite><testcase classname="tests" name="test_from_junit" /></testsuite>',
+    )
+
+    result = result_from_summary(summary)
+
+    assert [test.name for test in result.test_results] == ["status updated"]
+
+
+def test_nested_junit_xml_under_verifier_dir_is_discovered(tmp_path: Path) -> None:
+    summary = make_summary(tmp_path, test_results=None, verifier_result=successful_verifier_result())
+    write(
+        summary.trial_dir / "verifier" / "logs" / "verifier" / "junit.xml",
+        '<testsuite><testcase classname="tests" name="test_nested" /></testsuite>',
+    )
+
+    result = result_from_summary(summary)
+
+    assert [(test.name, test.status.value) for test in result.test_results] == [("tests::test_nested", "pass")]
+
+
+def test_pytest_xml_is_accepted_as_junit_fallback(tmp_path: Path) -> None:
+    summary = make_summary(tmp_path, test_results=None, verifier_result=successful_verifier_result())
+    write(
+        summary.trial_dir / "artifacts" / "pytest.xml",
+        '<testsuite><testcase name="test_bare_name" /></testsuite>',
+    )
+
+    result = result_from_summary(summary)
+
+    assert [(test.name, test.status.value) for test in result.test_results] == [("test_bare_name", "pass")]
 
 
 def test_missing_verifier_result_maps_to_validator_internal_error(tmp_path: Path) -> None:

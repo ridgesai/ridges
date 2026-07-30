@@ -18,6 +18,7 @@ from ridges_harbor._stdlib_contract import (
     RUNTIME_PAYLOAD_FILENAME,
 )
 from ridges_harbor.runtime_contract import (
+    ExecTransportError,
     MinerInvalidPatchError,
     MinerPatchApplyError,
     MinerRuntimeError,
@@ -470,6 +471,49 @@ def test_unknown_exception_without_timing_maps_to_validator_internal_error(tmp_p
         result_from_summary(summary)
 
     assert exc_info.value.error_code == EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR
+
+
+def test_exec_transport_error_maps_to_validator_internal_error(tmp_path: Path) -> None:
+    """A dead exec stream is a validator fault even though agent timing is present."""
+    summary = make_summary(
+        tmp_path,
+        exception_info={
+            "exception_type": ExecTransportError.__name__,
+            "exception_message": "Exec stream to Pod x died: Connection to remote host was lost.",
+            "exception_traceback": "Traceback...\nridges_harbor/k8s_environment.py\n",
+        },
+        agent_execution=timing(),
+    )
+
+    with pytest.raises(EvaluationRunException) as exc_info:
+        result_from_summary(summary)
+
+    assert exc_info.value.error_code == EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR
+
+
+def test_exec_transport_error_yields_to_runtime_payload(tmp_path: Path) -> None:
+    """A structured runtime payload (agent-side evidence) outranks a transport exception.
+
+    The payload is written by ridges_miner_runtime inside the container, so when
+    one exists the agent demonstrably failed on its own before the stream died.
+    """
+    summary = make_summary(
+        tmp_path,
+        exception_info={
+            "exception_type": ExecTransportError.__name__,
+            "exception_message": "Exec stream to Pod x died",
+        },
+        runtime_failure={
+            "phase": "runtime",
+            "exception_chain": [{"type": "ValueError", "module": "builtins", "message": "agent blew up"}],
+        },
+        agent_execution=timing(),
+    )
+
+    with pytest.raises(EvaluationRunException) as exc_info:
+        result_from_summary(summary)
+
+    assert exc_info.value.error_code == EvaluationRunErrorCode.AGENT_EXCEPTION_RUNNING_AGENT
 
 
 def test_cleanup_failure_after_successful_verifier_maps_to_validator_internal_error(tmp_path: Path) -> None:
