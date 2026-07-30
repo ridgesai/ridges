@@ -23,7 +23,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "python-multipart>=0.0.20",
     "requests>=2.32.3",
-    "sentry-sdk>=2.60.0",
+    "sentry-sdk==2.66.1",
     "sqlalchemy[asyncio]>=2.0",
     "uvicorn>=0.30.5",
 ]

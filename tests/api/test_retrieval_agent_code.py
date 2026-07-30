@@ -28,6 +28,9 @@ def bypass_cache_and_s3(monkeypatch):
     monkeypatch.setattr(
         retrieval_endpoint, "_cached_code_hiding_score_cutoff", retrieval_endpoint._code_hiding_score_cutoff
     )
+    monkeypatch.setattr(
+        retrieval_endpoint, "_cached_past_code_hiding_score_cutoff", retrieval_endpoint._code_hiding_score_cutoff
+    )
 
     async def _fake_download(key: str) -> str:
         return AGENT_CODE
@@ -89,6 +92,16 @@ async def _seed_scored_agents(conn, scores: list[float]) -> list[UUID]:
 def _spread_scores(count: int = 11) -> list[float]:
     """Distinct descending scores 0.90, 0.89, ... so cutoff = score of the 10th agent."""
     return [round(0.90 - i * 0.01, 2) for i in range(count)]
+
+
+async def _insert_second_eval_set(conn, set_id: int = 2) -> None:
+    await conn.execute(
+        "INSERT INTO evaluation_sets (set_id, set_group, problem_name, created_at) VALUES ($1, $2, $3, $4)",
+        set_id,
+        "validator",
+        "problem-a",
+        SET_CREATED,
+    )
 
 
 async def _expect_hidden(agent_id) -> HTTPException:
@@ -234,3 +247,38 @@ async def test_unknown_agent_still_gets_404():
     with pytest.raises(HTTPException) as exc_info:
         await retrieval_endpoint.agent_code(uuid4())
     assert exc_info.value.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_top_ranked_agent_in_past_set_is_hidden():
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1)
+        await _insert_second_eval_set(conn, set_id=2)
+        # Agents are scored in set 1 (the PAST set); set 2 is the latest and has no scores yet.
+        agent_ids = await _seed_scored_agents(conn, _spread_scores())
+
+    error = await _expect_hidden(agent_ids[0])
+    assert "hidden" in error.detail.lower()
+
+
+@pytest.mark.anyio
+async def test_agent_below_cutoff_in_past_set_is_served():
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1)
+        await _insert_second_eval_set(conn, set_id=2)
+        agent_ids = await _seed_scored_agents(conn, _spread_scores())
+
+    # 11th agent (0.80) is below the 10th agent's score (0.81), same as the latest-set case.
+    assert await retrieval_endpoint.agent_code(agent_ids[10]) == AGENT_CODE
+
+
+@pytest.mark.anyio
+async def test_past_set_cutoff_uses_long_ttl_cache():
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1)
+        await _insert_second_eval_set(conn, set_id=2)
+        agent_ids = await _seed_scored_agents(conn, _spread_scores())
+
+    assert retrieval_endpoint._cached_past_code_hiding_score_cutoff is not None
+    error = await _expect_hidden(agent_ids[0])
+    assert "hidden" in error.detail.lower()

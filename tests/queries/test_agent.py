@@ -10,28 +10,29 @@ import pytest
 
 import utils.database as _db
 from queries.agent import (
+    get_agent_score_and_set_id,
     get_next_agent_id_awaiting_evaluation_for_validator_hotkey,
 )
 
 HOTKEY = "validator-hotkey-1"
 OTHER_HOTKEY = "validator-hotkey-2"
+SET_CREATED = datetime(2026, 5, 1, tzinfo=timezone.utc)
 
 # anyio_backend is defined in tests/conftest.py and inherited automatically.
+
+_CLEAN_TABLES_SQL = (
+    "TRUNCATE evaluation_runs, evaluations, evaluation_sets, benchmark_agent_ids, banned_coldkeys, "
+    "banned_hotkeys, agent_scores, agents RESTART IDENTITY CASCADE"
+)
 
 
 @pytest.fixture(autouse=True)
 async def clean_tables(postgres_db):
     async with _db.pool.acquire() as conn:
-        await conn.execute(
-            "TRUNCATE evaluation_runs, evaluations, benchmark_agent_ids, banned_coldkeys, banned_hotkeys, "
-            "agents RESTART IDENTITY CASCADE"
-        )
+        await conn.execute(_CLEAN_TABLES_SQL)
     yield
     async with _db.pool.acquire() as conn:
-        await conn.execute(
-            "TRUNCATE evaluation_runs, evaluations, benchmark_agent_ids, banned_coldkeys, banned_hotkeys, "
-            "agents RESTART IDENTITY CASCADE"
-        )
+        await conn.execute(_CLEAN_TABLES_SQL)
 
 
 async def _insert_agent(
@@ -61,6 +62,36 @@ async def _insert_agent(
             "127.0.0.1",
         )
     return agent_id
+
+
+async def _insert_eval_set(set_id: int) -> None:
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO evaluation_sets (set_id, set_group, problem_name, created_at) VALUES ($1, $2, $3, $4)",
+            set_id,
+            "validator",
+            "problem-a",
+            SET_CREATED,
+        )
+
+
+async def _insert_agent_score(*, agent_id: uuid.UUID, set_id: int, final_score: float) -> None:
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO agent_scores
+                   (agent_id, miner_hotkey, name, version_num, created_at, status, set_id, approved,
+                    validator_count, final_score)
+               VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, $8, $9)""",
+            agent_id,
+            f"hotkey-{agent_id}",
+            f"agent-{agent_id}",
+            1,
+            "finished",
+            set_id,
+            False,
+            1,
+            final_score,
+        )
 
 
 async def _insert_evaluation(
@@ -278,3 +309,39 @@ async def test_ordering_by_screener_2_score_uses_verifier_reward():
 
     result = await get_next_agent_id_awaiting_evaluation_for_validator_hotkey(HOTKEY)
     assert result == agent_a
+
+
+@pytest.mark.anyio
+async def test_get_agent_score_and_set_id_returns_agents_own_set():
+    await _insert_eval_set(set_id=1)
+    await _insert_eval_set(set_id=2)
+    agent_id = await _insert_agent(status="finished")
+    # Agent's score lives in the OLDER set, not the latest.
+    await _insert_agent_score(agent_id=agent_id, set_id=1, final_score=0.842123456)
+
+    result = await get_agent_score_and_set_id(agent_id)
+    assert result == (1, 0.842123)
+
+
+@pytest.mark.anyio
+async def test_get_agent_score_and_set_id_returns_none_for_unscored_agent():
+    await _insert_eval_set(set_id=1)
+    agent_id = await _insert_agent(status="finished")
+
+    result = await get_agent_score_and_set_id(agent_id)
+    assert result is None
+
+
+@pytest.mark.anyio
+async def test_get_agent_score_and_set_id_excludes_benchmark_agents():
+    await _insert_eval_set(set_id=1)
+    agent_id = await _insert_agent(status="finished")
+    await _insert_agent_score(agent_id=agent_id, set_id=1, final_score=0.9)
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO benchmark_agent_ids (agent_id, description) VALUES ($1, 'benchmark')",
+            agent_id,
+        )
+
+    result = await get_agent_score_and_set_id(agent_id)
+    assert result is None

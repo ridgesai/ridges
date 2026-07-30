@@ -149,12 +149,12 @@ def classify_trial_failure(
     if runtime_failure is not None:
         return ClassifiedExecutionFailure(
             error_code=map_runtime_failure_code(runtime_failure=runtime_failure),
-            detail=runtime_failure.model_dump_json(indent=2),
+            detail=runtime_failure.model_dump_json(),
         )
 
     return ClassifiedExecutionFailure(
         error_code=map_trial_exception_code(trial_result=trial_result, trial_exception=trial_exception),
-        detail=trial_exception.model_dump_json(indent=2),
+        detail=trial_exception.model_dump_json(),
     )
 
 

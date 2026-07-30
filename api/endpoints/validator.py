@@ -2,7 +2,6 @@ import asyncio
 import logging
 import re
 import time
-import traceback
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -326,6 +325,7 @@ async def validator_register_as_validator(
         running_agent_timeout_seconds=config.VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS,
         running_eval_timeout_seconds=config.VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS,
         max_evaluation_run_log_size_bytes=config.VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES,
+        environment_build_timeout_multiplier=config.VALIDATOR_ENVIRONMENT_BUILD_TIMEOUT_MULTIPLIER,
     )
 
 
@@ -374,6 +374,7 @@ async def validator_register_as_screener(
         running_agent_timeout_seconds=config.VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS,
         running_eval_timeout_seconds=config.VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS,
         max_evaluation_run_log_size_bytes=config.VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES,
+        environment_build_timeout_multiplier=config.VALIDATOR_ENVIRONMENT_BUILD_TIMEOUT_MULTIPLIER,
     )
 
 
@@ -745,9 +746,9 @@ async def _maybe_grant_retry(
         new_attempt = await create_next_attempt_and_reset_evaluation_run(evaluation_run.evaluation_run_id)
     except Exception as exc:
         logger.error(
-            f"Failed to grant retry for evaluation run {evaluation_run.evaluation_run_id}: {type(exc).__name__}: {exc}"
+            f"Failed to grant retry for evaluation run {evaluation_run.evaluation_run_id}: {type(exc).__name__}: {exc}",
+            exc_info=True,
         )
-        logger.error(traceback.format_exc())
         return None
 
     logger.info(f"Granted retry for evaluation run {evaluation_run.evaluation_run_id}")
@@ -1107,9 +1108,9 @@ async def validator_update_evaluation_run(
             except Exception as exc:
                 evaluation_id = getattr(current_evaluation, "evaluation_id", "unknown")
                 logger.error(
-                    f"Failed to run score-bound pruning for evaluation {evaluation_id}: {type(exc).__name__}: {exc}"
+                    f"Failed to run score-bound pruning for evaluation {evaluation_id}: {type(exc).__name__}: {exc}",
+                    exc_info=True,
                 )
-                logger.error(traceback.format_exc())
 
     response = ValidatorUpdateEvaluationRunResponse()
     if request.updated_status == EvaluationRunStatus.error:

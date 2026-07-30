@@ -52,6 +52,7 @@ session_id = None
 running_agent_timeout_seconds = None
 running_eval_timeout_seconds = None
 max_evaluation_run_log_size_bytes = None
+environment_build_timeout_multiplier = None
 
 
 execution_engine = None
@@ -77,8 +78,7 @@ async def disconnect(reason: str):
         )
         logger.info("Disconnected validator")
     except Exception as e:
-        logger.error(f"Error in disconnect(): {type(e).__name__}: {e}")
-        logger.error(traceback.format_exc())
+        logger.error(f"Error in disconnect(): {type(e).__name__}: {e}", exc_info=True)
         os._exit(1)
 
 
@@ -392,9 +392,9 @@ async def _run_single_attempt(
 
     except Exception as e:
         logger.error(
-            f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}"
+            f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}",
+            exc_info=True,
         )
-        logger.error(traceback.format_exc())
 
         terminal_response = await update_evaluation_run(
             evaluation_run_id,
@@ -450,8 +450,7 @@ async def _run_evaluation_run(
         logger.info(f"Finished evaluation run {evaluation_run_id} for problem {problem_name}")
 
     except Exception as e:
-        logger.error(f"Error in _run_evaluation_run(): {type(e).__name__}: {e}")
-        logger.error(traceback.format_exc())
+        logger.error(f"Error in _run_evaluation_run(): {type(e).__name__}: {e}", exc_info=True)
         os._exit(1)
     finally:
         if task_digest:
@@ -782,6 +781,7 @@ async def main():
     global running_agent_timeout_seconds
     global running_eval_timeout_seconds
     global max_evaluation_run_log_size_bytes
+    global environment_build_timeout_multiplier
     global execution_engine
 
     setup_logging()
@@ -840,12 +840,14 @@ async def main():
     running_agent_timeout_seconds = register_response.running_agent_timeout_seconds
     running_eval_timeout_seconds = register_response.running_eval_timeout_seconds
     max_evaluation_run_log_size_bytes = register_response.max_evaluation_run_log_size_bytes
+    environment_build_timeout_multiplier = register_response.environment_build_timeout_multiplier
 
     logger.info("Registered validator:")
     logger.info(f"  Session ID: {session_id}")
     logger.info(f"  Running Agent Timeout: {running_agent_timeout_seconds} second(s)")
     logger.info(f"  Running Evaluation Timeout: {running_eval_timeout_seconds} second(s)")
     logger.info(f"  Max Evaluation Run Log Size: {max_evaluation_run_log_size_bytes} byte(s)")
+    logger.info(f"  Environment Build Timeout Multiplier: {environment_build_timeout_multiplier}x")
 
     execution_engine = ExecutionEngine(
         inference_url=config.RIDGES_INFERENCE_GATEWAY_URL,
@@ -854,6 +856,7 @@ async def main():
         max_agent_timeout_sec=running_agent_timeout_seconds,
         max_eval_timeout_sec=running_eval_timeout_seconds,
         max_cost_usd=config.RIDGES_MAX_COST_USD,
+        build_timeout_multiplier=environment_build_timeout_multiplier,
     )
 
     # Start the send heartbeat loop
@@ -901,7 +904,6 @@ if __name__ == "__main__":
         asyncio.run(disconnect("Keyboard interrupt"))
         os._exit(1)
     except Exception as e:
-        logger.error(f"Error in main(): {type(e).__name__}: {e}")
-        logger.error(traceback.format_exc())
+        logger.error(f"Error in main(): {type(e).__name__}: {e}", exc_info=True)
         asyncio.run(disconnect(f"Error in main(): {type(e).__name__}: {e}"))
         os._exit(1)

@@ -581,3 +581,52 @@ def test_runtime_script_runs_from_uploaded_sibling_stdlib_contract_only(tmp_path
     assert completed.returncode == 0
     assert patch_path.read_text() == "diff --git a/a b/a\n"
     assert runtime_payload_path.exists() is False
+
+
+@pytest.mark.anyio
+async def test_run_task_dir_forwards_environment_build_timeout_multiplier(tmp_path: Path, monkeypatch) -> None:
+    _install_fake_harbor(monkeypatch)
+
+    task_dir = tmp_path / "dataset" / "update-status-file"
+    task_dir.mkdir(parents=True)
+
+    await _run_task_dir(
+        task_dir=task_dir,
+        task_name="update-status-file",
+        evaluation_run_id="eval-run-1",
+        agent_path=tmp_path / "agent.py",
+        agent_timeout_sec=30.0,
+        verifier_timeout_sec=60.0,
+        upstream_url="http://127.0.0.1:1234",
+        upstream_host="127.0.0.1",
+        results_dir=tmp_path / "results",
+        debug=False,
+        job_name="job-1",
+        environment_build_timeout_multiplier=2.5,
+    )
+
+    assert FakeJob.created_configs[0].environment_build_timeout_multiplier == 2.5
+
+
+@pytest.mark.anyio
+async def test_run_task_dir_defaults_environment_build_timeout_multiplier_to_none(tmp_path: Path, monkeypatch) -> None:
+    _install_fake_harbor(monkeypatch)
+
+    task_dir = tmp_path / "dataset" / "update-status-file"
+    task_dir.mkdir(parents=True)
+
+    await _run_task_dir(
+        task_dir=task_dir,
+        task_name="update-status-file",
+        evaluation_run_id="eval-run-1",
+        agent_path=tmp_path / "agent.py",
+        agent_timeout_sec=30.0,
+        verifier_timeout_sec=60.0,
+        upstream_url="http://127.0.0.1:1234",
+        upstream_host="127.0.0.1",
+        results_dir=tmp_path / "results",
+        debug=False,
+        job_name="job-1",
+    )
+
+    assert FakeJob.created_configs[0].environment_build_timeout_multiplier is None
