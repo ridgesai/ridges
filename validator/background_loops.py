@@ -10,7 +10,6 @@ import asyncio
 import logging
 import os
 import pathlib
-import traceback
 from collections.abc import Set
 from uuid import UUID
 
@@ -51,8 +50,7 @@ async def send_heartbeat_loop(session_id: UUID):
             )
             await asyncio.sleep(config.SEND_HEARTBEAT_INTERVAL_SECONDS)
     except Exception as e:
-        logger.error(f"Heartbeat failed after all retries, exiting: {type(e).__name__}: {e}")
-        logger.error(traceback.format_exc())
+        logger.error(f"Heartbeat failed after all retries, exiting: {type(e).__name__}: {e}", exc_info=True)
         os._exit(1)
 
 
