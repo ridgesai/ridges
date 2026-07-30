@@ -45,6 +45,64 @@ def _parse_flag_value(flag: InternalFlagName, raw: str | None) -> bool | list[st
         return raw
 
 
+# Advisory-lock namespace for internal-flag read-modify-write operations
+INTERNAL_FLAG_LOCK_NAMESPACE = -1730
+
+
+async def _lock_internal_flag(conn: DatabaseConnection, flag: InternalFlagName) -> None:
+    await conn.execute(
+        "SELECT pg_advisory_xact_lock($1, hashtext($2))",
+        INTERNAL_FLAG_LOCK_NAMESPACE,
+        flag.value,
+    )
+
+
+async def _upsert_internal_flag(conn: DatabaseConnection, flag: InternalFlagName, value: str) -> None:
+    await conn.execute(
+        """
+        INSERT INTO internal_flags (name, value, updated_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (name) DO UPDATE
+        SET value = EXCLUDED.value, updated_at = NOW()
+        """,
+        flag.value,
+        value,
+    )
+
+
+@db_operation
+async def set_internal_flag(conn: DatabaseConnection, flag: InternalFlagName, value: str) -> None:
+    async with conn.conn.transaction():
+        await _lock_internal_flag(conn, flag)
+        await _upsert_internal_flag(conn, flag, value)
+
+
+@db_operation
+async def add_hotkey_to_blacklist(conn: DatabaseConnection, hotkey: str) -> list[str]:
+    flag = InternalFlagName.BLACKLISTED_VALIDATORS
+    async with conn.conn.transaction():
+        await _lock_internal_flag(conn, flag)
+        raw = await conn.fetchval("SELECT value FROM internal_flags WHERE name = $1", flag.value)
+        blacklist = _parse_flag_value(flag, raw)
+        if hotkey not in blacklist:
+            blacklist.append(hotkey)
+            await _upsert_internal_flag(conn, flag, json.dumps(blacklist))
+    return blacklist
+
+
+@db_operation
+async def remove_hotkey_from_blacklist(conn: DatabaseConnection, hotkey: str) -> list[str]:
+    flag = InternalFlagName.BLACKLISTED_VALIDATORS
+    async with conn.conn.transaction():
+        await _lock_internal_flag(conn, flag)
+        raw = await conn.fetchval("SELECT value FROM internal_flags WHERE name = $1", flag.value)
+        blacklist = _parse_flag_value(flag, raw)
+        if hotkey in blacklist:
+            blacklist.remove(hotkey)
+            await _upsert_internal_flag(conn, flag, json.dumps(blacklist))
+    return blacklist
+
+
 @db_operation
 async def get_internal_flags_parsed(
     conn: DatabaseConnection, flags: list[InternalFlagName]
