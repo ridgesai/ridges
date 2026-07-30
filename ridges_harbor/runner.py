@@ -69,6 +69,7 @@ async def run_task(
     agent_path: str | Path,
     agent_timeout_sec: float | None = None,
     verifier_timeout_sec: float | None = None,
+    environment_build_timeout_multiplier: float | None = None,
     inference_url: str | None = None,
     results_dir: str | Path | None = DEFAULT_RESULTS_DIR,
     debug: bool = False,
@@ -107,6 +108,7 @@ async def run_task(
         agent_path=resolved_agent_path,
         agent_timeout_sec=agent_timeout_sec,
         verifier_timeout_sec=verifier_timeout_sec,
+        environment_build_timeout_multiplier=environment_build_timeout_multiplier,
         upstream_url=upstream_url,
         upstream_host=upstream_host,
         results_dir=resolved_results_dir,
@@ -132,6 +134,7 @@ async def _run_task_dir(
     agent_path: Path,
     agent_timeout_sec: float | None,
     verifier_timeout_sec: float | None,
+    environment_build_timeout_multiplier: float | None = None,
     upstream_url: str,
     upstream_host: str,
     results_dir: Path,
@@ -277,6 +280,7 @@ async def _run_task_dir(
         retry=RetryConfig(max_retries=0),
         environment=environment_config,
         verifier=VerifierConfig(max_timeout_sec=effective_verifier_timeout),
+        environment_build_timeout_multiplier=environment_build_timeout_multiplier,
         tasks=[TaskConfig(path=task_dir)],
         agents=[
             AgentConfig(

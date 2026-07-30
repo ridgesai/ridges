@@ -21,6 +21,7 @@ class ValidatorRegistrationResponse(BaseModel):
     running_agent_timeout_seconds: int
     running_eval_timeout_seconds: int
     max_evaluation_run_log_size_bytes: int
+    environment_build_timeout_multiplier: float = 1.0
 
 
 class ScreenerRegistrationRequest(BaseModel):
@@ -34,6 +35,7 @@ class ScreenerRegistrationResponse(BaseModel):
     running_agent_timeout_seconds: int
     running_eval_timeout_seconds: int
     max_evaluation_run_log_size_bytes: int
+    environment_build_timeout_multiplier: float = 1.0
 
 
 class ValidatorRequestEvaluationRequest(BaseModel):

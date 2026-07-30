@@ -83,6 +83,7 @@ class ExecutionEngine:
         max_agent_timeout_sec: float | None = None,
         max_eval_timeout_sec: float | None = None,
         max_cost_usd: float | None = None,
+        build_timeout_multiplier: float | None = None,
     ):
         self.inference_url = inference_url
         self.results_dir = harbor_results_dir
@@ -90,6 +91,7 @@ class ExecutionEngine:
         self.max_agent_timeout_sec = max_agent_timeout_sec
         self.max_eval_timeout_sec = max_eval_timeout_sec
         self.max_cost_usd = max_cost_usd
+        self.build_timeout_multiplier = build_timeout_multiplier
 
     async def evaluate(
         self,
@@ -149,6 +151,7 @@ class ExecutionEngine:
                     agent_path=resolved_agent_path,
                     agent_timeout_sec=request.agent_timeout_sec,
                     verifier_timeout_sec=request.verifier_timeout_sec,
+                    environment_build_timeout_multiplier=self.build_timeout_multiplier,
                     inference_url=self.inference_url,
                     results_dir=request.results_dir,
                     debug=self.debug,
