@@ -185,6 +185,7 @@ HARDCODED_MAX_COST_USD = 0.29
 VALIDATOR_CONCURRENCY_CAPS_BY_NAME = {
     "Kraken": 10,
     "WildSage Labs (RT21)": 10,
+    "Rizzo": 10,
     # "Opentensor Foundation": 10,
     # "Yuma": 10,
 }
