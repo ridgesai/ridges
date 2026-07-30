@@ -115,3 +115,20 @@ async def delete_blacklisted_validator(validator_hotkey: str) -> BlacklistedVali
     blacklist = await remove_hotkey_from_blacklist(validator_hotkey)
     return BlacklistedValidatorsResponse(blacklisted_validators=blacklist)
 
+
+@router.put(
+    "/validators-paused",
+    dependencies=[Depends(require_coldkey_ban_admin)],
+)
+async def put_validators_paused() -> ValidatorsPausedResponse:
+    await set_internal_flag(InternalFlagName.VALIDATORS_PAUSED, "true")
+    return ValidatorsPausedResponse(validators_paused=True)
+
+
+@router.delete(
+    "/validators-paused",
+    dependencies=[Depends(require_coldkey_ban_admin)],
+)
+async def delete_validators_paused() -> ValidatorsPausedResponse:
+    await set_internal_flag(InternalFlagName.VALIDATORS_PAUSED, "false")
+    return ValidatorsPausedResponse(validators_paused=False)
