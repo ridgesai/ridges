@@ -544,8 +544,8 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
         and ass.agent_id not in (select agent_id from benchmark_agent_ids)
         and not exists (
             select 1
-            from banned_coldkeys bc
-            where bc.miner_coldkey = a.miner_coldkey
+            from disqualified_agent_ids dq
+            where dq.agent_id = a.agent_id
         )
         and ass.status::text <> 'cancelled'
         and (
@@ -590,8 +590,8 @@ async def get_code_hiding_score_cutoff(
               AND ass.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
               AND NOT EXISTS (
                   SELECT 1
-                  FROM banned_coldkeys bc
-                  WHERE bc.miner_coldkey = a.miner_coldkey
+                  FROM disqualified_agent_ids dq
+                  WHERE dq.agent_id = a.agent_id
               )
               AND review.approval_review_status IS DISTINCT FROM 'rejected'
         )
