@@ -7,8 +7,10 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, StringConstraints
 
 import api.config as config
+from api.endpoints import validator as validator_endpoint
 from models.banned_coldkey import BannedColdkey
 from queries.banned_coldkey import ban_coldkey, unban_coldkey
+from utils.debug_lock import DebugLock
 from utils.ttl import clear_all_ttl_caches
 
 router = APIRouter(tags=["admin"])
@@ -61,4 +63,26 @@ async def delete_banned_coldkey(miner_coldkey: str) -> Response:
     validate_coldkey(miner_coldkey)
     await unban_coldkey(miner_coldkey)
     clear_all_ttl_caches()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/validator-sessions/{validator_hotkey}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_coldkey_ban_admin)],
+)
+async def delete_validator_session(validator_hotkey: str) -> Response:
+    registration_lock = validator_endpoint.get_session_registration_lock(validator_hotkey)
+    async with DebugLock(registration_lock, f"delete_validator_session() for {validator_hotkey}"):
+        session_id = validator_endpoint.is_validator_registered(validator_hotkey)
+        validator = validator_endpoint.SESSION_ID_TO_VALIDATOR.get(session_id) if session_id else None
+        if validator is None:
+            raise HTTPException(status_code=404, detail="No connected validator with the given hotkey")
+
+        async with DebugLock(validator._lock, f"delete_validator_session() for {validator.name}'s lock"):
+            if validator.session_id in validator_endpoint.SESSION_ID_TO_VALIDATOR:
+                await validator_endpoint.delete_validator(
+                    validator, "The validator was kicked by an admin to force a restart."
+                )
+
     return Response(status_code=status.HTTP_204_NO_CONTENT)
