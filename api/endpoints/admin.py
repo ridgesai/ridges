@@ -8,8 +8,10 @@ from pydantic import BaseModel, StringConstraints
 
 import api.config as config
 from api.endpoints import validator as validator_endpoint
+from db.models import InternalFlagName
 from models.banned_coldkey import BannedColdkey
 from queries.banned_coldkey import ban_coldkey, unban_coldkey
+from queries.internal_flag import add_hotkey_to_blacklist, remove_hotkey_from_blacklist, set_internal_flag
 from utils.debug_lock import DebugLock
 from utils.ttl import clear_all_ttl_caches
 
@@ -86,3 +88,30 @@ async def delete_validator_session(validator_hotkey: str) -> Response:
                 )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class BlacklistedValidatorsResponse(BaseModel):
+    blacklisted_validators: list[str]
+
+
+class ValidatorsPausedResponse(BaseModel):
+    validators_paused: bool
+
+
+@router.put(
+    "/blacklisted-validators/{validator_hotkey}",
+    dependencies=[Depends(require_coldkey_ban_admin)],
+)
+async def put_blacklisted_validator(validator_hotkey: str) -> BlacklistedValidatorsResponse:
+    blacklist = await add_hotkey_to_blacklist(validator_hotkey)
+    return BlacklistedValidatorsResponse(blacklisted_validators=blacklist)
+
+
+@router.delete(
+    "/blacklisted-validators/{validator_hotkey}",
+    dependencies=[Depends(require_coldkey_ban_admin)],
+)
+async def delete_blacklisted_validator(validator_hotkey: str) -> BlacklistedValidatorsResponse:
+    blacklist = await remove_hotkey_from_blacklist(validator_hotkey)
+    return BlacklistedValidatorsResponse(blacklisted_validators=blacklist)
+
