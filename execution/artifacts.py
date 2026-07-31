@@ -7,6 +7,7 @@ Entry point is 'result_from_summary'.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
@@ -25,6 +26,8 @@ from execution.types import ExecutionResult, FailureContext, TrialSnapshot
 from models.problem import ProblemTestCategory, ProblemTestResult, ProblemTestResultStatus
 from ridges_harbor._stdlib_contract import AGENT_LOG_FILENAMES, HARBOR_RUNNER_ERROR_FILENAME
 from ridges_harbor.runner import HarborRunSummary
+
+logger = logging.getLogger(__name__)
 
 
 class VerifierTestResultsPayload(BaseModel):
@@ -54,8 +57,15 @@ def result_from_summary(summary: HarborRunSummary) -> ExecutionResult:
 
     trial_exception = summary.trial_result.exception_info
     if trial_exception is not None:
-        if _agent_timed_out_then_verifier_produced_reward(summary):
-            return parse_execution_artifacts(summary, trial_paths=trial_paths, context=context)
+        if _agent_timed_out_then_verifier_produced_reward(summary, trial_paths=trial_paths):
+            try:
+                return parse_execution_artifacts(summary, trial_paths=trial_paths, context=context)
+            except Exception as exception:
+                logger.warning(
+                    f"Partial-credit scoring of a timed-out trial failed; "
+                    f"falling back to the recorded trial exception: {exception}",
+                    exc_info=True,
+                )
 
         failure = classify_trial_failure(
             trial_result=summary.trial_result,
@@ -72,12 +82,18 @@ def result_from_summary(summary: HarborRunSummary) -> ExecutionResult:
     return parse_execution_artifacts(summary, trial_paths=trial_paths, context=context)
 
 
-def _agent_timed_out_then_verifier_produced_reward(summary: HarborRunSummary) -> bool:
+def _agent_timed_out_then_verifier_produced_reward(summary: HarborRunSummary, *, trial_paths: TrialPaths) -> bool:
     """True when Harbor recorded an agent timeout, then completed verification
-    with a usable numeric reward.
+    with a usable numeric reward on a patch the agent managed to export.
+
+    Without a patch artifact there is nothing to score: the timeout killed the
+    runtime before it exported patch.diff, so the timeout stays the failure.
     """
     exception_type = (summary.trial_result.exception_info.exception_type or "").strip()
     if exception_type not in AGENT_TIMEOUT_EXCEPTION_NAMES:
+        return False
+
+    if not read_text(trial_paths.agent_dir / "patch.diff"):
         return False
 
     verifier_result = summary.trial_result.verifier_result
