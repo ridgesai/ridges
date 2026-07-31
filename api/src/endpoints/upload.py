@@ -2,7 +2,7 @@ import asyncio
 import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Annotated, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -35,7 +35,12 @@ from queries.agent import (
     record_upload_attempt,
 )
 from queries.banned_coldkey import get_banned_coldkey
-from queries.errors import ColdkeyBannedError, DuplicateAgentIDError
+from queries.errors import (
+    ColdkeyBannedError,
+    DuplicateAgentIDError,
+    UploadCreditAlreadyRedeemedError,
+    UploadCreditUnavailableError,
+)
 from queries.payments import (
     complete_payment,
     create_payment_quote,
@@ -44,6 +49,7 @@ from queries.payments import (
     retrieve_payment_quote,
 )
 from queries.refund import is_payment_refunded
+from queries.upload_credit import create_agent_with_upload_credit, get_upload_credit_for_check
 from utils.agent_secrets import encrypt_agent_secret
 from utils.bittensor import subtensor_client
 from utils.debug_lock import DebugLock
@@ -82,16 +88,23 @@ async def check_agent_post(
     openrouter_management_key: str = Form(
         ..., description="OpenRouter management key used to validate workspace privacy settings"
     ),
+    use_credit: Annotated[bool, Form(description="Use a upload credit instead of burning alpha")] = False,
+    credit_id: Annotated[Optional[str], Form(description="Specific upload credit ID for a retry")] = None,
 ) -> AgentCheckResponse:
     if config.DISALLOW_UPLOADS:
         raise HTTPException(status_code=503, detail=config.DISALLOW_UPLOADS_REASON)
     miner_hotkey = get_miner_hotkey(file_info)
     is_owner_upload = miner_hotkey == config.OWNER_HOTKEY
-    latest_agent_created_at_in_latest_set_id = await get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(
-        miner_hotkey=miner_hotkey
-    )
-    if latest_agent_created_at_in_latest_set_id:
-        check_rate_limit(latest_agent_created_at_in_latest_set_id)
+    if credit_id is not None and not use_credit:
+        raise HTTPException(status_code=400, detail="credit_id requires use_credit")
+    if use_credit and (config.ENV != "prod" or is_owner_upload):
+        raise HTTPException(status_code=400, detail="Upload credits are only available for production miner uploads")
+    if not use_credit:
+        latest_agent_created_at_in_latest_set_id = await get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(
+            miner_hotkey=miner_hotkey
+        )
+        if latest_agent_created_at_in_latest_set_id:
+            check_rate_limit(latest_agent_created_at_in_latest_set_id)
     check_signature(public_key, file_info, signature, miner_hotkey)
     await check_hotkey_registered(miner_hotkey)
     coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey)
@@ -101,6 +114,33 @@ async def check_agent_post(
         await check_coldkey_banned(coldkey)
     check_if_python_file(agent_file.filename)
     await check_file_size(agent_file)
+
+    if use_credit:
+        requested_credit_id: Optional[UUID] = None
+        if credit_id is not None:
+            try:
+                requested_credit_id = UUID(credit_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid upload credit ID") from None
+
+        credit = await get_upload_credit_for_check(
+            miner_hotkey=miner_hotkey,
+            credit_id=requested_credit_id,
+        )
+        if credit is None:
+            raise HTTPException(status_code=402, detail="No usable upload credit is available for this hotkey")
+
+        await validate_openrouter_keys(
+            openrouter_api_key=openrouter_api_key,
+            openrouter_management_key=openrouter_management_key,
+        )
+        return AgentCheckResponse(
+            status="success",
+            message="Agent check successful",
+            payment_method="credit",
+            credit_id=credit.credit_id,
+            amount_alpha_rao=0,
+        )
 
     try:
         alpha_stake = await subtensor_client.get_alpha_stake_availability(
@@ -136,6 +176,7 @@ async def check_agent_post(
     return AgentCheckResponse(
         status="success",
         message="Agent check successful",
+        payment_method="burn",
         quote_id=quote.quote_id,
         amount_alpha_rao=quote.amount_alpha_rao,
         payment_netuid=config.NETUID,
@@ -165,9 +206,10 @@ async def post_agent(
     ),
     signature: str = Form(..., description="Signature to verify the authenticity of the upload"),
     name: str = Form(..., description="Name of the agent"),
-    payment_block_hash: str = Form(..., description="Block hash in which payment was made"),
-    payment_extrinsic_index: str = Form(..., description="Index in the block for payment extrinsic"),
+    payment_block_hash: Optional[str] = Form(None, description="Block hash in which payment was made"),
+    payment_extrinsic_index: Optional[str] = Form(None, description="Index in the block for payment extrinsic"),
     quote_id: Optional[str] = Form(None, description="Server-issued upload payment quote ID"),
+    credit_id: Annotated[Optional[str], Form(description="One-shot upload credit ID")] = None,
     openrouter_api_key: str = Form(..., description="OpenRouter API key for inference during evaluation"),
     openrouter_management_key: str = Form(
         ..., description="OpenRouter management key used to validate workspace privacy settings"
@@ -207,7 +249,13 @@ async def post_agent(
         logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
 
         is_owner_upload = miner_hotkey == config.OWNER_HOTKEY
+        is_credit_upload = credit_id is not None
         logger.info("Owner upload: " + str(is_owner_upload))
+
+        if is_credit_upload and (not prod or is_owner_upload):
+            raise HTTPException(
+                status_code=400, detail="Upload credits are only available for production miner uploads"
+            )
 
         if prod:
             check_signature(public_key, file_info, signature, miner_hotkey)
@@ -222,9 +270,25 @@ async def post_agent(
         agent_bytes, agent_text = await check_file_size(agent_file)
         source_sha256 = hashlib.sha256(agent_bytes).hexdigest()
 
-        if prod and not is_owner_upload:
+        credit_uuid: Optional[UUID] = None
+        if prod and not is_owner_upload and is_credit_upload:
+            if any(value is not None for value in (quote_id, payment_block_hash, payment_extrinsic_index)):
+                raise HTTPException(status_code=400, detail="Credit uploads cannot include burn payment fields")
+            try:
+                credit_uuid = UUID(credit_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid upload credit ID") from None
+
+            coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey)
+            if coldkey is None:
+                raise HTTPException(status_code=400, detail="Hotkey owner not found")
+            await check_coldkey_banned(coldkey)
+
+        if prod and not is_owner_upload and not is_credit_upload:
             if quote_id is None:
                 raise HTTPException(status_code=400, detail=OUTDATED_UPLOAD_CLIENT_MESSAGE)
+            if payment_block_hash is None or payment_extrinsic_index is None:
+                raise HTTPException(status_code=400, detail="Burn payment information is required")
 
             try:
                 quote_uuid = UUID(quote_id)
@@ -313,6 +377,7 @@ async def post_agent(
         )
 
         hotkey_lock = await get_hotkey_lock(miner_hotkey)
+        credit_was_already_redeemed = False
         async with DebugLock(hotkey_lock, f"Agent upload lock for miner {miner_hotkey}"):
             latest_agent: Optional[Agent] = await get_latest_agent_for_miner_hotkey(miner_hotkey=miner_hotkey)
 
@@ -320,7 +385,7 @@ async def post_agent(
                 await get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(miner_hotkey=miner_hotkey)
             )
 
-            if prod and not is_owner_upload:
+            if prod and not is_owner_upload and not is_credit_upload:
                 if latest_agent_created_at_in_latest_set_id:
                     check_rate_limit(latest_agent_created_at_in_latest_set_id)
 
@@ -347,6 +412,14 @@ async def post_agent(
             initial_status = (
                 AgentStatus.pre_screening if config.PRE_SCREENING_JUDGE_ENABLED else AgentStatus.screening_1
             )
+            if is_credit_upload:
+                agent_payment_block_hash = f"credit:{credit_uuid}"
+                agent_payment_extrinsic_index = "0"
+            else:
+                agent_payment_block_hash = payment_block_hash
+                agent_payment_extrinsic_index = payment_extrinsic_index
+            if agent_payment_block_hash is None or agent_payment_extrinsic_index is None:
+                raise HTTPException(status_code=400, detail="Payment information is required")
             agent = AgentCreate(
                 miner_hotkey=miner_hotkey,
                 name=name if not latest_agent else latest_agent.name,
@@ -354,41 +427,70 @@ async def post_agent(
                 created_at=datetime.now(timezone.utc),
                 status=initial_status,
                 ip_address=request.client.host if request.client else None,
-                payment_block_hash=payment_block_hash,
-                payment_extrinsic_index=payment_extrinsic_index,
+                payment_block_hash=agent_payment_block_hash,
+                payment_extrinsic_index=agent_payment_extrinsic_index,
             )
             try:
-                agent_id = await create_agent(
-                    agent,
-                    agent_text,
-                    source_sha256=source_sha256,
-                    runtime_openrouter_api_key_ciphertext=encrypted_openrouter_api_key,
-                    management_openrouter_api_key_ciphertext=encrypted_openrouter_management_key,
-                    openrouter_workspace_id=validated_openrouter_keys.workspace_id,
-                    openrouter_api_key_label=validated_openrouter_keys.api_key_label,
-                    openrouter_api_key_creator_user_id=validated_openrouter_keys.api_key_creator_user_id,
-                    openrouter_validated_at=validated_openrouter_keys.validated_at,
-                    miner_coldkey=coldkey if prod else None,
-                    create_pre_screening_job=config.PRE_SCREENING_JUDGE_ENABLED,
-                )
+                if prod and not is_owner_upload and is_credit_upload:
+                    agent_id, credit_was_already_redeemed = await create_agent_with_upload_credit(
+                        credit_id=credit_uuid,
+                        miner_hotkey=miner_hotkey,
+                        miner_coldkey=coldkey,
+                        agent=agent,
+                        agent_text=agent_text,
+                        source_sha256=source_sha256,
+                        runtime_openrouter_api_key_ciphertext=encrypted_openrouter_api_key,
+                        management_openrouter_api_key_ciphertext=encrypted_openrouter_management_key,
+                        openrouter_workspace_id=validated_openrouter_keys.workspace_id,
+                        openrouter_api_key_label=validated_openrouter_keys.api_key_label,
+                        openrouter_api_key_creator_user_id=validated_openrouter_keys.api_key_creator_user_id,
+                        openrouter_validated_at=validated_openrouter_keys.validated_at,
+                        create_pre_screening_job=config.PRE_SCREENING_JUDGE_ENABLED,
+                    )
+                else:
+                    agent_id = await create_agent(
+                        agent,
+                        agent_text,
+                        source_sha256=source_sha256,
+                        runtime_openrouter_api_key_ciphertext=encrypted_openrouter_api_key,
+                        management_openrouter_api_key_ciphertext=encrypted_openrouter_management_key,
+                        openrouter_workspace_id=validated_openrouter_keys.workspace_id,
+                        openrouter_api_key_label=validated_openrouter_keys.api_key_label,
+                        openrouter_api_key_creator_user_id=validated_openrouter_keys.api_key_creator_user_id,
+                        openrouter_validated_at=validated_openrouter_keys.validated_at,
+                        miner_coldkey=coldkey if prod else None,
+                        create_pre_screening_job=config.PRE_SCREENING_JUDGE_ENABLED,
+                    )
             except ColdkeyBannedError as e:
                 raise HTTPException(status_code=403, detail="Your miner coldkey has been banned") from e
+            except UploadCreditUnavailableError as e:
+                raise HTTPException(status_code=402, detail="Upload credit is not available for this hotkey") from e
+            except UploadCreditAlreadyRedeemedError as e:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Upload credit {credit_uuid} was already used for agent {e.agent_id}",
+                ) from e
 
-        if prod and not is_owner_upload:
+        if prod and not is_owner_upload and not is_credit_upload:
             await complete_payment(
                 payment_block_hash=payment_block_hash,
                 payment_extrinsic_index=payment_extrinsic_index,
                 agent_id=agent_id,
             )
 
-        logger.info(f"Successfully uploaded agent {agent_id} for miner {miner_hotkey}.")
+        if credit_was_already_redeemed:
+            success_message = (
+                f"Upload credit {credit_uuid} was already used for agent {agent_id}. No new agent was created."
+            )
+        else:
+            success_message = f"Successfully uploaded agent {agent_id} for miner {miner_hotkey}."
+
+        logger.info(success_message)
 
         # Record successful upload
         await record_upload_attempt(upload_type="agent", success=True, agent_id=agent_id, **upload_data)
 
-        return AgentUploadResponse(
-            status="success", message=f"Successfully uploaded agent {agent_id} for miner {miner_hotkey}."
-        )
+        return AgentUploadResponse(status="success", message=success_message)
 
     except DuplicateAgentIDError as e:
         logger.warning(f"Agent upload failed, duplicate agent ID found: {e}")
