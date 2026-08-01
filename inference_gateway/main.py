@@ -21,6 +21,7 @@ from inference_gateway.models import (
     InferenceToolMode,
 )
 from inference_gateway.providers.chutes import ChutesProvider
+from inference_gateway.providers.gonka import GonkaProvider
 from inference_gateway.providers.openrouter import OpenRouterProvider
 from inference_gateway.providers.provider import Provider
 from inference_gateway.providers.targon import TargonProvider
@@ -78,6 +79,8 @@ async def lifespan(app: FastAPI):
         providers.append(WeightedProvider(await TargonProvider().init(), weight=config.TARGON_WEIGHT))
     if config.USE_OPENROUTER:
         providers.append(WeightedProvider(await OpenRouterProvider().init(), weight=config.OPENROUTER_WEIGHT))
+    if config.USE_GONKA:
+        providers.append(WeightedProvider(await GonkaProvider().init(), weight=config.GONKA_WEIGHT))
 
     for wp in providers:
         if config.TEST_INFERENCE_MODELS:
