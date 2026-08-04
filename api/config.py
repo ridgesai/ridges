@@ -43,7 +43,7 @@ if not OWNER_HOTKEY:
 
 COLDKEY_BAN_ADMIN_API_KEY = os.getenv("COLDKEY_BAN_ADMIN_API_KEY")
 if not COLDKEY_BAN_ADMIN_API_KEY:
-    logger.warning("COLDKEY_BAN_ADMIN_API_KEY is not set; coldkey ban administration will be unavailable")
+    logger.warning("COLDKEY_BAN_ADMIN_API_KEY is not set; admin APIs will be unavailable")
 
 UPLOAD_SEND_ADDRESS = os.getenv("UPLOAD_SEND_ADDRESS")
 if not UPLOAD_SEND_ADDRESS:

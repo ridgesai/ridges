@@ -10,6 +10,7 @@ class Payment(BaseModel):
     payment_extrinsic_index: str
 
     quote_id: Optional[UUID] = None
+    upload_credit_id: Optional[UUID] = None
     agent_id: Optional[UUID] = None
 
     miner_hotkey: str

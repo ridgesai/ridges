@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
+from click.testing import CliRunner
 
 import miners.cli.commands.upload as upload_module
 
@@ -98,6 +100,45 @@ def test_check_upload_allowed_sends_both_openrouter_keys(tmp_path: Path) -> None
     assert "payment_time" not in client.calls[0]["data"]
 
 
+def test_check_upload_allowed_requests_specific_credit(tmp_path: Path) -> None:
+    credit_response = {
+        "payment_method": "credit",
+        "credit_id": "67c64261-a579-4be8-8cb5-63ad3eeb669a",
+        "amount_alpha_rao": 0,
+    }
+    client = _FakeClient(_FakeResponse(200, json_data=credit_response))
+    target = upload_module.UploadTarget(
+        api_url="https://agent-upload.ridges.ai",
+        agent_path=tmp_path / "agent.py",
+        file_content=b"print('hi')\n",
+        content_hash="abc123",
+    )
+    pending = upload_module.PendingUpload(
+        name="agent",
+        version_num=0,
+        file_info="hk:hash:0",
+        public_key="pub",
+        signature="sig",
+    )
+    credentials = upload_module.OpenRouterUploadCredentials(
+        runtime_api_key="sk-or-v1-runtime",
+        management_key="sk-or-v1-management",
+    )
+
+    response = upload_module._check_upload_allowed(
+        client,
+        target=target,
+        pending=pending,
+        credentials=credentials,
+        use_credit=True,
+        credit_id=credit_response["credit_id"],
+    )
+
+    assert response == credit_response
+    assert client.calls[0]["data"]["use_credit"] == "true"
+    assert client.calls[0]["data"]["credit_id"] == credit_response["credit_id"]
+
+
 def test_upload_payload_includes_both_openrouter_keys() -> None:
     pending = upload_module.PendingUpload(
         name="agent",
@@ -126,6 +167,91 @@ def test_upload_payload_includes_both_openrouter_keys() -> None:
     assert payload["openrouter_management_key"] == "sk-or-v1-management"
     assert payload["quote_id"] == "quote-123"
     assert "payment_time" not in payload
+
+
+def test_credit_upload_payload_excludes_burn_fields() -> None:
+    pending = upload_module.PendingUpload(
+        name="agent",
+        version_num=0,
+        file_info="hk:hash:0",
+        public_key="pub",
+        signature="sig",
+    )
+    receipt = upload_module.CreditReceipt(credit_id="67c64261-a579-4be8-8cb5-63ad3eeb669a")
+    credentials = upload_module.OpenRouterUploadCredentials(
+        runtime_api_key="sk-or-v1-runtime",
+        management_key="sk-or-v1-management",
+    )
+
+    payload = upload_module._upload_payload(pending=pending, receipt=receipt, credentials=credentials)
+
+    assert payload["credit_id"] == receipt.credit_id
+    assert "quote_id" not in payload
+    assert "payment_block_hash" not in payload
+    assert "payment_extrinsic_index" not in payload
+
+
+def test_upload_result_prints_server_message(monkeypatch) -> None:
+    message = (
+        "Upload credit 67c64261-a579-4be8-8cb5-63ad3eeb669a was already used for agent "
+        "e71efacd-e9b7-4f1e-9c43-2a453419c07d. No new agent was created."
+    )
+    print_result = MagicMock()
+    monkeypatch.setattr(upload_module.console, "print", print_result)
+
+    upload_module._handle_upload_result(_FakeResponse(200, json_data={"message": message}), name="agent")
+
+    panel = print_result.call_args.args[0]
+    assert message in panel.renderable
+
+
+def test_upload_command_credit_path_never_attempts_burn(monkeypatch, tmp_path: Path) -> None:
+    credit_id = "67c64261-a579-4be8-8cb5-63ad3eeb669a"
+    wallet = MagicMock()
+    wallet.hotkey.ss58_address = "5FHhot"
+    target = upload_module.UploadTarget(
+        api_url="https://agent-upload.ridges.ai",
+        agent_path=tmp_path / "agent.py",
+        file_content=b"print('hi')\n",
+        content_hash="abc123",
+    )
+    pending = upload_module.PendingUpload(
+        name="agent",
+        version_num=0,
+        file_info="5FHhot:abc123:0",
+        public_key="pub",
+        signature="sig",
+    )
+    credentials = upload_module.OpenRouterUploadCredentials("runtime", "management")
+    client = MagicMock()
+    client_context = MagicMock()
+    client_context.__enter__.return_value = client
+
+    monkeypatch.setattr(upload_module, "_resolve_wallet_and_target", MagicMock(return_value=(wallet, target)))
+    monkeypatch.setattr(upload_module, "_resolve_openrouter_upload_credentials", MagicMock(return_value=credentials))
+    monkeypatch.setattr(upload_module, "_print_upload_preview", MagicMock())
+    monkeypatch.setattr(upload_module, "_prepare_pending_upload", MagicMock(return_value=pending))
+    monkeypatch.setattr(
+        upload_module,
+        "_check_upload_allowed",
+        MagicMock(return_value={"payment_method": "credit", "credit_id": credit_id, "amount_alpha_rao": 0}),
+    )
+    monkeypatch.setattr(upload_module.httpx, "Client", MagicMock(return_value=client_context))
+    unlock = MagicMock(side_effect=AssertionError("credit path must not unlock the coldkey"))
+    burn = MagicMock(side_effect=AssertionError("credit path must not burn alpha"))
+    execute = MagicMock()
+    monkeypatch.setattr(upload_module, "_unlock_coldkey", unlock)
+    monkeypatch.setattr(upload_module, "_submit_eval_payment", burn)
+    monkeypatch.setattr(upload_module, "_execute_upload", execute)
+
+    result = CliRunner().invoke(upload_module.upload, ["--use-credit"], obj={})
+
+    assert result.exit_code == 0, result.output
+    unlock.assert_not_called()
+    burn.assert_not_called()
+    receipt = execute.call_args.kwargs["receipt"]
+    assert isinstance(receipt, upload_module.CreditReceipt)
+    assert receipt.credit_id == credit_id
 
 
 def test_submit_eval_payment_composes_burn_alpha(monkeypatch):

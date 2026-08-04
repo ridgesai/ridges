@@ -216,6 +216,66 @@ def test_zero_verifier_reward_after_agent_timeout_records_finished_zero(tmp_path
     assert result.verifier_reward == 0.0
 
 
+def test_agent_timeout_without_patch_classifies_as_agent_timeout(tmp_path: Path) -> None:
+    """A timed-out agent that never exported patch.diff is the agent's fault, not a validator error."""
+    summary = make_summary(
+        tmp_path,
+        exception_info={
+            "exception_type": "AgentTimeoutError",
+            "exception_message": "Agent execution timed out after 600.0 seconds",
+            "exception_traceback": "Traceback...\n_execute_agent\n",
+        },
+        patch=None,
+        eval_log="verifier output",
+        verifier_result={"rewards": {"reward": 0.0}},
+    )
+
+    with pytest.raises(EvaluationRunException) as exc_info:
+        result_from_summary(summary)
+
+    assert exc_info.value.error_code == EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_AGENT
+
+
+def test_agent_timeout_with_empty_patch_classifies_as_agent_timeout(tmp_path: Path) -> None:
+    """An empty patch.diff is as unscoreable as a missing one."""
+    summary = make_summary(
+        tmp_path,
+        exception_info={
+            "exception_type": "AgentTimeoutError",
+            "exception_message": "Agent execution timed out after 600.0 seconds",
+            "exception_traceback": "Traceback...\n_execute_agent\n",
+        },
+        patch="",
+        eval_log="verifier output",
+        verifier_result={"rewards": {"reward": 0.0}},
+    )
+
+    with pytest.raises(EvaluationRunException) as exc_info:
+        result_from_summary(summary)
+
+    assert exc_info.value.error_code == EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_AGENT
+
+
+def test_agent_timeout_with_unparseable_artifacts_falls_back_to_agent_timeout(tmp_path: Path) -> None:
+    """When partial-credit scoring of a timed-out run fails, keep the agent-timeout classification."""
+    summary = make_summary(
+        tmp_path,
+        exception_info={
+            "exception_type": "AgentTimeoutError",
+            "exception_message": "Agent execution timed out after 600.0 seconds",
+            "exception_traceback": "Traceback...\n_execute_agent\n",
+        },
+        test_results={"success": True, "output": "not-a-list"},
+        eval_log="verifier output",
+        verifier_result={"rewards": {"reward": 0.0}},
+    )
+
+    with pytest.raises(EvaluationRunException) as exc_info:
+        result_from_summary(summary)
+
+    assert exc_info.value.error_code == EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_AGENT
+
+
 def test_non_timeout_exception_with_verified_reward_still_errors(tmp_path: Path) -> None:
     """Only agent timeouts defer to the verifier; other exceptions keep the error path."""
     summary = make_summary(
