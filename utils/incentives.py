@@ -79,7 +79,7 @@ def calculate_relative_improvement(
             qualified=True,
             performance_delta=None,
             cost_delta=None,
-            relative_improvement_units=1.0,
+            relative_improvement_units=candidate_score * 100.0,
         )
     if not _is_finite_nonnegative(leader_score):
         return RelativeImprovement(
@@ -125,18 +125,16 @@ def calculate_relative_improvement(
     )
 
 
-def calculate_time_multiplier(*, elapsed_hours: float, half_life_hours: float, maximum: float) -> float:
+def calculate_time_multiplier(*, elapsed_hours: float, scale_hours: float) -> float:
     """
     Time value of Ridges: Increase the reward when a competition goes longer without improvement.
-    The reward grows over time from 1x up to the configured maximum.
+    The reward grows without bound as 1 + sqrt(elapsed / scale).
     """
-    if half_life_hours <= 0:
-        raise ValueError("Time multiplier half-life must be positive")
-    if maximum < 1 or not math.isfinite(maximum):
-        raise ValueError("Maximum time multiplier must be finite and at least 1")
+    if scale_hours <= 0:
+        raise ValueError("Time multiplier scale must be positive")
 
     elapsed_hours = max(0.0, elapsed_hours)
-    return 1 + (maximum - 1) * (1 - 2 ** (-elapsed_hours / half_life_hours))
+    return 1 + math.sqrt(elapsed_hours / scale_hours)
 
 
 def calculate_initial_reward_score(
