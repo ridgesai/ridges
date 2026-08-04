@@ -225,8 +225,7 @@ async def network_statistics() -> NetworkStatisticsResponse:
         elapsed_hours = max(0.0, (observed_at - leader.approved_at).total_seconds() / 3600)
         time_multiplier = calculate_time_multiplier(
             elapsed_hours=elapsed_hours,
-            half_life_hours=config.INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS,
-            maximum=config.INCENTIVE_TIME_MULTIPLIER_MAX,
+            scale_hours=config.INCENTIVE_TIME_MULTIPLIER_SCALE_HOURS,
         )
 
     return NetworkStatisticsResponse(
