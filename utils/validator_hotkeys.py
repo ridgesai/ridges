@@ -5,7 +5,7 @@ WHITELISTED_VALIDATORS = [
     {"name": "Yuma", "hotkey": "5Eho9y6iF5aTdKS28Awn2pKTd4dFsJ2o3shGtj1vjnLiaKJ1"},
     {"name": "Rizzo", "hotkey": "5GuRsre3hqm6WKWRCqVxXdM4UtGs457nDhPo9F5wvJ16Ys62"},
     {"name": "Ridges", "hotkey": "5GgJptBaUiWwb8SQDinZ9rDQoVw47mgduXaCLHeJGTtA4JMS"},
-    {"name": "Crucible Labs", "short_name": "Crucible", "hotkey": "5HmkM6X1D3W3CuCSPuHhrbYyZNBy2aGAiZy9NczoJmtY25H7"},
+    {"name": "Crucible Labs", "short_name": "Crucible", "hotkey": "5CAQAgXxoU3NPo1YG5VQKz4Ackh7goNx3TvPD9A6LoqA7FmJ"},
     {"name": "tao.bot", "hotkey": "5E2LP6EnZ54m3wS8s1yPvD5c3xo71kQroBw7aUVK32TKeZ5u"},
     {
         "name": "Opentensor Foundation",
