@@ -253,8 +253,7 @@ async def _insert_incentive_approval(
     competition_elapsed_hours = _elapsed_hours(last_competition_improvement, decision_time)
     time_multiplier = calculate_time_multiplier(
         elapsed_hours=competition_elapsed_hours,
-        half_life_hours=config.INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS,
-        maximum=config.INCENTIVE_TIME_MULTIPLIER_MAX,
+        scale_hours=config.INCENTIVE_TIME_MULTIPLIER_SCALE_HOURS,
     )
 
     initial_reward_score = calculate_initial_reward_score(

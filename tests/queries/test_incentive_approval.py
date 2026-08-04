@@ -11,6 +11,7 @@ from queries.approval import project_next_approval_job_state
 from queries.banned_coldkey import COLDKEY_BAN_LOCK_NAMESPACE
 
 SET_ID = 71
+MULTIPLIER_AT_72H = 1 + math.sqrt(72 / config.INCENTIVE_TIME_MULTIPLIER_SCALE_HOURS)
 
 
 @pytest.fixture(autouse=True)
@@ -153,8 +154,8 @@ async def test_projector_stores_time_adjusted_incentive_snapshot() -> None:
     assert approved["performance_delta"] == pytest.approx(0.04)
     expected_units = math.log1p(0.04) / math.log1p(config.INCENTIVE_PERFORMANCE_THRESHOLD)
     assert approved["relative_improvement_units"] == pytest.approx(expected_units)
-    assert approved["time_multiplier"] == pytest.approx(1.5, rel=1e-3)
-    assert approved["initial_reward_score"] == pytest.approx(expected_units * 1.5, rel=1e-3)
+    assert approved["time_multiplier"] == pytest.approx(MULTIPLIER_AT_72H, rel=1e-3)
+    assert approved["initial_reward_score"] == pytest.approx(expected_units * MULTIPLIER_AT_72H, rel=1e-3)
     assert state["system_verdict"] == "approved"
     assert state["published_verdict"] == "approved"
     assert projected_at is not None
@@ -189,8 +190,8 @@ async def test_projector_does_not_inherit_reward_score_from_previous_agent() -> 
 
     assert approved is not None
     assert approved["relative_improvement_units"] == pytest.approx(1)
-    assert approved["time_multiplier"] == pytest.approx(1.5, rel=1e-3)
-    assert approved["initial_reward_score"] == pytest.approx(1.5, rel=1e-3)
+    assert approved["time_multiplier"] == pytest.approx(MULTIPLIER_AT_72H, rel=1e-3)
+    assert approved["initial_reward_score"] == pytest.approx(MULTIPLIER_AT_72H, rel=1e-3)
 
 
 @pytest.mark.anyio
@@ -234,9 +235,9 @@ async def test_projector_excludes_banned_approvals_from_elapsed_time() -> None:
         approved = await conn.fetchrow("SELECT * FROM approved_agents WHERE agent_id = $1", candidate_id)
 
     assert approved is not None
-    assert approved["time_multiplier"] == pytest.approx(1.5, rel=1e-3)
+    assert approved["time_multiplier"] == pytest.approx(MULTIPLIER_AT_72H, rel=1e-3)
     expected_units = math.log1p(0.04) / math.log1p(config.INCENTIVE_PERFORMANCE_THRESHOLD)
-    assert approved["initial_reward_score"] == pytest.approx(expected_units * 1.5, rel=1e-3)
+    assert approved["initial_reward_score"] == pytest.approx(expected_units * MULTIPLIER_AT_72H, rel=1e-3)
 
 
 @pytest.mark.anyio
@@ -278,7 +279,7 @@ async def test_projector_excludes_review_rejected_approval_from_leader_and_elaps
 
     assert approved is not None
     assert approved["baseline_agent_id"] == eligible_leader_id
-    assert approved["time_multiplier"] == pytest.approx(1.5, rel=1e-3)
+    assert approved["time_multiplier"] == pytest.approx(MULTIPLIER_AT_72H, rel=1e-3)
 
 
 @pytest.mark.anyio
@@ -331,7 +332,7 @@ async def test_projector_excludes_non_reward_candidates_from_elapsed_time(inelig
 
     assert approved is not None
     assert approved["baseline_agent_id"] == eligible_leader_id
-    assert approved["time_multiplier"] == pytest.approx(1.5, rel=1e-3)
+    assert approved["time_multiplier"] == pytest.approx(MULTIPLIER_AT_72H, rel=1e-3)
 
 
 @pytest.mark.anyio
@@ -388,9 +389,9 @@ async def test_projector_rechecks_leader_after_concurrent_ban() -> None:
 
     assert approved is not None
     assert approved["baseline_agent_id"] is None
-    assert approved["relative_improvement_units"] == pytest.approx(1)
+    assert approved["relative_improvement_units"] == pytest.approx(49)
     assert approved["time_multiplier"] == pytest.approx(1)
-    assert approved["initial_reward_score"] == pytest.approx(1)
+    assert approved["initial_reward_score"] == pytest.approx(49)
 
 
 @pytest.mark.anyio

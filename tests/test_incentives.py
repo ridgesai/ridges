@@ -26,11 +26,11 @@ def _improvement(*, candidate_score=0.6, candidate_cost=0.1, leader_score=0.5, l
     )
 
 
-def test_first_leader_qualifies_with_one_relative_improvement_unit() -> None:
+def test_first_leader_qualifies_with_its_absolute_score_in_points() -> None:
     result = _improvement(leader_score=None, leader_cost=None)
 
     assert result.qualified is True
-    assert result.relative_improvement_units == 1
+    assert result.relative_improvement_units == pytest.approx(60)
 
 
 @pytest.mark.parametrize("candidate_score", [0.515, 0.5150000000000001])
@@ -152,11 +152,12 @@ def test_invalid_candidate_score_cannot_qualify(candidate_score: float) -> None:
     assert result.relative_improvement_units == 0
 
 
-def test_time_multiplier_grows_smoothly_and_is_bounded() -> None:
-    assert calculate_time_multiplier(elapsed_hours=0, half_life_hours=72, maximum=2) == 1
-    assert calculate_time_multiplier(elapsed_hours=72, half_life_hours=72, maximum=2) == pytest.approx(1.5)
-    assert calculate_time_multiplier(elapsed_hours=144, half_life_hours=72, maximum=2) == pytest.approx(1.75)
-    assert calculate_time_multiplier(elapsed_hours=10_000, half_life_hours=72, maximum=2) <= 2
+def test_time_multiplier_grows_as_square_root_without_a_cap() -> None:
+    assert calculate_time_multiplier(elapsed_hours=0, scale_hours=12) == 1
+    assert calculate_time_multiplier(elapsed_hours=12, scale_hours=12) == pytest.approx(2)
+    assert calculate_time_multiplier(elapsed_hours=48, scale_hours=12) == pytest.approx(3)
+    assert calculate_time_multiplier(elapsed_hours=108, scale_hours=12) == pytest.approx(4)
+    assert calculate_time_multiplier(elapsed_hours=10_000, scale_hours=12) == pytest.approx(1 + math.sqrt(10_000 / 12))
 
 
 def test_initial_reward_score_uses_time_adjusted_relative_improvement() -> None:
