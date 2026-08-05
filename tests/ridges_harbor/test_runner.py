@@ -55,10 +55,12 @@ class FakeEnvironmentConfig:
         env: dict[str, str] | None = None,
         type: str = "docker",
         import_path: str | None = None,
+        kwargs: dict[str, object] | None = None,
     ):
         self.env = env or {}
         self.type = type
         self.import_path = import_path
+        self.kwargs = kwargs or {}
 
 
 class FakeVerifierConfig:
@@ -242,6 +244,51 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
     assert summary.trial_result is FakeJob.last_instance._trial_result
     assert summary.trial_result.exception_info.occurred_at == "2026-04-09T09:14:51.454327"
     assert os.environ == original_environ
+
+
+@pytest.mark.anyio
+async def test_run_task_dir_uses_loopback_proxy_in_kubernetes(tmp_path: Path, monkeypatch) -> None:
+    from kubernetes import client as k8s_client
+    from kubernetes import config as k8s_config
+
+    from validator import config as validator_config
+
+    _install_fake_harbor(monkeypatch)
+    monkeypatch.setenv("RIDGES_ENVIRONMENT_TYPE", "kubernetes")
+    monkeypatch.setattr(k8s_config, "load_incluster_config", lambda: None)
+    monkeypatch.setattr(k8s_client, "CoreV1Api", lambda: object())
+    # These are absent if another test imported validator.config in Docker mode.
+    monkeypatch.setattr(validator_config, "K8S_MEMORY_REQUEST_FRACTION", 0.25, raising=False)
+    monkeypatch.setattr(validator_config, "K8S_CPU_REQUEST_FRACTION", 0.25, raising=False)
+    monkeypatch.setattr(validator_config, "K8S_MEMORY_LIMIT_MULTIPLIER", 1.0, raising=False)
+
+    task_dir = tmp_path / "dataset" / "update-status-file"
+    task_dir.mkdir(parents=True)
+
+    async def fetch_task_url(task_digest: str) -> str:
+        assert task_digest == f"sha256:{'a' * 64}"
+        return "https://tasks.example.test/task.tar.gz"
+
+    await _run_task_dir(
+        task_dir=task_dir,
+        task_name="update-status-file",
+        task_digest=f"sha256:{'a' * 64}",
+        evaluation_run_id="eval-run-k8s",
+        agent_path=tmp_path / "agent.py",
+        agent_timeout_sec=30.0,
+        verifier_timeout_sec=None,
+        upstream_url="http://127.0.0.1:1234",
+        upstream_host="127.0.0.1",
+        results_dir=tmp_path / "results",
+        debug=False,
+        job_name="job-k8s",
+        fetch_task_url=fetch_task_url,
+    )
+
+    config = FakeJob.created_configs[0]
+    assert config.agents[0].env["SANDBOX_PROXY_URL"] == "http://127.0.0.1:8080"
+    assert config.environment.import_path == "ridges_harbor.k8s_environment:RidgesKubernetesEnvironment"
+    assert runner_module.DEFAULT_AGENT_SANDBOX_PROXY_URL == "http://sandbox-proxy:80"
 
 
 @pytest.mark.anyio
