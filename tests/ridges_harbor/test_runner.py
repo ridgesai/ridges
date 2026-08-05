@@ -251,10 +251,16 @@ async def test_run_task_dir_uses_loopback_proxy_in_kubernetes(tmp_path: Path, mo
     from kubernetes import client as k8s_client
     from kubernetes import config as k8s_config
 
+    from validator import config as validator_config
+
     _install_fake_harbor(monkeypatch)
     monkeypatch.setenv("RIDGES_ENVIRONMENT_TYPE", "kubernetes")
     monkeypatch.setattr(k8s_config, "load_incluster_config", lambda: None)
     monkeypatch.setattr(k8s_client, "CoreV1Api", lambda: object())
+    # These are absent if another test imported validator.config in Docker mode.
+    monkeypatch.setattr(validator_config, "K8S_MEMORY_REQUEST_FRACTION", 0.25, raising=False)
+    monkeypatch.setattr(validator_config, "K8S_CPU_REQUEST_FRACTION", 0.25, raising=False)
+    monkeypatch.setattr(validator_config, "K8S_MEMORY_LIMIT_MULTIPLIER", 1.0, raising=False)
 
     task_dir = tmp_path / "dataset" / "update-status-file"
     task_dir.mkdir(parents=True)
