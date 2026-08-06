@@ -136,6 +136,11 @@ async def _build_detail(set_id: int) -> EvaluationSetDetail:
 
     pipeline = [
         EvaluationSetDetailPipelineStage(
+            stage="total",
+            count=total,
+            pass_rate=_pass_rate(total, total),
+        ),
+        EvaluationSetDetailPipelineStage(
             stage="pre_screening",
             count=pre_screening_count,
             pass_rate=_pass_rate(pre_screening_count, total),
