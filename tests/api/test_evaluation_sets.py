@@ -562,7 +562,17 @@ async def test_evaluation_set_detail_happy_path():
     assert result.submissions.approved_emission_count == 1
 
     # Pipeline
+    assert [stage.stage for stage in result.submissions.pipeline] == [
+        "total",
+        "pre_screening",
+        "screener_1",
+        "screener_2",
+        "validator",
+        "approved_emission",
+    ]
     stages = {s.stage: s for s in result.submissions.pipeline}
+    assert stages["total"].count == 3
+    assert stages["total"].pass_rate == 1
     assert stages["pre_screening"].count == 2
     assert stages["pre_screening"].pass_rate == pytest.approx(2 / 3, rel=1e-3)
     assert stages["screener_1"].count == 2
