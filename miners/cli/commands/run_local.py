@@ -303,7 +303,7 @@ def run_local_flow(
 @click.option(
     "--provider",
     default=None,
-    type=click.Choice(["openrouter", "targon", "chutes", "custom"]),
+    type=click.Choice(["openrouter", "targon", "chutes", "gonka", "custom"]),
     help="Override the configured local provider.",
 )
 @click.option("--task-path", default=None, help="Local Harbor task dir or .tar.gz/.tgz archive.")
