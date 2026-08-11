@@ -41,6 +41,8 @@ async def test_get_agents_in_pre_screening_queue_uses_stage_view() -> None:
     result = await agent_queries.get_agents_in_queue.__wrapped__(conn, QueueStage.pre_screening)
 
     assert [agent.status for agent in result] == [AgentStatus.pre_screening]
+    assert "competition_state" not in result[0].model_dump()
+    assert "approved" not in result[0].model_dump()
     assert conn.args == ()
     assert conn.query is not None
     assert "join pre_screening_queue q" in conn.query

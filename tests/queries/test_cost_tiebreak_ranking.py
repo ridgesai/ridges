@@ -62,7 +62,8 @@ async def test_top_agents_uses_cost_tiebreaker() -> None:
     result = await agent_queries.get_top_agents.__wrapped__(conn, number_of_agents=10, page=2)
 
     assert len(result) == 1
-    assert result[0].approval_review_status is None
+    assert result[0].competition_state is not None
+    assert result[0].competition_state.approval_review_status is None
     assert conn.args == (10, 10)
     assert conn.query is not None
     _assert_cost_tiebreak_query(conn.query)
@@ -70,5 +71,5 @@ async def test_top_agents_uses_cost_tiebreaker() -> None:
     assert "ass.status::text <> 'cancelled'" in query
     assert "approval_review_status" in query
     assert "agent_final_review_statuses" in query
-    assert "ass.approved is true" in query
+    assert "ass.approved is true" not in query
     assert "approval_review_status is distinct from 'rejected'" in query
