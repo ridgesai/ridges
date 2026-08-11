@@ -18,7 +18,6 @@ from queries.agent import (
     get_agent_score_and_set_id,
     get_agents_in_queue,
     get_all_public_agents_by_miner_hotkey,
-    get_benchmark_agents,
     get_code_hiding_score_cutoff,
     get_latest_public_agent_for_miner_hotkey,
     get_public_agent_by_id,
@@ -56,13 +55,6 @@ async def queue(stage: QueueStage) -> List[PublicAgent]:
 @ttl_cache(ttl_seconds=60)  # 1 minute
 async def top_agents() -> List[PublicAgent]:
     return await get_top_agents(number_of_agents=50)
-
-
-# /retrieval/benchmark-agents
-@router.get("/benchmark-agents")
-@ttl_cache(ttl_seconds=10 * 60)  # 10 minutes
-async def benchmark_agents() -> List[PublicAgent]:
-    return await get_benchmark_agents()
 
 
 # /retrieval/agent-by-id?agent_id=

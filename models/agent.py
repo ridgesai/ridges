@@ -219,8 +219,6 @@ class PublicAgent(BaseModel):
     version_num: int
     status: AgentStatus
     created_at: datetime
-    is_benchmark_agent: bool = False
-    benchmark_description: str | None = None
     emission: float | None = None
     reward_weight: float | None = None
     competition_state: AgentCompetitionState | None = None
