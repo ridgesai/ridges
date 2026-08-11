@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 import api.endpoints.evaluation_sets as evaluation_sets_endpoint
 import utils.database as _db
+from models.agent import AgentStatus
 from utils.bittensor import HotkeySubnetInfo
 
 
@@ -616,20 +617,30 @@ async def test_evaluation_set_detail_happy_path():
     leaderboard = await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2)
     agents_by_id = {agent.agent_id: agent for agent in leaderboard}
     assert set(agents_by_id) == {agent_a, agent_b, agent_c}
-    assert agents_by_id[agent_a].rank == 1
-    assert agents_by_id[agent_a].approved is True
-    assert agents_by_id[agent_a].approved_at == leaderboard_approved_at
-    assert agents_by_id[agent_a].final_score == 0.8
-    assert agents_by_id[agent_a].validator_count == 1
-    assert agents_by_id[agent_a].average_cost_usd == 0.2
-    assert agents_by_id[agent_a].average_runtime_seconds == 75
-    assert agents_by_id[agent_a].validator_hotkeys == ["validator-hotkey"]
-    assert agents_by_id[agent_b].rank is None
-    assert agents_by_id[agent_b].approved_at is None
-    assert agents_by_id[agent_b].final_score is None
-    assert agents_by_id[agent_c].rank is None
-    assert agents_by_id[agent_c].approved_at is None
-    assert agents_by_id[agent_c].final_score is None
+    agent_a_state = agents_by_id[agent_a].competition_state
+    assert agent_a_state is not None
+    assert agent_a_state.rank == 1
+    assert agent_a_state.approved is True
+    assert agent_a_state.approved_at == leaderboard_approved_at
+    assert agent_a_state.final_score == 0.8
+    assert agent_a_state.validator_count == 1
+    assert agent_a_state.average_cost_usd == 0.2
+    assert agent_a_state.average_runtime_seconds == 75
+    assert agent_a_state.validator_hotkeys == ["validator-hotkey"]
+    assert agent_a_state.status == "approved"
+    assert agent_a_state.set_id == 2
+    agent_b_state = agents_by_id[agent_b].competition_state
+    assert agent_b_state is not None
+    assert agent_b_state.rank is None
+    assert agent_b_state.approved_at is None
+    assert agent_b_state.final_score is None
+    assert agent_b_state.status == "failed_screening_2"
+    agent_c_state = agents_by_id[agent_c].competition_state
+    assert agent_c_state is not None
+    assert agent_c_state.rank is None
+    assert agent_c_state.approved_at is None
+    assert agent_c_state.final_score is None
+    assert agent_c_state.status == "failed_pre_screening"
 
 
 @pytest.mark.anyio
@@ -732,7 +743,11 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
 
     leaderboard = await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2)
 
-    ranked_agent_ids = [agent.agent_id for agent in leaderboard if agent.rank is not None]
+    ranked_agent_ids = [
+        agent.agent_id
+        for agent in leaderboard
+        if agent.competition_state is not None and agent.competition_state.rank is not None
+    ]
     assert ranked_agent_ids == [
         high_score_agent,
         lower_cost_tie_agent,
@@ -742,8 +757,9 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
     ]
 
     agents_by_id = {agent.agent_id: agent for agent in leaderboard}
-    assert agents_by_id[unscored_agent].rank is None
-    assert agents_by_id[unscored_agent].final_score is None
+    assert agents_by_id[unscored_agent].competition_state is not None
+    assert agents_by_id[unscored_agent].competition_state.rank is None
+    assert agents_by_id[unscored_agent].competition_state.final_score is None
 
     result = await evaluation_sets_endpoint.evaluation_set_detail(set_id=2)
     assert result.efficiency.lowest_average_cost_usd_top_agents is not None
@@ -803,10 +819,12 @@ async def test_coldkey_ban_disqualifies_competitor_and_removes_approved_output()
 
     leaderboard = await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2)
     by_id = {agent.agent_id: agent for agent in leaderboard}
-    assert by_id[banned_agent].disqualified is True
-    assert by_id[banned_agent].rank is None
-    assert by_id[eligible_agent].disqualified is False
-    assert by_id[eligible_agent].rank == 1
+    assert by_id[banned_agent].competition_state is not None
+    assert by_id[banned_agent].competition_state.disqualified is True
+    assert by_id[banned_agent].competition_state.rank is None
+    assert by_id[eligible_agent].competition_state is not None
+    assert by_id[eligible_agent].competition_state.disqualified is False
+    assert by_id[eligible_agent].competition_state.rank == 1
 
     detail = await evaluation_sets_endpoint.evaluation_set_detail(set_id=2)
     assert detail.scores.best == 0.8
@@ -815,7 +833,7 @@ async def test_coldkey_ban_disqualifies_competitor_and_removes_approved_output()
     assert detail.top_agent.agent_id == eligible_agent
 
     approved_agents = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=2)
-    assert [agent.id for agent in approved_agents] == [eligible_agent]
+    assert [agent.agent_id for agent in approved_agents] == [eligible_agent]
 
 
 @pytest.mark.anyio
@@ -860,7 +878,16 @@ async def test_evaluation_set_detail_efficiency_uses_all_ranked_agents_not_top_2
             )
 
     leaderboard = await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2)
-    assert len([agent for agent in leaderboard if agent.rank is not None]) == 26
+    assert (
+        len(
+            [
+                agent
+                for agent in leaderboard
+                if agent.competition_state is not None and agent.competition_state.rank is not None
+            ]
+        )
+        == 26
+    )
 
     result = await evaluation_sets_endpoint.evaluation_set_detail(set_id=2)
     assert result.efficiency.lowest_average_cost_usd_top_agents is not None
@@ -941,8 +968,9 @@ async def test_evaluation_set_detail_no_scores_returns_null_best_and_average():
     leaderboard = await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2)
     assert len(leaderboard) == 1
     assert leaderboard[0].agent_id == agent_a
-    assert leaderboard[0].rank is None
-    assert leaderboard[0].final_score is None
+    assert leaderboard[0].competition_state is not None
+    assert leaderboard[0].competition_state.rank is None
+    assert leaderboard[0].competition_state.final_score is None
 
 
 @pytest.mark.anyio
@@ -1044,75 +1072,72 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
 
     assert len(result) == 2
     # Ordered by approved_at DESC (agent_a was the latest approved)
-    assert result[0].id == agent_id_a
+    assert result[0].agent_id == agent_id_a
     assert result[0].miner_hotkey == "hotkey-a"
-    assert result[0].final_score == 90.0
     assert result[0].emission == pytest.approx(147.600823658)
     assert result[0].reward_weight == pytest.approx(0.7)
-    assert result[0].approved_at == approved_at_a
-    assert result[0].approval_review_status == "approved"
-    assert result[0].performance_delta == 0.1235
-    assert result[0].cost_delta == 0.0654
-    assert result[0].relative_improvement_units == 1.2346
-    assert result[0].time_multiplier == 1.4568
-    assert result[0].initial_reward_score == 2.3457
-    assert result[0].baseline_agent_id == agent_id_b
-    assert result[0].baseline_agent_name == "hotkey-b"
-    assert result[0].baseline_agent_version_num == 1
-    assert result[0].average_cost_usd == 0.5
-    assert result[0].average_runtime_seconds == 120
+    first_state = result[0].competition_state
+    assert first_state is not None
+    assert first_state.final_score == 90.0
+    assert first_state.approved_at == approved_at_a
+    assert first_state.approval_review_status == "approved"
+    assert first_state.performance_delta == 0.123456
+    assert first_state.cost_delta == 0.065432
+    assert first_state.relative_improvement_units == 1.234567
+    assert first_state.time_multiplier == 1.456789
+    assert first_state.initial_reward_score == 2.34567
+    assert first_state.baseline_agent_id == agent_id_b
+    assert first_state.baseline_agent_name == "hotkey-b"
+    assert first_state.baseline_agent_version_num == 1
+    assert first_state.average_cost_usd == 0.5
+    assert first_state.average_runtime_seconds == 120
+    assert first_state.status == "approved"
+    assert first_state.set_id == 1
 
-    assert result[1].id == agent_id_b
+    assert result[1].agent_id == agent_id_b
     assert result[1].miner_hotkey == "hotkey-b"
-    assert result[1].final_score == 70.0
     assert result[1].emission == pytest.approx(2.037068052)
     assert result[1].reward_weight == pytest.approx(0.3)
-    assert result[1].approved_at == approved_at_b
-    assert result[1].approval_review_status is None
-    assert result[1].performance_delta is None
-    assert result[1].cost_delta is None
-    assert result[1].relative_improvement_units is None
-    assert result[1].time_multiplier is None
-    assert result[1].initial_reward_score is None
-    assert result[1].baseline_agent_id is None
-    assert result[1].baseline_agent_name is None
-    assert result[1].baseline_agent_version_num is None
-    assert result[1].average_cost_usd == 0.3
-    assert result[1].average_runtime_seconds == 60
+    second_state = result[1].competition_state
+    assert second_state is not None
+    assert second_state.final_score == 70.0
+    assert second_state.approved_at == approved_at_b
+    assert second_state.approval_review_status is None
+    assert second_state.performance_delta is None
+    assert second_state.cost_delta is None
+    assert second_state.relative_improvement_units is None
+    assert second_state.time_multiplier is None
+    assert second_state.initial_reward_score is None
+    assert second_state.baseline_agent_id is None
+    assert second_state.baseline_agent_name is None
+    assert second_state.baseline_agent_version_num is None
+    assert second_state.average_cost_usd == 0.3
+    assert second_state.average_runtime_seconds == 60
+    assert second_state.status == "approved"
+    assert second_state.set_id == 1
 
 
 @pytest.mark.anyio
 async def test_live_approved_agents_show_individual_weights_for_shared_hotkey(monkeypatch):
     first_agent_id = uuid4()
     second_agent_id = uuid4()
-    first_agent = evaluation_sets_endpoint.ApprovedAgent(
-        id=first_agent_id,
+    first_agent = evaluation_sets_endpoint.PublicAgent(
+        agent_id=first_agent_id,
         miner_hotkey="shared-hotkey",
         name="first-agent",
         version_num=1,
+        status=AgentStatus.finished,
         created_at=AGENT_TS_SET_1,
+        set_id=1,
+        approved=True,
         final_score=0.8,
-        emission=None,
-        reward_weight=None,
         approved_at=AGENT_TS_SET_1,
-        approval_review_status=None,
-        performance_delta=None,
-        cost_delta=None,
-        relative_improvement_units=None,
-        time_multiplier=None,
-        initial_reward_score=None,
-        baseline_agent_id=None,
-        baseline_agent_name=None,
-        baseline_agent_version_num=None,
-        average_runtime_seconds=None,
-        average_cost_usd=None,
     )
     second_agent = first_agent.model_copy(
         update={
-            "id": second_agent_id,
+            "agent_id": second_agent_id,
             "name": "second-agent",
             "version_num": 2,
-            "final_score": 0.9,
         }
     )
 
@@ -1137,27 +1162,17 @@ async def test_live_approved_agents_show_individual_weights_for_shared_hotkey(mo
 @pytest.mark.anyio
 async def test_live_approved_agent_data_degrades_when_chain_lookup_fails(monkeypatch):
     agent_id = uuid4()
-    agent = evaluation_sets_endpoint.ApprovedAgent(
-        id=agent_id,
+    agent = evaluation_sets_endpoint.PublicAgent(
+        agent_id=agent_id,
         miner_hotkey="hotkey",
         name="agent",
         version_num=1,
+        status=AgentStatus.finished,
         created_at=AGENT_TS_SET_1,
+        set_id=1,
+        approved=True,
         final_score=0.9,
-        emission=None,
-        reward_weight=None,
         approved_at=AGENT_TS_SET_1,
-        approval_review_status=None,
-        performance_delta=None,
-        cost_delta=None,
-        relative_improvement_units=None,
-        time_multiplier=None,
-        initial_reward_score=None,
-        baseline_agent_id=None,
-        baseline_agent_name=None,
-        baseline_agent_version_num=None,
-        average_runtime_seconds=None,
-        average_cost_usd=None,
     )
 
     async def fail_chain_lookup():
