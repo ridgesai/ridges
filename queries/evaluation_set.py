@@ -908,6 +908,7 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
             aa.time_multiplier,
             aa.initial_reward_score,
             aa.approved_at,
+            aa.baseline_agent_id,
             baseline.name AS baseline_agent_name,
             baseline.version_num AS baseline_agent_version_num,
             rs.final_score,

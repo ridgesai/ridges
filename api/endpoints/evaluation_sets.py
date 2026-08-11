@@ -6,14 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from api.config import EARLIEST_SET_ID_WITH_GOOD_DATA
 from api.incentives import CurrentAllocations, get_current_allocations, get_subnet_hotkey_info
+from models.agent import AgentStatus, PublicAgent
 from models.evaluation_set import (
-    ApprovedAgent,
     EvaluationSet,
     EvaluationSetDetail,
     EvaluationSetDetailBenchmarkThreshold,
     EvaluationSetDetailEfficiency,
     EvaluationSetDetailEfficiencyAgent,
-    EvaluationSetDetailLeaderboardAgent,
     EvaluationSetDetailPipelineStage,
     EvaluationSetDetailScores,
     EvaluationSetDetailSubmissions,
@@ -135,6 +134,11 @@ async def _build_detail(set_id: int) -> EvaluationSetDetail:
     validator_count = submission_row["finished_at_validator_count"]
 
     pipeline = [
+        EvaluationSetDetailPipelineStage(
+            stage="total",
+            count=total,
+            pass_rate=_pass_rate(total, total),
+        ),
         EvaluationSetDetailPipelineStage(
             stage="pre_screening",
             count=pre_screening_count,
@@ -316,9 +320,9 @@ async def evaluation_set_overview(
 #
 # GET evaluation-sets/{set_id}/leaderboard
 #
-async def _build_leaderboard(set_id: int) -> list[EvaluationSetDetailLeaderboardAgent]:
+async def _build_leaderboard(set_id: int) -> list[PublicAgent]:
     agent_rows = await get_evaluation_set_leaderboard_agents(set_id)
-    return [EvaluationSetDetailLeaderboardAgent(**dict(row), set_id=set_id) for row in agent_rows]
+    return [PublicAgent(**dict(row), set_id=set_id) for row in agent_rows]
 
 
 _cached_build_leaderboard = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECONDS)(_build_leaderboard)
@@ -327,7 +331,7 @@ _cached_build_leaderboard = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECOND
 @router.get("/{set_id}/leaderboard")
 async def evaluation_set_leaderboard(
     set_id: Annotated[int, Depends(resolve_set_id)],
-) -> list[EvaluationSetDetailLeaderboardAgent]:
+) -> list[PublicAgent]:
     latest = await _get_latest_set_id()
     if set_id != latest:
         return await _cached_build_leaderboard(set_id)
@@ -341,31 +345,14 @@ async def evaluation_set_leaderboard(
 
 async def _build_approved_agents(
     set_id: int,
-) -> list[ApprovedAgent]:
+) -> list[PublicAgent]:
     agent_rows = await get_approved_agents_for_set(set_id)
-
     return [
-        ApprovedAgent(
-            id=row["agent_id"],
-            miner_hotkey=row["miner_hotkey"],
-            name=row["name"],
-            version_num=row["version_num"],
-            created_at=row["created_at"],
-            final_score=row["final_score"],
-            emission=None,
-            reward_weight=None,
-            approved_at=row["approved_at"],
-            approval_review_status=row["approval_review_status"],
-            performance_delta=row["performance_delta"],
-            cost_delta=row["cost_delta"],
-            relative_improvement_units=row["relative_improvement_units"],
-            time_multiplier=row["time_multiplier"],
-            initial_reward_score=row["initial_reward_score"],
-            baseline_agent_id=row["baseline_agent_id"],
-            baseline_agent_name=row["baseline_agent_name"],
-            baseline_agent_version_num=row["baseline_agent_version_num"],
-            average_runtime_seconds=row["average_runtime_seconds"],
-            average_cost_usd=row["average_cost_usd"],
+        PublicAgent(
+            **dict(row),
+            status=AgentStatus.finished,
+            set_id=set_id,
+            approved=True,
         )
         for row in agent_rows
     ]
@@ -375,9 +362,9 @@ _cached_build_approved_agents = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SE
 
 
 async def _add_onchain_approved_agent_data(
-    agents: list[ApprovedAgent],
+    agents: list[PublicAgent],
     allocations: CurrentAllocations | None,
-) -> list[ApprovedAgent]:
+) -> list[PublicAgent]:
     if not agents:
         return []
 
@@ -395,7 +382,7 @@ async def _add_onchain_approved_agent_data(
             agent.model_copy(
                 update={
                     "emission": None if hotkey_info is None else hotkey_info.emission,
-                    "reward_weight": None if reward_weights is None else reward_weights.get(agent.id, 0.0),
+                    "reward_weight": None if reward_weights is None else reward_weights.get(agent.agent_id, 0.0),
                 }
             )
         )
@@ -411,7 +398,7 @@ async def _safe_current_allocations() -> CurrentAllocations | None:
 
 
 @router.get("/{set_id}/approved-agents")
-async def evaluation_set_approved_agents(set_id: Annotated[int, Depends(resolve_set_id)]) -> list[ApprovedAgent]:
+async def evaluation_set_approved_agents(set_id: Annotated[int, Depends(resolve_set_id)]) -> list[PublicAgent]:
     latest = await _get_latest_set_id()
     if set_id != latest:
         agents = await _cached_build_approved_agents(set_id)

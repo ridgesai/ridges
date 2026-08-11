@@ -7,18 +7,20 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 import api.config as config
-from models.agent import Agent, AgentScored, AgentStatus, BenchmarkAgentScored, PossiblyBenchmarkAgent
+from models.agent import (
+    AgentStatus,
+    PublicAgent,
+)
 from models.evaluation import Evaluation, EvaluationWithRuns
 from models.queue import QueueStage
 from queries.agent import (
     get_agent_by_id,
     get_agent_score_and_set_id,
     get_agents_in_queue,
-    get_all_agents_by_miner_hotkey,
-    get_benchmark_agents,
+    get_all_public_agents_by_miner_hotkey,
     get_code_hiding_score_cutoff,
-    get_latest_agent_for_miner_hotkey,
-    get_possibly_benchmark_agent_by_id,
+    get_latest_public_agent_for_miner_hotkey,
+    get_public_agent_by_id,
     get_top_agents,
 )
 from queries.evaluation import get_approved_leader_ranking_for_set, get_evaluations_for_agent_id
@@ -43,28 +45,22 @@ router = APIRouter()
 # /retrieval/queue?stage={pre_screening|screener_1|screener_2|validator}
 @router.get("/queue")
 @ttl_cache(ttl_seconds=60)  # 1 minute
-async def queue(stage: QueueStage) -> List[Agent]:
-    return await get_agents_in_queue(stage)
+async def queue(stage: QueueStage) -> List[PublicAgent]:
+    agents = await get_agents_in_queue(stage)
+    return [PublicAgent(**agent.model_dump()) for agent in agents]
 
 
 # /retrieval/top-agents
 @router.get("/top-agents")
 @ttl_cache(ttl_seconds=60)  # 1 minute
-async def top_agents() -> List[AgentScored]:
+async def top_agents() -> List[PublicAgent]:
     return await get_top_agents(number_of_agents=50)
-
-
-# /retrieval/benchmark-agents
-@router.get("/benchmark-agents")
-@ttl_cache(ttl_seconds=10 * 60)  # 10 minutes
-async def benchmark_agents() -> List[BenchmarkAgentScored]:
-    return await get_benchmark_agents()
 
 
 # /retrieval/agent-by-id?agent_id=
 @router.get("/agent-by-id")
-async def agent_by_id(agent_id: UUID) -> PossiblyBenchmarkAgent:
-    agent = await get_possibly_benchmark_agent_by_id(agent_id)
+async def agent_by_id(agent_id: UUID) -> PublicAgent:
+    agent = await get_public_agent_by_id(agent_id)
 
     if agent is None:
         raise HTTPException(status_code=404, detail=f"Agent with ID {agent_id} not found")
@@ -74,8 +70,8 @@ async def agent_by_id(agent_id: UUID) -> PossiblyBenchmarkAgent:
 
 # /retrieval/agent-by-hotkey?miner_hotkey=
 @router.get("/agent-by-hotkey")
-async def agent_by_hotkey(miner_hotkey: str) -> Agent:
-    agent = await get_latest_agent_for_miner_hotkey(miner_hotkey=miner_hotkey)
+async def agent_by_hotkey(miner_hotkey: str) -> PublicAgent:
+    agent = await get_latest_public_agent_for_miner_hotkey(miner_hotkey=miner_hotkey)
 
     if agent is None:
         raise HTTPException(status_code=404, detail=f"Agent with miner hotkey {miner_hotkey} not found")
@@ -85,8 +81,8 @@ async def agent_by_hotkey(miner_hotkey: str) -> Agent:
 
 # /retrieval/all-agents-by-hotkey?miner_hotkey=
 @router.get("/all-agents-by-hotkey")
-async def all_agents_by_hotkey(miner_hotkey: str) -> List[Agent]:
-    agents = await get_all_agents_by_miner_hotkey(miner_hotkey=miner_hotkey)
+async def all_agents_by_hotkey(miner_hotkey: str) -> List[PublicAgent]:
+    agents = await get_all_public_agents_by_miner_hotkey(miner_hotkey=miner_hotkey)
     return agents
 
 
