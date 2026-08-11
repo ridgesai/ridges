@@ -4,7 +4,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from models.agent import Agent
+from models.agent import PublicAgent
 from models.evaluation import Evaluation
 from utils.system_metrics import SystemMetrics
 
@@ -30,4 +30,4 @@ class ConnectedValidatorInfo(BaseModel):
     system_metrics: Optional[SystemMetrics] = None
 
     evaluation: Optional[Evaluation] = None
-    agent: Optional[Agent] = None
+    agent: Optional[PublicAgent] = None
