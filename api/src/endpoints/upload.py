@@ -845,7 +845,7 @@ async def check_ticket(body: TicketCheckRequest) -> TicketCheckResponse:
             funding=ticket.funding,
             redeemed_agent_id=credit.redeemed_agent_id,
         )
-    
+
     if credit.expires_at is not None and as_utc(credit.expires_at) <= datetime.now(timezone.utc):
         return TicketCheckResponse(valid=False, reason="credit_expired", hotkey=ticket.hotkey, funding=ticket.funding)
 
