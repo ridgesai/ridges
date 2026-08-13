@@ -82,6 +82,25 @@ async def get_upload_credit_for_check(
 
 
 @db_operation
+async def get_upload_credit_by_id(
+    conn: DatabaseConnection,
+    credit_id: UUID,
+    miner_hotkey: str,
+) -> Optional[UploadCredit]:
+    row = await conn.fetchrow(
+        """
+        SELECT *
+        FROM upload_credits
+        WHERE credit_id = $1
+          AND miner_hotkey = $2
+        """,
+        credit_id,
+        miner_hotkey,
+    )
+    return UploadCredit(**row) if row is not None else None
+
+
+@db_operation
 async def create_agent_with_upload_credit(
     conn: DatabaseConnection,
     *,
