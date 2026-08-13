@@ -16,6 +16,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt
 
 from miners.cli.click_ext import click, format_help
+from utils.upload_ticket import FUNDING_BURN, FUNDING_CREDIT, UploadTicket, encode_ticket, sign_ticket
 
 console = Console()
 DEFAULT_API_BASE_URL = "https://agent-upload.ridges.ai"
@@ -264,6 +265,41 @@ def _print_credit_receipt(receipt: CreditReceipt) -> None:
     console.print(f"\n[cyan]Upload Credit ID:[/cyan] {receipt.credit_id}\n")
 
 
+def _signed_ticket(
+    wallet,
+    *,
+    funding: str,
+    quote_id: Optional[str] = None,
+    payment_block_hash: Optional[str] = None,
+    payment_extrinsic_index: Optional[int] = None,
+    credit_id: Optional[str] = None,
+) -> UploadTicket:
+    unsigned = UploadTicket(
+        hotkey=wallet.hotkey.ss58_address,
+        public_key=wallet.hotkey.public_key.hex(),
+        funding=funding,
+        quote_id=quote_id,
+        payment_block_hash=payment_block_hash,
+        payment_extrinsic_index=payment_extrinsic_index,
+        credit_id=credit_id,
+    )
+    return sign_ticket(unsigned, wallet.hotkey.sign)
+
+
+def _print_ticket(ticket: UploadTicket) -> None:
+    console.print(
+        Panel(
+            "[bold cyan]Upload ticket[/bold cyan]\n"
+            "Paste this on the Ridges dashboard (Miner -> Upload) to finish the upload there.\n"
+            "[bold yellow]Treat it like a password:[/bold yellow] this is a bearer credential — anyone holding it "
+            "can upload an agent under your hotkey until it is redeemed.",
+            title="Web upload",
+            border_style="cyan",
+        )
+    )
+    console.print(encode_ticket(ticket), soft_wrap=True)
+
+
 def _upload_payload(
     *,
     pending: PendingUpload,
@@ -346,6 +382,7 @@ def _execute_upload(
     receipt: PaymentReceipt | CreditReceipt,
     pending: Optional[PendingUpload] = None,
     run_check: bool = True,
+    emit_ticket_on_failure: bool = False,
 ) -> None:
     """Shared post-payment upload steps used by both upload and resume-upload.
 
@@ -369,8 +406,33 @@ def _execute_upload(
     if run_check:
         _check_upload_allowed(client, target=target, pending=pending, credentials=credentials)
     payload = _upload_payload(pending=pending, receipt=receipt, credentials=credentials)
-    response = _submit_upload(client, target=target, payload=payload)
-    _handle_upload_result(response, name=pending.name)
+    try:
+        response = _submit_upload(client, target=target, payload=payload)
+        _handle_upload_result(response, name=pending.name)
+    except Exception:
+        # Catches click.ClickException, httpx.HTTPError (timeouts, disconnects, DNS), and
+        # malformed response bodies (JSONDecodeError/ValueError/AttributeError from
+        # _handle_upload_result) — any exception here means the upload didn't succeed while
+        # the payment is already spent, so recovery must print a ticket for all of these too.
+        if emit_ticket_on_failure:
+            console.print(
+                "[yellow]Your payment is safe. Finish the upload on the Ridges dashboard "
+                "(Miner → Upload) with this ticket, or run `ridges resume-upload`:[/yellow]"
+            )
+            if isinstance(receipt, CreditReceipt):
+                _print_ticket(_signed_ticket(wallet, funding=FUNDING_CREDIT, credit_id=receipt.credit_id))
+            elif receipt.quote_id is not None:
+                # Burn tickets require a quote_id; quote-less receipts (owner/synthetic) get no ticket.
+                _print_ticket(
+                    _signed_ticket(
+                        wallet,
+                        funding=FUNDING_BURN,
+                        quote_id=receipt.quote_id,
+                        payment_block_hash=receipt.block_hash,
+                        payment_extrinsic_index=int(receipt.extrinsic_index),
+                    )
+                )
+        raise
 
 
 def _resolve_wallet_and_target(
@@ -472,6 +534,7 @@ def upload(
                 receipt=receipt,
                 pending=pending,
                 run_check=False,
+                emit_ticket_on_failure=True,
             )
 
     except click.ClickException:
@@ -603,7 +666,13 @@ def resume_upload(
     try:
         with httpx.Client() as client:
             _execute_upload(
-                client, wallet=wallet, target=target, credentials=credentials, receipt=receipt, run_check=False
+                client,
+                wallet=wallet,
+                target=target,
+                credentials=credentials,
+                receipt=receipt,
+                run_check=False,
+                emit_ticket_on_failure=True,
             )
 
     except click.ClickException:
