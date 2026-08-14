@@ -174,7 +174,7 @@ async def check_agent_post(
         raise HTTPException(
             status_code=402,
             detail=(
-                f"Insufficient alpha. You need {payment_cost.amount_alpha_rao} alpha (rao) "
+                f"Insufficient alpha. You need {payment_cost.amount_alpha_rao} rao "
                 f"burnable from the miner hotkey position on SN{config.NETUID}. "
                 f"Position: {alpha_stake.position_rao}; subnet total: {alpha_stake.total_rao}; "
                 f"locked: {alpha_stake.locked_rao}; burnable: {alpha_stake.burnable_rao}."
@@ -269,7 +269,7 @@ async def prepare_upload(body: PrepareUploadRequest) -> AgentCheckResponse:
         raise HTTPException(
             status_code=402,
             detail=(
-                f"Insufficient alpha. You need {payment_cost.amount_alpha_rao} alpha (rao) "
+                f"Insufficient alpha. You need {payment_cost.amount_alpha_rao} rao "
                 f"burnable from the miner hotkey position on SN{config.NETUID}."
             ),
         )

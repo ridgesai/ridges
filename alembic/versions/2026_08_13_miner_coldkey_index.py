@@ -23,7 +23,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     with op.get_context().autocommit_block():
-        op.execute("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_agents_miner_coldkey ON agents (miner_coldkey);")
+        op.execute("DROP INDEX CONCURRENTLY IF EXISTS idx_agents_miner_coldkey;")
+        op.execute("CREATE INDEX CONCURRENTLY idx_agents_miner_coldkey ON agents (miner_coldkey);")
 
 
 def downgrade() -> None:
