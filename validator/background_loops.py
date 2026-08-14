@@ -109,6 +109,7 @@ async def cleanup_loop(active_task_digests: Set[str]):
             pressure_prune = {"fired": False, "image_bytes": 0, "build_bytes": 0, "errors": 0}
             disk_percent = None
             errors = 0
+            logger.info(f"Janitor: starting sweep (dry_run={str(dry_run).lower()})")
 
             try:
                 metrics = await get_system_metrics()

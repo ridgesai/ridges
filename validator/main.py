@@ -99,6 +99,7 @@ async def _run_startup_tasks() -> None:
             prune = {"image_bytes": 0, "build_bytes": 0, "errors": 0}
             disk_percent = None
             errors = 0
+            logger.info(f"Janitor startup: starting (dry_run={str(dry_run).lower()})")
 
             try:
                 metrics = await get_system_metrics()
@@ -107,6 +108,7 @@ async def _run_startup_tasks() -> None:
                 errors += 1
                 logger.warning(f"Janitor startup metrics failed (best-effort): {type(e).__name__}: {e}")
 
+            logger.info("Janitor startup: sweeping containers...")
             try:
                 containers = await asyncio.to_thread(
                     cleanup_harbor_docker_resources,
@@ -119,6 +121,10 @@ async def _run_startup_tasks() -> None:
                 logger.warning(f"Janitor startup container cleanup failed (best-effort): {type(e).__name__}: {e}")
 
             include_build_cache = disk_percent is not None and disk_percent >= config.CLEANUP_DISK_PRESSURE_PERCENT
+            logger.info(
+                f"Janitor startup: pruning dangling images (until=1h, "
+                f"build_cache={str(include_build_cache).lower()})..."
+            )
             try:
                 prune = await asyncio.to_thread(
                     prune_docker_disk_resources,
