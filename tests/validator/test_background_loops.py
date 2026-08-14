@@ -169,4 +169,6 @@ async def test_cleanup_loop_logs_zero_summary_when_sweeps_fail(monkeypatch, tmp_
     with pytest.raises(asyncio.CancelledError):
         await background_loops.cleanup_loop(set())
 
-    assert "Janitor: containers=0 images=0 prune_bytes=0 disk_percent=unknown errors=3 dry_run=false names=-" in messages
+    assert (
+        "Janitor: containers=0 images=0 prune_bytes=0 disk_percent=unknown errors=3 dry_run=false names=-" in messages
+    )

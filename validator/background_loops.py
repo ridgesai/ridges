@@ -173,10 +173,7 @@ async def cleanup_loop(active_task_digests: Set[str]):
                 errors += 1
                 logger.warning(f"Janitor cache prune failed (best-effort): {type(e).__name__}: {e}")
 
-            errors += sum(
-                summary.get("errors", 0)
-                for summary in (containers, images, prune, pressure_prune)
-            )
+            errors += sum(summary.get("errors", 0) for summary in (containers, images, prune, pressure_prune))
             candidate_names = (containers.get("names") or []) + (images.get("names") or [])
             disk_display = f"{disk_percent:.0f}" if disk_percent is not None else "unknown"
             names_display = ",".join(candidate_names[:20]) or "-"
