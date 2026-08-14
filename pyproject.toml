@@ -62,7 +62,7 @@ package = true
 
 [tool.setuptools]
 py-modules = ["ridges"]
-packages = ["execution", "miners", "miners.cli", "miners.cli.commands", "models", "ridges_harbor"]
+packages = ["execution", "miners", "miners.cli", "miners.cli.commands", "models", "ridges_harbor", "utils"]
 
 [tool.setuptools.package-data]
 miners = ["baseline-requirements.txt", "env.miner.example"]

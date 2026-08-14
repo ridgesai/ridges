@@ -17,6 +17,7 @@ from queries.agent import (
     get_agent_by_id,
     get_agent_score_and_set_id,
     get_agents_in_queue,
+    get_all_public_agents_by_miner_coldkey,
     get_all_public_agents_by_miner_hotkey,
     get_code_hiding_score_cutoff,
     get_latest_public_agent_for_miner_hotkey,
@@ -84,6 +85,20 @@ async def agent_by_hotkey(miner_hotkey: str) -> PublicAgent:
 async def all_agents_by_hotkey(miner_hotkey: str) -> List[PublicAgent]:
     agents = await get_all_public_agents_by_miner_hotkey(miner_hotkey=miner_hotkey)
     return agents
+
+
+# /retrieval/agents-by-coldkey?miner_coldkey=
+@router.get("/agents-by-coldkey")
+@ttl_cache(ttl_seconds=60)
+async def agents_by_coldkey(miner_coldkey: str) -> dict[str, List[PublicAgent]]:
+    """Returns the PublicAgent model shape, similar to /retrieval/all-agents-by-hotkey.
+    Grouping: hotkeys sorted, agents newest-first within each.
+    """
+    agents = await get_all_public_agents_by_miner_coldkey(miner_coldkey)
+    grouped: dict[str, List[PublicAgent]] = {}
+    for agent in agents:
+        grouped.setdefault(agent.miner_hotkey, []).append(agent)
+    return grouped
 
 
 # TODO ADAM: optimize

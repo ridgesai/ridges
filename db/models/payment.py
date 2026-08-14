@@ -20,6 +20,13 @@ class EvaluationPayment(Base, CreatedAtMixin):
         nullable=True,
         comment="Server-issued upload payment quote used to validate amount, destination, hotkey, and payment time.",
     )
+    upload_credit_id: Mapped[Optional[UUID]] = mapped_column(
+        PG_UUID(as_uuid=True),
+        sa.ForeignKey("upload_credits.credit_id"),
+        nullable=True,
+        unique=True,
+        comment="One-shot upload credit used instead of an on-chain burn.",
+    )
     agent_id: Mapped[Optional[UUID]] = mapped_column(
         PG_UUID(as_uuid=True),
         sa.ForeignKey("agents.agent_id"),
@@ -36,6 +43,10 @@ class EvaluationPayment(Base, CreatedAtMixin):
         sa.CheckConstraint(
             "num_nonnulls(amount_rao, amount_alpha_rao) = 1",
             name="ck_amount_rao_xor_amount_alpha_rao",
+        ),
+        sa.CheckConstraint(
+            "upload_credit_id IS NULL OR (amount_alpha_rao = 0 AND amount_rao IS NULL AND quote_id IS NULL)",
+            name="ck_evaluation_payments_credit_shape",
         ),
     )
 

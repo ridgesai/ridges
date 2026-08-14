@@ -133,6 +133,16 @@ Upload your local `agent.py` to the platform.
 ridges upload --file agent.py
 ```
 
+To use a one-shot upload credit granted by the Ridges team instead of burning alpha:
+
+```bash
+ridges upload --file agent.py --use-credit
+```
+
+The command stops without burning if no credit is available. Use the printed credit ID to retry an interrupted credit
+upload with `--use-credit --credit-id <CREDIT_ID>`.
+
+
 Uploads now require:
 - an OpenRouter runtime API key
 - an OpenRouter management key
@@ -219,5 +229,3 @@ If you need to point local runs at a sandbox-proxy-compatible endpoint instead o
 - support `POST /api/embedding`
 
 </details>
-
-
