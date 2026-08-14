@@ -20,7 +20,26 @@ from ridges_harbor._stdlib_contract import (
     SETUP_LOG_FILENAME,
 )
 from ridges_harbor.agents import MinerRuntimeError, RidgesMinerAgent
+from ridges_harbor.docker_runtime import docker_environment_env
 from ridges_harbor.runner import _run_task_dir
+
+
+def test_docker_environment_defaults_to_buildkit_bake(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("DOCKER_BUILDKIT", raising=False)
+    monkeypatch.delenv("COMPOSE_BAKE", raising=False)
+
+    env = docker_environment_env(
+        ridges_trial_id="trial-1",
+        upstream_url="http://127.0.0.1:1234",
+        upstream_host="127.0.0.1",
+        evaluation_run_id="eval-1",
+        max_cost_usd="1",
+        proxy_data_dir=str(tmp_path),
+        openrouter_config=None,
+    )
+
+    assert env["DOCKER_BUILDKIT"] == "1"
+    assert env["COMPOSE_BAKE"] == "true"
 
 
 class FakeTaskConfig:
@@ -233,9 +252,9 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
         "RIDGES_OPENROUTER_MANAGEMENT_KEY": "",
         "RIDGES_OPENROUTER_WORKSPACE_ID": "",
         "RIDGES_OPENROUTER_EXPECTED_API_KEY_SHA256": "",
-        "DOCKER_BUILDKIT": os.environ.get("DOCKER_BUILDKIT", "0"),
+        "DOCKER_BUILDKIT": os.environ.get("DOCKER_BUILDKIT", "1"),
         "COMPOSE_DOCKER_CLI_BUILD": os.environ.get("COMPOSE_DOCKER_CLI_BUILD", "0"),
-        "COMPOSE_BAKE": os.environ.get("COMPOSE_BAKE", "false"),
+        "COMPOSE_BAKE": os.environ.get("COMPOSE_BAKE", "true"),
     }
     assert (results_dir / "job-1" / "proxy_data").is_dir()
     assert len(FakeJob.last_instance.agent_started_hooks) == 0
