@@ -15,7 +15,7 @@ class AgentUploadResponse(BaseModel):
 class UploadPriceResponse(BaseModel):
     """Response model for upload pricing"""
 
-    amount_alpha_rao: int = Field(..., description="Amount of SN62 alpha to burn (in 1e9 units)")
+    amount_alpha_rao: int = Field(..., description="Amount of SN62 alpha to burn (in rao)")
     payment_netuid: int = Field(..., description="Subnet whose alpha must be burned")
 
 
@@ -25,7 +25,7 @@ class AgentCheckResponse(AgentUploadResponse):
     payment_method: Literal["burn", "credit"] = Field("burn", description="Payment method selected for this upload")
     quote_id: Optional[UUID] = Field(None, description="Quote ID to include when uploading or resuming")
     credit_id: Optional[UUID] = Field(None, description="One-shot upload credit to redeem")
-    amount_alpha_rao: int = Field(..., description="Amount of SN62 alpha to burn (in 1e9 units)")
+    amount_alpha_rao: int = Field(..., description="Amount of SN62 alpha to burn (in rao)")
     payment_netuid: Optional[int] = Field(None, description="Subnet whose alpha must be burned")
     expires_at: Optional[datetime] = Field(None, description="Latest on-chain burn timestamp accepted for this quote")
 
@@ -49,7 +49,7 @@ class PrepareUploadRequest(BaseModel):
 class TicketCheckRequest(BaseModel):
     """Model for validating an upload ticket blob."""
 
-    ticket: str = Field(..., description="Base64 upload ticket minted by `ridges prepare-upload`")
+    ticket: str = Field(..., description="Upload ticket (ridges1...) minted by `ridges prepare-upload`")
 
 
 class TicketCheckResponse(BaseModel):

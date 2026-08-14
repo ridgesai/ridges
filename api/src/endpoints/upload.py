@@ -174,7 +174,7 @@ async def check_agent_post(
         raise HTTPException(
             status_code=402,
             detail=(
-                f"Insufficient alpha. You need {payment_cost.amount_alpha_rao} alpha (1e9 units) "
+                f"Insufficient alpha. You need {payment_cost.amount_alpha_rao} alpha (rao) "
                 f"burnable from the miner hotkey position on SN{config.NETUID}. "
                 f"Position: {alpha_stake.position_rao}; subnet total: {alpha_stake.total_rao}; "
                 f"locked: {alpha_stake.locked_rao}; burnable: {alpha_stake.burnable_rao}."
@@ -269,7 +269,7 @@ async def prepare_upload(body: PrepareUploadRequest) -> AgentCheckResponse:
         raise HTTPException(
             status_code=402,
             detail=(
-                f"Insufficient alpha. You need {payment_cost.amount_alpha_rao} alpha (1e9 units) "
+                f"Insufficient alpha. You need {payment_cost.amount_alpha_rao} alpha (rao) "
                 f"burnable from the miner hotkey position on SN{config.NETUID}."
             ),
         )
@@ -695,7 +695,7 @@ async def post_agent(
 async def post_agent_ticket(
     request: Request,
     agent_file: UploadFile = File(..., description="Python file containing the agent code (must be named agent.py)"),
-    ticket: str = Form(..., description="Base64 upload ticket minted by `ridges prepare-upload`"),
+    ticket: str = Form(..., description="Upload ticket (ridges1...) minted by `ridges prepare-upload`"),
     name: str = Form(..., description="Name of the agent (used only for a hotkey's first upload)"),
     openrouter_api_key: str = Form(..., description="OpenRouter API key for inference during evaluation"),
     openrouter_management_key: str = Form(
