@@ -301,12 +301,14 @@ async def test_run_task_dir_uses_loopback_proxy_in_kubernetes(tmp_path: Path, mo
         results_dir=tmp_path / "results",
         debug=False,
         job_name="job-k8s",
+        inference_seed=123,
         fetch_task_url=fetch_task_url,
     )
 
     config = FakeJob.created_configs[0]
     assert config.agents[0].env["SANDBOX_PROXY_URL"] == "http://127.0.0.1:8080"
     assert config.environment.import_path == "ridges_harbor.k8s_environment:RidgesKubernetesEnvironment"
+    assert config.environment.kwargs["inference_seed"] == 123
     assert runner_module.DEFAULT_AGENT_SANDBOX_PROXY_URL == "http://sandbox-proxy:80"
 
 
