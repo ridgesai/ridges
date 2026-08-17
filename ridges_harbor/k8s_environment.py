@@ -843,13 +843,18 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         # exec path needs (`su <user> -s /bin/bash -c ...` for exec_as_root
         # and exec_as_agent).  allowPrivilegeEscalation must remain True for
         # the same reason: the kernel requires it for setuid binaries like su.
+        # DAC_OVERRIDE/FOWNER/CHOWN let the root verifier reset/clean an
+        # agent-owned worktree: tasks with a non-root [agent] user chown the
+        # repo to that user, and a capability-stripped root cannot write it.
+        # `su` to a non-root uid clears these from the agent process's
+        # permitted/effective sets, so the agent cannot use them.
         # runAsNonRoot and readOnlyRootFilesystem are intentionally omitted:
         # SWE-bench images build as root (no USER directive), verifiers write to
         # /etc and /root at runtime, and conda envs live in root-owned paths.
         main.security_context = k8s_client.V1SecurityContext(
             capabilities=k8s_client.V1Capabilities(
                 drop=["ALL"],
-                add=["SETUID", "SETGID"],
+                add=["SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER", "CHOWN"],
             ),
         )
 
