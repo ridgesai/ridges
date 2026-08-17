@@ -179,9 +179,9 @@ def docker_environment_env(
         "RIDGES_OPENROUTER_MANAGEMENT_KEY": "",
         "RIDGES_OPENROUTER_WORKSPACE_ID": "",
         "RIDGES_OPENROUTER_EXPECTED_API_KEY_SHA256": "",
-        "DOCKER_BUILDKIT": os.environ.get("DOCKER_BUILDKIT", "0"),
+        "DOCKER_BUILDKIT": os.environ.get("DOCKER_BUILDKIT", "1"),
         "COMPOSE_DOCKER_CLI_BUILD": os.environ.get("COMPOSE_DOCKER_CLI_BUILD", "0"),
-        "COMPOSE_BAKE": os.environ.get("COMPOSE_BAKE", "false"),
+        "COMPOSE_BAKE": os.environ.get("COMPOSE_BAKE", "true"),
     }
     if openrouter_config is not None:
         env.update(openrouter_config.sidecar_env_vars())
