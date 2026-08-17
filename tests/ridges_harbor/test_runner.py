@@ -609,6 +609,38 @@ async def test_install_uploads_stdlib_contract_beside_runtime(tmp_path: Path, mo
     assert miner._env_stdlib_contract_path in uploaded_destinations
 
 
+@pytest.mark.anyio
+async def test_install_makes_uploaded_miner_source_readable_by_agent_user(tmp_path: Path) -> None:
+    """agent.py arrives 0600 root-owned (tempfile mode survives upload); a task whose
+    [agent] user is non-root then cannot read it, so install() must chmod it as root."""
+    agent_path = tmp_path / "agent.py"
+    agent_path.write_text("def agent_main(input):\n    return ''\n")
+    miner = RidgesMinerAgent(logs_dir=tmp_path / "logs", agent_path=str(agent_path))
+
+    events: list[tuple[str, str, str | None]] = []
+
+    class RecordingEnvironment:
+        async def upload_file(self, source: Path, destination: str) -> None:
+            events.append(("upload", destination, None))
+
+        async def exec(self, command: str, user=None, env=None, cwd=None, timeout_sec=None):
+            events.append(("exec", command, user))
+            return SimpleNamespace(return_code=0, stdout="", stderr="")
+
+    await miner.install(RecordingEnvironment())
+
+    upload_index = events.index(("upload", miner._env_agent_path, None))
+    chmod_events = [
+        (index, user)
+        for index, (kind, command, user) in enumerate(events)
+        if kind == "exec" and command.endswith(f"chmod 0755 {miner.runtime_dir} && chmod 0444 {miner._env_agent_path}")
+    ]
+    assert chmod_events, f"no chmod of the miner source among: {events}"
+    chmod_index, chmod_user = chmod_events[0]
+    assert chmod_user == "root"
+    assert chmod_index > upload_index
+
+
 def test_runtime_script_runs_from_uploaded_sibling_stdlib_contract_only(tmp_path: Path) -> None:
     runtime_source = Path(__file__).resolve().parents[2] / "ridges_harbor" / "ridges_miner_runtime.py"
     contract_source = Path(__file__).resolve().parents[2] / "ridges_harbor" / "_stdlib_contract.py"
