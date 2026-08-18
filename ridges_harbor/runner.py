@@ -226,6 +226,7 @@ async def _run_task_dir(
                 "proxy_image": PROXY_IMAGE,
                 "evaluation_run_id": evaluation_run_id,
                 "max_cost_usd": str(max_cost_usd) if max_cost_usd is not None else "999999",
+                "inference_seed": inference_seed,
                 "openrouter_sidecar_env": openrouter_config.sidecar_env_vars() if openrouter_config else {},
                 "proxy_data_dir": str(proxy_data_dir),
                 "kubeconfig_context": K8S_CONTEXT,
