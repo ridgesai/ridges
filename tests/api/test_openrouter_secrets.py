@@ -424,7 +424,9 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
         openrouter_validated_at=None,
         miner_coldkey=None,
         create_pre_screening_job=False,
+        pre_screening_policy_version=None,
     ) -> None:
+        captured["pre_screening_policy_version"] = pre_screening_policy_version
         captured["agent"] = agent
         captured["agent_text"] = agent_text
         captured["runtime_ciphertext"] = runtime_openrouter_api_key_ciphertext
@@ -465,6 +467,7 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
     assert captured["validated_at"] == validated_keys.validated_at
     assert captured["miner_coldkey"] is None
     assert captured["create_pre_screening_job"] is False
+    assert captured["pre_screening_policy_version"] == upload_endpoint.config.HARDCODING_POLICY_VERSION
 
 
 @pytest.mark.anyio

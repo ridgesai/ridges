@@ -22,8 +22,6 @@ from utils.s3 import upload_text_file_to_s3
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PRE_SCREENING_POLICY_VERSION = "hardcoding-v1"
-
 
 @dataclass(slots=True, frozen=True)
 class AgentOpenRouterSecrets:
@@ -266,7 +264,7 @@ async def create_agent(
     openrouter_validated_at: datetime,
     miner_coldkey: Optional[str] = None,
     create_pre_screening_job: bool = False,
-    pre_screening_policy_version: str = DEFAULT_PRE_SCREENING_POLICY_VERSION,
+    pre_screening_policy_version: str,
 ) -> UUID:
     """Create an agent using the deterministic payment-derived agent_id."""
 

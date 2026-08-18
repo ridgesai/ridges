@@ -527,6 +527,7 @@ async def _process_agent_upload(
                         openrouter_api_key_creator_user_id=validated_openrouter_keys.api_key_creator_user_id,
                         openrouter_validated_at=validated_openrouter_keys.validated_at,
                         create_pre_screening_job=config.PRE_SCREENING_JUDGE_ENABLED,
+                        pre_screening_policy_version=config.HARDCODING_POLICY_VERSION,
                     )
                 else:
                     agent_id = await create_agent(
@@ -541,6 +542,7 @@ async def _process_agent_upload(
                         openrouter_validated_at=validated_openrouter_keys.validated_at,
                         miner_coldkey=coldkey if prod else None,
                         create_pre_screening_job=config.PRE_SCREENING_JUDGE_ENABLED,
+                        pre_screening_policy_version=config.HARDCODING_POLICY_VERSION,
                     )
             except ColdkeyBannedError as e:
                 raise HTTPException(status_code=403, detail="Your miner coldkey has been banned") from e

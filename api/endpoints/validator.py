@@ -1278,7 +1278,6 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
             await finish_agent_and_enqueue_approval(
                 agent_id=hydrated_evaluation.agent_id,
                 set_id=hydrated_evaluation.set_id,
-                policy_version=config.AUTO_APPROVAL_POLICY_VERSION,
             )
         else:
             await transition_agent_status_if_matches(

@@ -71,7 +71,6 @@ async def test_ban_winning_publication_race_finishes_agent_without_approval_job(
             finish_agent_and_enqueue_approval(
                 agent_id=agent_id,
                 set_id=7,
-                policy_version="test-policy",
             )
         )
 
@@ -97,7 +96,6 @@ async def test_null_coldkey_agent_can_still_enqueue_approval() -> None:
     enqueued = await finish_agent_and_enqueue_approval(
         agent_id=agent_id,
         set_id=7,
-        policy_version="test-policy",
     )
 
     assert enqueued is True

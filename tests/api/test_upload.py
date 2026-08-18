@@ -637,6 +637,7 @@ async def test_concurrent_credit_redemption_creates_one_agent():
         "openrouter_api_key_label": "label",
         "openrouter_api_key_creator_user_id": "creator",
         "openrouter_validated_at": datetime.now(timezone.utc),
+        "pre_screening_policy_version": "hardcoding-v1",
     }
 
     first_result, second_result = await asyncio.gather(
@@ -779,6 +780,7 @@ async def test_agent_insert_waits_for_concurrent_coldkey_ban():
                     openrouter_api_key_creator_user_id="creator",
                     openrouter_validated_at=datetime.now(timezone.utc),
                     miner_coldkey=FAKE_COLDKEY,
+                    pre_screening_policy_version="hardcoding-v1",
                 )
             )
             await asyncio.sleep(0.05)

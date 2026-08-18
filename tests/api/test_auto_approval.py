@@ -121,10 +121,9 @@ async def test_handle_evaluation_finished_enqueues_auto_approval(monkeypatch) ->
     async def fake_get_num_successful_validator_evaluations_for_agent_id(_agent_id):
         return validator_endpoint.config.NUM_EVALS_PER_AGENT
 
-    async def fake_finish_agent_and_enqueue_approval(*, agent_id, set_id, policy_version):
+    async def fake_finish_agent_and_enqueue_approval(*, agent_id, set_id):
         recorded["agent_id"] = agent_id
         recorded["set_id"] = set_id
-        recorded["policy_version"] = policy_version
         return True
 
     async def fake_should_run_auto_approval_judge(*, agent_id, set_id):
@@ -149,7 +148,6 @@ async def test_handle_evaluation_finished_enqueues_auto_approval(monkeypatch) ->
         validator_endpoint, "transition_agent_status_if_matches", fake_transition_agent_status_if_matches
     )
     monkeypatch.setattr(validator_endpoint.config, "AUTO_APPROVAL_ENABLED", True)
-    monkeypatch.setattr(validator_endpoint.config, "AUTO_APPROVAL_POLICY_VERSION", "approval-v1")
 
     await validator_endpoint.handle_evaluation_if_finished(uuid4())
 
@@ -158,7 +156,6 @@ async def test_handle_evaluation_finished_enqueues_auto_approval(monkeypatch) ->
         "approval_candidate_set_id": 11,
         "agent_id": agent_id,
         "set_id": 11,
-        "policy_version": "approval-v1",
     }
 
 
