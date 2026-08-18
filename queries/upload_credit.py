@@ -117,6 +117,7 @@ async def create_agent_with_upload_credit(
     openrouter_api_key_creator_user_id: str,
     openrouter_validated_at: datetime,
     create_pre_screening_job: bool = False,
+    pre_screening_policy_version: str,
 ) -> tuple[UUID, bool]:
     """Create an agent and consume exactly one credit in a single database transaction."""
     payment_block_hash, payment_extrinsic_index = credit_payment_identity(credit_id)
@@ -174,6 +175,7 @@ async def create_agent_with_upload_credit(
             openrouter_validated_at=openrouter_validated_at,
             miner_coldkey=miner_coldkey,
             create_pre_screening_job=create_pre_screening_job,
+            pre_screening_policy_version=pre_screening_policy_version,
         )
 
         await conn.execute(
