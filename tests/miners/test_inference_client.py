@@ -102,6 +102,31 @@ def test_chutes_embedding_uses_embedding_base_url(monkeypatch) -> None:
     assert embedding == [0.1, 0.2, 0.3]
 
 
+def test_gonka_config_supports_inference_without_embedding_url() -> None:
+    config = LocalInferenceConfig(
+        provider="gonka",
+        api_key="secret",
+        base_url="https://gonka.example/v1",
+    ).normalized()
+
+    assert config.provider == "gonka"
+    assert config.base_url == "https://gonka.example/v1"
+    assert config.embedding_base_url is None
+
+
+def test_gonka_embedding_is_rejected_before_network_call(monkeypatch) -> None:
+    def fail_post(*args, **kwargs):
+        raise AssertionError("Gonka embedding must not make an HTTP request")
+
+    monkeypatch.setattr("miners.inference_client.requests.post", fail_post)
+    client = LocalInferenceClient(
+        LocalInferenceConfig(provider="gonka", api_key="secret", base_url="https://gonka.example/v1")
+    )
+
+    with pytest.raises(LocalInferenceError, match="does not support embeddings"):
+        client.embedding(model="moonshotai/Kimi-K2.6", input="hello")
+
+
 def test_from_env_requires_provider(monkeypatch) -> None:
     monkeypatch.delenv("RIDGES_INFERENCE_PROVIDER", raising=False)
     monkeypatch.delenv("RIDGES_INFERENCE_API_KEY", raising=False)

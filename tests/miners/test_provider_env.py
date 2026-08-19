@@ -44,6 +44,7 @@ def test_provider_statuses_track_configured_vs_incomplete(tmp_path: Path) -> Non
             [
                 "RIDGES_OPENROUTER_API_KEY=openrouter-key",
                 "RIDGES_TARGON_API_KEY=targon-key",
+                "RIDGES_GONKA_API_KEY=gonka-key",
                 "RIDGES_CHUTES_API_KEY=chutes-key",
                 "RIDGES_CHUTES_INFERENCE_BASE_URL=https://llm.chutes.ai/v1",
             ]
@@ -55,6 +56,8 @@ def test_provider_statuses_track_configured_vs_incomplete(tmp_path: Path) -> Non
     assert statuses["openrouter"].configured is True
     assert statuses["targon"].configured is False
     assert statuses["targon"].missing_vars == ("RIDGES_TARGON_BASE_URL",)
+    assert statuses["gonka"].configured is False
+    assert statuses["gonka"].missing_vars == ("RIDGES_GONKA_BASE_URL",)
     assert statuses["chutes"].configured is False
     assert statuses["chutes"].missing_vars == ("RIDGES_CHUTES_EMBEDDING_BASE_URL",)
     assert statuses["custom"].configured is False
@@ -80,6 +83,21 @@ def test_resolve_inference_config_reads_provider_specific_env(tmp_path: Path) ->
     assert config.api_key == "chutes-key"
     assert config.base_url == "https://llm.chutes.ai/v1"
     assert config.embedding_base_url == "https://embeddings.chutes.ai/v1"
+
+
+def test_resolve_inference_config_reads_gonka_env(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    workspace_env_path(workspace).write_text(
+        "RIDGES_GONKA_API_KEY=gonka-key\nRIDGES_GONKA_BASE_URL=https://gonka.example/v1\n"
+    )
+
+    config = resolve_inference_config("gonka", workspace)
+
+    assert config.provider == "gonka"
+    assert config.api_key == "gonka-key"
+    assert config.base_url == "https://gonka.example/v1"
+    assert config.embedding_base_url is None
 
 
 def test_resolve_inference_config_reads_custom_proxy_env(tmp_path: Path) -> None:

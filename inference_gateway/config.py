@@ -125,8 +125,33 @@ if USE_OPENROUTER:
     OPENROUTER_WEIGHT = int(OPENROUTER_WEIGHT)
 
 
-if not USE_CHUTES and not USE_TARGON and not USE_OPENROUTER:
-    logger.fatal("Either USE_CHUTES or USE_TARGON or USE_OPENROUTER must be set to True in .env")
+USE_GONKA = os.getenv("USE_GONKA", "False").lower() == "true"
+
+if USE_GONKA:
+    GONKA_BASE_URL = os.getenv("GONKA_BASE_URL")
+    if not GONKA_BASE_URL:
+        logger.fatal("GONKA_BASE_URL is not set in .env")
+
+    GONKA_API_KEY = os.getenv("GONKA_API_KEY")
+    if not GONKA_API_KEY:
+        logger.fatal("GONKA_API_KEY is not set in .env")
+
+    GONKA_WEIGHT = os.getenv("GONKA_WEIGHT")
+    if not GONKA_WEIGHT:
+        logger.fatal("GONKA_WEIGHT is not set in .env")
+    GONKA_WEIGHT = int(GONKA_WEIGHT)
+
+    GONKA_KIMI_MODEL_ID = os.getenv("GONKA_KIMI_MODEL_ID", "moonshotai/kimi-k2.6")
+    GONKA_CONTEXT_LENGTH = int(os.getenv("GONKA_CONTEXT_LENGTH", "240000"))
+
+    GONKA_COST_USD_PER_MILLION_TOKENS = os.getenv("GONKA_COST_USD_PER_MILLION_TOKENS")
+    if not GONKA_COST_USD_PER_MILLION_TOKENS:
+        logger.fatal("GONKA_COST_USD_PER_MILLION_TOKENS is not set in .env")
+    GONKA_COST_USD_PER_MILLION_TOKENS = float(GONKA_COST_USD_PER_MILLION_TOKENS)
+
+
+if not USE_CHUTES and not USE_TARGON and not USE_OPENROUTER and not USE_GONKA:
+    logger.fatal("One inference provider must be enabled in .env")
 
 
 TEST_INFERENCE_MODELS = os.getenv("TEST_INFERENCE_MODELS")
@@ -179,5 +204,15 @@ if USE_OPENROUTER:
     logger.info(f"OpenRouter Weight: {OPENROUTER_WEIGHT}")
 else:
     logger.warning("Not Using OpenRouter!")
+
+if USE_GONKA:
+    logger.info("Using Gonka")
+    logger.info(f"Gonka Base URL: {GONKA_BASE_URL}")
+    logger.info(f"Gonka Weight: {GONKA_WEIGHT}")
+    logger.info(f"Gonka Kimi Model ID: {GONKA_KIMI_MODEL_ID}")
+    logger.info(f"Gonka Kimi Context Length: {GONKA_CONTEXT_LENGTH}")
+    logger.info(f"Gonka Cost (USD per million tokens): {GONKA_COST_USD_PER_MILLION_TOKENS}")
+else:
+    logger.warning("Not Using Gonka!")
 
 logger.info("=======================================")

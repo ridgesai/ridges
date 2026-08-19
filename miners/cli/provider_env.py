@@ -15,6 +15,7 @@ PROVIDER_LABELS = {
     "openrouter": "OpenRouter",
     "targon": "Targon",
     "chutes": "Chutes",
+    "gonka": "Gonka",
     "custom": "Custom (advanced)",
 }
 
@@ -79,6 +80,9 @@ def provider_statuses(workspace: Path) -> dict[str, ProviderStatus]:
     targon_api_key = _value(env, "RIDGES_TARGON_API_KEY")
     targon_base_url = _value(env, "RIDGES_TARGON_BASE_URL")
 
+    gonka_api_key = _value(env, "RIDGES_GONKA_API_KEY")
+    gonka_base_url = _value(env, "RIDGES_GONKA_BASE_URL")
+
     chutes_api_key = _value(env, "RIDGES_CHUTES_API_KEY")
     chutes_inference_base_url = _value(env, "RIDGES_CHUTES_INFERENCE_BASE_URL")
     chutes_embedding_base_url = _value(env, "RIDGES_CHUTES_EMBEDDING_BASE_URL")
@@ -105,6 +109,19 @@ def provider_statuses(workspace: Path) -> dict[str, ProviderStatus]:
             ),
             base_url=targon_base_url,
             embedding_base_url=targon_base_url,
+        ),
+        "gonka": ProviderStatus(
+            provider="gonka",
+            configured=gonka_api_key is not None and gonka_base_url is not None,
+            missing_vars=tuple(
+                key
+                for key, value in (
+                    ("RIDGES_GONKA_API_KEY", gonka_api_key),
+                    ("RIDGES_GONKA_BASE_URL", gonka_base_url),
+                )
+                if value is None
+            ),
+            base_url=gonka_base_url,
         ),
         "chutes": ProviderStatus(
             provider="chutes",
@@ -157,6 +174,12 @@ def resolve_inference_config(provider: str, workspace: Path) -> LocalRunInferenc
         return LocalInferenceConfig(
             provider="targon",
             api_key=_value(env, "RIDGES_TARGON_API_KEY") or "",
+            base_url=status.base_url,
+        ).normalized()
+    if provider == "gonka":
+        return LocalInferenceConfig(
+            provider="gonka",
+            api_key=_value(env, "RIDGES_GONKA_API_KEY") or "",
             base_url=status.base_url,
         ).normalized()
     if provider == "chutes":
