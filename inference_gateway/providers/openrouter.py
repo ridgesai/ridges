@@ -44,6 +44,9 @@ class WhitelistedOpenRouterModel(BaseModel):
 
 if config.USE_OPENROUTER:
     WHITELISTED_OPENROUTER_INFERENCE_MODELS = [
+        WhitelistedOpenRouterModel(
+            name="deepseek-ai/DeepSeek-V4-Flash-0731", openrouter_name="deepseek/deepseek-v4-flash-0731"
+        ),
         WhitelistedOpenRouterModel(name="deepseek-ai/DeepSeek-R1-0528", openrouter_name="deepseek/deepseek-r1-0528"),
         WhitelistedOpenRouterModel(name="zai-org/GLM-4.6", openrouter_name="z-ai/glm-4.6"),
         WhitelistedOpenRouterModel(name="zai-org/GLM-4.6-FP8", openrouter_name="z-ai/glm-4.6"),
