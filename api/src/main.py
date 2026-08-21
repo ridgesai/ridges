@@ -29,6 +29,7 @@ from api.loops.validator_heartbeat_timeout import validator_heartbeat_timeout_lo
 from api.src.endpoints.upload import router as upload_router
 from api.src.middleware.request_interceptor import RequestInterceptorMiddleware
 from api.src.utils.sentry import initialize_sentry
+from queries.competition import initialize_current_competition_policy
 from queries.evaluation import set_all_unfinished_evaluation_runs_to_errored
 from utils.bittensor import subtensor_client
 from utils.database import deinitialize_database, initialize_database
@@ -69,6 +70,7 @@ async def lifespan(app: FastAPI):
         port=config.DATABASE_PORT,
         name=config.DATABASE_NAME,
     )
+    await initialize_current_competition_policy()
     await initialize_s3(
         _bucket=config.S3_BUCKET_NAME,
         region=config.AWS_REGION,
