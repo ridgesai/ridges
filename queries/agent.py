@@ -11,11 +11,13 @@ from models.agent import (
     AgentStatus,
     PublicAgent,
 )
+from models.competition import CompetitionState
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
 from models.queue import QueueStage
 from queries.banned_coldkey import get_banned_coldkey, lock_coldkey_ban_state
-from queries.errors import ColdkeyBannedError, DuplicateAgentIDError
+from queries.competition import lock_current_competition_context
+from queries.errors import ColdkeyBannedError, CompetitionNotAcceptingSubmissionsError, DuplicateAgentIDError
 from utils.agent_secrets import decrypt_agent_secret
 from utils.database import DatabaseConnection, db_operation
 from utils.s3 import upload_text_file_to_s3
@@ -233,15 +235,22 @@ async def get_latest_public_agent_for_miner_hotkey(conn: DatabaseConnection, min
 
 
 @db_operation
-async def get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(
+async def get_latest_agent_created_at_for_miner_hotkey_in_current_competition(
     conn: DatabaseConnection, miner_hotkey: str
 ) -> Optional[datetime]:
     result = await conn.fetchval(
         """
+        WITH current_competition AS (
+            SELECT set_id
+            FROM competitions
+            WHERE start_date IS NOT NULL
+            ORDER BY set_id DESC
+            LIMIT 1
+        )
         SELECT MAX(a.created_at)
         FROM agents a
+        JOIN current_competition current ON current.set_id = a.set_id
         WHERE a.miner_hotkey = $1
-        AND a.created_at > (SELECT MAX(created_at) FROM evaluation_sets)
         """,
         miner_hotkey,
     )
@@ -263,8 +272,6 @@ async def create_agent(
     openrouter_api_key_creator_user_id: str,
     openrouter_validated_at: datetime,
     miner_coldkey: Optional[str] = None,
-    create_pre_screening_job: bool = False,
-    pre_screening_policy_version: str,
 ) -> UUID:
     """Create an agent using the deterministic payment-derived agent_id."""
 
@@ -278,20 +285,25 @@ async def create_agent(
     await upload_text_file_to_s3(f"{agent_id}/agent.py", agent_text)
 
     async with conn.conn.transaction():
-        current_set = await conn.fetchrow(
-            """
-            SELECT set_id, created_at
-            FROM evaluation_sets
-            ORDER BY set_id DESC
-            LIMIT 1
-            """
-        )
-        current_set_id = current_set["set_id"] if current_set else 0
-        current_set_boundary = current_set["created_at"] if current_set else None
+        competition = await lock_current_competition_context()
+        if competition is None:
+            raise CompetitionNotAcceptingSubmissionsError(set_id=None, state=None)
+
+        if competition.state is not CompetitionState.open:
+            raise CompetitionNotAcceptingSubmissionsError(
+                set_id=competition.set_id,
+                state=competition.state.value,
+            )
+
+        if competition.policy is None:
+            raise CompetitionNotAcceptingSubmissionsError(set_id=competition.set_id, state=None)
+
+        policy = competition.policy
+        initial_status = AgentStatus.pre_screening if policy.pre_screening_enabled else AgentStatus.screening_1
 
         await conn.execute(
             "SELECT pg_advisory_xact_lock($1, hashtext($2))",
-            current_set_id,
+            competition.set_id,
             source_sha256,
         )
 
@@ -323,10 +335,10 @@ async def create_agent(
             miner_coldkey,
             agent.name,
             agent.version_num,
-            agent.status.value,
+            initial_status.value,
             agent.ip_address,
             source_sha256,
-            current_set_id if current_set_id != 0 else None,
+            competition.set_id,
         )
 
         if result is None:
@@ -356,19 +368,17 @@ async def create_agent(
         )
 
         # 5. Optionally create a pre-screening job for the agent
-        if create_pre_screening_job:
-            duplicate_agent_id: Optional[UUID] = None
-            if current_set_boundary is not None:
-                duplicate_agent_id = await find_duplicate_source_agent_in_current_set(agent_id, current_set_boundary)
+        if policy.pre_screening_enabled:
+            duplicate_agent_id = await find_duplicate_source_agent_in_current_set(agent_id)
 
             if duplicate_agent_id is not None:
                 await insert_terminal_pre_screening_job_with_result(
                     conn,
                     agent_id=agent_id,
-                    policy_version=pre_screening_policy_version,
+                    policy_version=policy.hardcoding_policy_version,
                     job_status="failed",
                     result=duplicate_source_result(
-                        policy_version=pre_screening_policy_version,
+                        policy_version=policy.hardcoding_policy_version,
                         matched_agent_id=duplicate_agent_id,
                     ),
                 )
@@ -376,7 +386,7 @@ async def create_agent(
                 await insert_pending_pre_screening_job(
                     conn,
                     agent_id=agent_id,
-                    policy_version=pre_screening_policy_version,
+                    policy_version=policy.hardcoding_policy_version,
                 )
 
     return agent_id
@@ -422,46 +432,12 @@ async def get_openrouter_api_key_for_agent_id(conn: DatabaseConnection, agent_id
 
 
 @db_operation
-async def find_duplicate_source_agent_in_current_set(
-    conn: DatabaseConnection, agent_id: UUID, set_boundary: Optional[datetime] = None
-) -> Optional[UUID]:
-    """Return the earliest other agent in the current set sharing this agent's source hash, if any.
-
-    Pass `set_boundary` (the created_at of the latest evaluation_set captured by the caller) to
-    keep the duplicate check pinned to the same set identity that any surrounding advisory lock
-    used. Defaults to looking up the latest set inline.
-    """
-    if set_boundary is None:
-        return await conn.fetchval(
-            """
-            WITH self AS (
-                SELECT agent_id, source_sha256, created_at
-                FROM agents
-                WHERE agent_id = $1
-            ),
-            latest_set_boundary AS (
-                SELECT created_at
-                FROM evaluation_sets
-                WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-            )
-            SELECT a.agent_id
-            FROM agents a, self s, latest_set_boundary lsb
-            WHERE a.agent_id <> s.agent_id
-              AND s.source_sha256 IS NOT NULL
-              AND a.source_sha256 = s.source_sha256
-              AND a.created_at < s.created_at
-              AND a.created_at >= lsb.created_at
-              AND s.created_at >= lsb.created_at
-            ORDER BY a.created_at ASC
-            LIMIT 1
-            """,
-            agent_id,
-        )
-
+async def find_duplicate_source_agent_in_current_set(conn: DatabaseConnection, agent_id: UUID) -> Optional[UUID]:
+    """Return the earliest other member of the same competition with this source hash."""
     return await conn.fetchval(
         """
         WITH self AS (
-            SELECT agent_id, source_sha256, created_at
+            SELECT agent_id, source_sha256, created_at, set_id
             FROM agents
             WHERE agent_id = $1
         )
@@ -470,14 +446,12 @@ async def find_duplicate_source_agent_in_current_set(
         WHERE a.agent_id <> s.agent_id
           AND s.source_sha256 IS NOT NULL
           AND a.source_sha256 = s.source_sha256
+          AND a.set_id = s.set_id
           AND a.created_at < s.created_at
-          AND a.created_at >= $2
-          AND s.created_at >= $2
         ORDER BY a.created_at ASC
         LIMIT 1
         """,
         agent_id,
-        set_boundary,
     )
 
 
