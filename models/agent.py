@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any, Mapping, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, computed_field, model_validator
 
 
 class AgentStatus(str, Enum):
@@ -193,8 +193,6 @@ class AgentBase(BaseModel):
     name: str
     version_num: int
 
-    status: AgentStatus
-
     created_at: datetime
     ip_address: Optional[str] = None
 
@@ -203,6 +201,7 @@ class Agent(AgentBase):
     """Core pipeline agent used by evaluation, queue, and upload machinery."""
 
     agent_id: UUID
+    status: AgentStatus
     approval_review_status: ApprovalReviewStatus | None = None
 
 
@@ -362,7 +361,9 @@ class PublicAgent(BaseModel):
 
 
 class AgentCreate(AgentBase):
-    """Schema used to create a new agent."""
+    """Upload input; transactional admission derives the agent status."""
+
+    model_config = ConfigDict(extra="forbid")
 
     # Hash of the block containing the payment extrinsic associated with this
     # agent upload
