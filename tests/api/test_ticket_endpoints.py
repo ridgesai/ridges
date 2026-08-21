@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 import utils.database as _db
 from api.src.endpoints import upload as upload_module
+from queries.competition import initialize_current_competition_policy
 from queries.upload_credit import credit_payment_identity
 from utils.upload_ticket import FUNDING_BURN, FUNDING_CREDIT, UploadTicket, encode_ticket, sign_ticket
 
@@ -34,11 +35,18 @@ def upload_prod_mode():
 
 @pytest.fixture(autouse=True)
 async def clean_tables(postgres_db):
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            "TRUNCATE evaluation_payments, upload_credits, upload_payment_quotes, agents, banned_coldkeys, "
+            "failed_upload_refunds, upload_attempts, evaluation_sets, competitions RESTART IDENTITY CASCADE"
+        )
+        await conn.execute("INSERT INTO competitions (set_id, start_date) VALUES (1, NOW())")
+    await initialize_current_competition_policy()
     yield
     async with _db.pool.acquire() as conn:
         await conn.execute(
             "TRUNCATE evaluation_payments, upload_credits, upload_payment_quotes, agents, banned_coldkeys, "
-            "failed_upload_refunds, upload_attempts RESTART IDENTITY CASCADE"
+            "failed_upload_refunds, upload_attempts, evaluation_sets, competitions RESTART IDENTITY CASCADE"
         )
 
 
