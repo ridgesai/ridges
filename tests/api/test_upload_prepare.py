@@ -127,7 +127,7 @@ async def test_prepare_rejects_when_frozen(monkeypatch):
 async def test_burn_prepare_enforces_rate_limit(monkeypatch):
     monkeypatch.setattr(
         upload_module,
-        "get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id",
+        "get_latest_agent_created_at_for_miner_hotkey_in_current_competition",
         AsyncMock(return_value=datetime.now(timezone.utc)),
     )
     with pytest.raises(HTTPException) as exc:
@@ -150,7 +150,7 @@ async def test_credit_prepare_returns_credit_and_skips_rate_limit(monkeypatch):
     credit_id = await _insert_credit()
     monkeypatch.setattr(
         upload_module,
-        "get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id",
+        "get_latest_agent_created_at_for_miner_hotkey_in_current_competition",
         AsyncMock(return_value=datetime.now(timezone.utc)),
     )
     monkeypatch.setattr(
