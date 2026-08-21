@@ -16,9 +16,10 @@ import pytest
 import utils.database as _db
 from api.src.endpoints import upload as upload_module
 from api.src.endpoints.upload import AgentUploadResponse
-from models.agent import AgentCreate, AgentStatus
+from models.agent import AgentCreate
 from queries.agent import _derive_agent_id, create_agent
 from queries.banned_coldkey import COLDKEY_BAN_LOCK_NAMESPACE, ban_coldkey
+from queries.competition import initialize_current_competition_policy
 from queries.errors import ColdkeyBannedError
 from queries.payments import retrieve_payment_by_hash
 from queries.upload_credit import create_agent_with_upload_credit, credit_payment_identity
@@ -47,11 +48,18 @@ def upload_prod_mode():
 
 @pytest.fixture(autouse=True)
 async def clean_tables(postgres_db):
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            "TRUNCATE evaluation_payments, upload_credits, upload_payment_quotes, agents, banned_coldkeys, "
+            "failed_upload_refunds, upload_attempts, evaluation_sets, competitions RESTART IDENTITY CASCADE"
+        )
+        await conn.execute("INSERT INTO competitions (set_id, start_date) VALUES (1, NOW())")
+    await initialize_current_competition_policy()
     yield
     async with _db.pool.acquire() as conn:
         await conn.execute(
             "TRUNCATE evaluation_payments, upload_credits, upload_payment_quotes, agents, banned_coldkeys, "
-            "failed_upload_refunds, upload_attempts RESTART IDENTITY CASCADE"
+            "failed_upload_refunds, upload_attempts, evaluation_sets, competitions RESTART IDENTITY CASCADE"
         )
 
 
@@ -356,7 +364,7 @@ async def test_check_agent_with_credit_skips_rate_limit_and_burn_checks(monkeypa
     credit_id = await _insert_credit()
     monkeypatch.setattr(
         upload_module,
-        "get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id",
+        "get_latest_agent_created_at_for_miner_hotkey_in_current_competition",
         AsyncMock(side_effect=AssertionError("credit preflight must not check the cooldown")),
     )
 
@@ -549,7 +557,7 @@ async def test_credit_upload_creates_agent_and_zero_value_payment(monkeypatch):
     credit_id = await _insert_credit()
     monkeypatch.setattr(
         upload_module,
-        "get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id",
+        "get_latest_agent_created_at_for_miner_hotkey_in_current_competition",
         AsyncMock(return_value=datetime.now(timezone.utc)),
     )
     monkeypatch.setattr(
@@ -618,7 +626,6 @@ async def test_concurrent_credit_redemption_creates_one_agent():
         miner_hotkey=FAKE_HOTKEY,
         name="test-agent",
         version_num=0,
-        status=AgentStatus.screening_1,
         created_at=datetime.now(timezone.utc),
         ip_address="127.0.0.1",
         payment_block_hash=payment_block_hash,
@@ -637,7 +644,6 @@ async def test_concurrent_credit_redemption_creates_one_agent():
         "openrouter_api_key_label": "label",
         "openrouter_api_key_creator_user_id": "creator",
         "openrouter_validated_at": datetime.now(timezone.utc),
-        "pre_screening_policy_version": "hardcoding-v1",
     }
 
     first_result, second_result = await asyncio.gather(
@@ -754,7 +760,6 @@ async def test_agent_insert_waits_for_concurrent_coldkey_ban():
         miner_hotkey=FAKE_HOTKEY,
         name="test-agent",
         version_num=0,
-        status=AgentStatus.screening_1,
         created_at=datetime.now(timezone.utc),
         ip_address="127.0.0.1",
         payment_block_hash="concurrent-ban-block",
@@ -780,7 +785,6 @@ async def test_agent_insert_waits_for_concurrent_coldkey_ban():
                     openrouter_api_key_creator_user_id="creator",
                     openrouter_validated_at=datetime.now(timezone.utc),
                     miner_coldkey=FAKE_COLDKEY,
-                    pre_screening_policy_version="hardcoding-v1",
                 )
             )
             await asyncio.sleep(0.05)
@@ -1073,7 +1077,7 @@ async def test_owner_bypasses_rate_limit(monkeypatch):
     # Make the query return a just-now timestamp so check_rate_limit would fire
     monkeypatch.setattr(
         upload_module,
-        "get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id",
+        "get_latest_agent_created_at_for_miner_hotkey_in_current_competition",
         AsyncMock(return_value=datetime.now(timezone.utc)),
     )
     # Make check_rate_limit always raise so we can confirm the owner bypass skips it
