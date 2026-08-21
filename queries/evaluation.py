@@ -9,8 +9,9 @@ from models.agent import AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus, HydratedEvaluation
 from models.evaluation_run import EvaluationRun, EvaluationRunErrorCode, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetGroup
+from queries.errors import EvaluationSetMembershipMismatchError
 from queries.evaluation_run import create_evaluation_runs, get_all_evaluation_runs_in_evaluation_id
-from queries.evaluation_set import get_all_evaluation_set_problems_in_set_group_in_set_id, get_latest_set_id
+from queries.evaluation_set import get_all_evaluation_set_problems_in_set_group_in_set_id
 from utils.database import DatabaseConnection, db_operation
 
 logger = logging.getLogger(__name__)
@@ -75,33 +76,45 @@ async def create_evaluation(conn: DatabaseConnection, agent_id: UUID, validator_
 async def create_new_evaluation_and_evaluation_runs(
     conn: DatabaseConnection, agent_id: UUID, validator_hotkey: str, set_id: int = None
 ) -> Optional[Tuple[Evaluation, List[EvaluationRun]]]:
-    if set_id is None:
-        set_id = await get_latest_set_id()
-        if set_id is None:
+    async with conn.conn.transaction():
+        agent_set_id = await conn.fetchval(
+            "SELECT set_id FROM agents WHERE agent_id = $1",
+            agent_id,
+        )
+        if agent_set_id is None:
             logger.info(
-                f"Skipping evaluation issuance for agent {agent_id}: no Harbor evaluation set has been promoted yet"
+                f"Skipping evaluation issuance for agent {agent_id}: agent is missing or has no competition membership"
             )
             return None
 
-    logger.debug(
-        f"Creating new evaluation and evaluation runs for agent {agent_id} with validator hotkey {validator_hotkey} and set ID {set_id}"
-    )
+        if set_id is not None and set_id != agent_set_id:
+            raise EvaluationSetMembershipMismatchError(
+                agent_id=agent_id,
+                agent_set_id=agent_set_id,
+                requested_set_id=set_id,
+            )
+        set_id = agent_set_id
 
-    set_group = EvaluationSetGroup.from_validator_hotkey(validator_hotkey)
-    evaluation_set_problems = await get_all_evaluation_set_problems_in_set_group_in_set_id(set_id, set_group)
-    if not evaluation_set_problems:
-        logger.info(
-            f"Skipping evaluation issuance for agent {agent_id}: set_id {set_id} has no tasks for {set_group.value}"
+        logger.debug(
+            f"Creating new evaluation and evaluation runs for agent {agent_id} with validator hotkey "
+            f"{validator_hotkey} and set ID {set_id}"
         )
-        return None
 
-    logger.debug(f"# of problems in set ID {set_id}, set group {set_group.value}: {len(evaluation_set_problems)}")
+        set_group = EvaluationSetGroup.from_validator_hotkey(validator_hotkey)
+        evaluation_set_problems = await get_all_evaluation_set_problems_in_set_group_in_set_id(set_id, set_group)
+        if not evaluation_set_problems:
+            logger.info(
+                f"Skipping evaluation issuance for agent {agent_id}: set_id {set_id} has no tasks for {set_group.value}"
+            )
+            return None
 
-    evaluation_id = await create_evaluation(agent_id, validator_hotkey, set_id)
+        logger.debug(f"# of problems in set ID {set_id}, set group {set_group.value}: {len(evaluation_set_problems)}")
 
-    await create_evaluation_runs(evaluation_id, evaluation_set_problems)
+        evaluation_id = await create_evaluation(agent_id, validator_hotkey, set_id)
 
-    return await get_evaluation_by_id(evaluation_id), await get_all_evaluation_runs_in_evaluation_id(evaluation_id)
+        await create_evaluation_runs(evaluation_id, evaluation_set_problems)
+
+        return await get_evaluation_by_id(evaluation_id), await get_all_evaluation_runs_in_evaluation_id(evaluation_id)
 
 
 @db_operation
