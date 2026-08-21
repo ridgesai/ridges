@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from api.endpoints import validator as validator_endpoint
-from models.agent import Agent, AgentStatus
+from models.agent import Agent, AgentCompetitionState, AgentCompetitionStatus, AgentStatus, PublicAgent
 from models.evaluation import EvaluationStatus, HydratedEvaluation
 from models.evaluation_set import EvaluationSetGroup
 from queries.evaluation import AgentRankingProfile
@@ -47,6 +47,63 @@ def _agent(*, agent_id, status: AgentStatus) -> Agent:
 
 
 @pytest.mark.anyio
+async def test_screening_2_completion_uses_top_eligible_agent(monkeypatch) -> None:
+    agent_id = uuid4()
+    hydrated = _hydrated_evaluation(agent_id=agent_id)
+    transitions: list[tuple] = []
+    top_agent_calls: list[int] = []
+
+    async def fake_update_evaluation_finished_at(_evaluation_id) -> None:
+        return None
+
+    async def fake_get_hydrated_evaluation_by_id(_evaluation_id):
+        return hydrated
+
+    async def fake_get_agent_by_id(_agent_id):
+        return _agent(agent_id=agent_id, status=AgentStatus.screening_2)
+
+    async def fake_get_top_agents(*, number_of_agents):
+        top_agent_calls.append(number_of_agents)
+        return [
+            PublicAgent(
+                agent_id=uuid4(),
+                miner_hotkey="leader-hotkey",
+                name="Leader",
+                version_num=1,
+                status=AgentStatus.finished,
+                created_at=datetime.now(timezone.utc),
+                competition_state=AgentCompetitionState(
+                    set_id=7,
+                    status=AgentCompetitionStatus.approved,
+                    approved=True,
+                    final_score=0.9,
+                ),
+            )
+        ]
+
+    async def fake_transition_agent_status_if_matches(_agent_id, expected_status, new_status):
+        transitions.append((_agent_id, expected_status, new_status))
+        return True
+
+    monkeypatch.setattr(validator_endpoint, "update_evaluation_finished_at", fake_update_evaluation_finished_at)
+    monkeypatch.setattr(validator_endpoint, "get_hydrated_evaluation_by_id", fake_get_hydrated_evaluation_by_id)
+    monkeypatch.setattr(validator_endpoint, "get_agent_by_id", fake_get_agent_by_id)
+    monkeypatch.setattr(validator_endpoint, "get_top_agents", fake_get_top_agents)
+    monkeypatch.setattr(
+        validator_endpoint,
+        "transition_agent_status_if_matches",
+        fake_transition_agent_status_if_matches,
+    )
+    monkeypatch.setattr(validator_endpoint.config, "SCREENER_2_THRESHOLD", 0.6)
+    monkeypatch.setattr(validator_endpoint.config, "PRUNE_THRESHOLD", 0.9)
+
+    await validator_endpoint.handle_evaluation_if_finished(hydrated.evaluation_id)
+
+    assert top_agent_calls == [1]
+    assert transitions == [(agent_id, AgentStatus.screening_2, AgentStatus.evaluating)]
+
+
+@pytest.mark.anyio
 async def test_handle_evaluation_finished_enqueues_auto_approval(monkeypatch) -> None:
     agent_id = uuid4()
     hydrated = _hydrated_evaluation(agent_id=agent_id, set_id=11)
@@ -64,10 +121,9 @@ async def test_handle_evaluation_finished_enqueues_auto_approval(monkeypatch) ->
     async def fake_get_num_successful_validator_evaluations_for_agent_id(_agent_id):
         return validator_endpoint.config.NUM_EVALS_PER_AGENT
 
-    async def fake_finish_agent_and_enqueue_approval(*, agent_id, set_id, policy_version):
+    async def fake_finish_agent_and_enqueue_approval(*, agent_id, set_id):
         recorded["agent_id"] = agent_id
         recorded["set_id"] = set_id
-        recorded["policy_version"] = policy_version
         return True
 
     async def fake_should_run_auto_approval_judge(*, agent_id, set_id):
@@ -92,7 +148,6 @@ async def test_handle_evaluation_finished_enqueues_auto_approval(monkeypatch) ->
         validator_endpoint, "transition_agent_status_if_matches", fake_transition_agent_status_if_matches
     )
     monkeypatch.setattr(validator_endpoint.config, "AUTO_APPROVAL_ENABLED", True)
-    monkeypatch.setattr(validator_endpoint.config, "AUTO_APPROVAL_POLICY_VERSION", "approval-v1")
 
     await validator_endpoint.handle_evaluation_if_finished(uuid4())
 
@@ -101,7 +156,6 @@ async def test_handle_evaluation_finished_enqueues_auto_approval(monkeypatch) ->
         "approval_candidate_set_id": 11,
         "agent_id": agent_id,
         "set_id": 11,
-        "policy_version": "approval-v1",
     }
 
 

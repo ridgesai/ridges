@@ -180,8 +180,8 @@ async def _run_task_dir(
     )
 
     if ridges_environment_type == "kubernetes":
-        # K8s proxy listens on 8080 (non-root can't bind to 80).
-        agent_env["SANDBOX_PROXY_URL"] = "http://sandbox-proxy:8080"
+        # The proxy sidecar shares the pod network namespace and listens on 8080.
+        agent_env["SANDBOX_PROXY_URL"] = "http://127.0.0.1:8080"
 
         from kubernetes import client as k8s_client_mod
         from kubernetes import config as k8s_config_mod
@@ -226,6 +226,7 @@ async def _run_task_dir(
                 "proxy_image": PROXY_IMAGE,
                 "evaluation_run_id": evaluation_run_id,
                 "max_cost_usd": str(max_cost_usd) if max_cost_usd is not None else "999999",
+                "inference_seed": inference_seed,
                 "openrouter_sidecar_env": openrouter_config.sidecar_env_vars() if openrouter_config else {},
                 "proxy_data_dir": str(proxy_data_dir),
                 "kubeconfig_context": K8S_CONTEXT,

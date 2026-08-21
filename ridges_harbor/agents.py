@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from harbor.models.task.config import MCPServerConfig
 
 RUNTIME_BOOTSTRAP_PROBE_LOG_FILENAME = "runtime-bootstrap-probe.log"
+RUNTIME_PERMISSIONS_LOG_FILENAME = "runtime-permissions.log"
 STDLIB_CONTRACT_FILENAME = "_stdlib_contract.py"
 
 
@@ -213,8 +214,8 @@ class RidgesMinerAgent(BaseInstalledAgent):
 
         Called once by Harbor during 'BaseInstalledAgent.setup()'. Verifies
         the miner exists, ensures the install/log dirs are writable, probes
-        python3, then uploads 'agent.py', the runtime script, and its stdlib
-        contract sibling.
+        python3, then uploads 'agent.py' (chmod 0444 so a non-root agent user
+        can read it), the runtime script, and its stdlib contract sibling.
         """
         if not self.agent_path.exists():
             raise FileNotFoundError(f"Miner agent file not found: {self.agent_path}")
@@ -229,6 +230,15 @@ class RidgesMinerAgent(BaseInstalledAgent):
 
         await self._bootstrap_runtime_dependencies(environment)
         await environment.upload_file(self.agent_path, self._env_agent_path)
+        await self._exec_with_log(
+            environment,
+            executor=self.exec_as_root,
+            command=f"chmod 0755 {shlex.quote(self.runtime_dir)} && chmod 0444 {shlex.quote(self._env_agent_path)}",
+            log_filename=RUNTIME_PERMISSIONS_LOG_FILENAME,
+            cancelled_detail="command execution was cancelled",
+            error_summary="Failed to make the miner source readable by the agent user",
+            error_type=RuntimeError,
+        )
         await environment.upload_file(self.stdlib_contract_path, self._env_stdlib_contract_path)
         await environment.upload_file(self.runtime_script_path, self._env_runtime_path)
 

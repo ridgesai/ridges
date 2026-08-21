@@ -1,17 +1,15 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 from uuid import UUID, uuid5
 
 import api.config as config
 from models.agent import (
     Agent,
     AgentCreate,
-    AgentScored,
     AgentStatus,
-    BenchmarkAgentScored,
-    PossiblyBenchmarkAgent,
+    PublicAgent,
 )
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
@@ -23,8 +21,6 @@ from utils.database import DatabaseConnection, db_operation
 from utils.s3 import upload_text_file_to_s3
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_PRE_SCREENING_POLICY_VERSION = "hardcoding-v1"
 
 
 @dataclass(slots=True, frozen=True)
@@ -62,7 +58,65 @@ async def get_agent_by_id(conn: DatabaseConnection, agent_id: UUID) -> Optional[
     return Agent(**result)
 
 
-LATEST_AGENT_APPROVAL_JOINS = """
+AGENT_PUBLIC_JOINS = """
+LEFT JOIN LATERAL (
+    SELECT COALESCE(
+        a.set_id,
+        (
+            SELECT aa.set_id
+            FROM approved_agents aa
+            WHERE aa.agent_id = a.agent_id
+            ORDER BY aa.set_id DESC
+            LIMIT 1
+        ),
+        (
+            SELECT afr.set_id
+            FROM agent_final_review_statuses afr
+            WHERE afr.agent_id = a.agent_id
+            ORDER BY afr.updated_at DESC, afr.set_id DESC
+            LIMIT 1
+        ),
+        (SELECT ass.set_id FROM agent_scores ass WHERE ass.agent_id = a.agent_id),
+        (SELECT MAX(e.set_id) FROM evaluations e WHERE e.agent_id = a.agent_id)
+    ) AS set_id
+) competition_context ON TRUE
+LEFT JOIN agent_final_review_statuses competition_review
+    ON competition_review.agent_id = a.agent_id
+   AND competition_review.set_id = competition_context.set_id
+LEFT JOIN agent_scores competition_score
+    ON competition_score.agent_id = a.agent_id
+   AND competition_score.set_id = competition_context.set_id
+LEFT JOIN approved_agents competition_approval
+    ON competition_approval.agent_id = a.agent_id
+   AND competition_approval.set_id = competition_context.set_id
+LEFT JOIN agents competition_baseline
+    ON competition_baseline.agent_id = competition_approval.baseline_agent_id
+"""
+
+AGENT_PUBLIC_SELECT_COLUMNS = """
+    a.agent_id,
+    a.miner_hotkey,
+    a.name,
+    a.version_num,
+    a.status,
+    a.created_at,
+    competition_context.set_id,
+    competition_score.validator_count,
+    competition_score.final_score,
+    competition_review.approval_review_status,
+    (competition_approval.agent_id IS NOT NULL) AS approved,
+    competition_approval.performance_delta,
+    competition_approval.cost_delta,
+    competition_approval.relative_improvement_units,
+    competition_approval.time_multiplier,
+    competition_approval.initial_reward_score,
+    competition_approval.approved_at,
+    competition_approval.baseline_agent_id,
+    competition_baseline.name AS baseline_agent_name,
+    competition_baseline.version_num AS baseline_agent_version_num
+"""
+
+LATEST_AGENT_REVIEW_JOIN = """
 LEFT JOIN LATERAL (
     SELECT approval_review_status
     FROM agent_final_review_statuses
@@ -74,39 +128,13 @@ LEFT JOIN LATERAL (
 
 
 @db_operation
-async def get_possibly_benchmark_agent_by_id(
-    conn: DatabaseConnection, agent_id: UUID
-) -> Optional[PossiblyBenchmarkAgent]:
+async def get_public_agent_by_id(conn: DatabaseConnection, agent_id: UUID) -> PublicAgent | None:
     result = await conn.fetchrow(
         f"""
         SELECT
-            a.*,
-            latest_review.approval_review_status AS approval_review_status,
-            (bai.agent_id IS NOT NULL) AS is_benchmark_agent,
-            bai.description AS benchmark_description,
-            (latest_approval.agent_id IS NOT NULL) AS approved,
-            latest_approval.performance_delta,
-            latest_approval.cost_delta,
-            latest_approval.relative_improvement_units,
-            latest_approval.time_multiplier,
-            latest_approval.initial_reward_score,
-            latest_approval.approved_at,
-            latest_approval.baseline_agent_id,
-            baseline.name AS baseline_agent_name,
-            baseline.version_num AS baseline_agent_version_num
+            {AGENT_PUBLIC_SELECT_COLUMNS}
         FROM agents a
-        LEFT JOIN benchmark_agent_ids bai ON a.agent_id = bai.agent_id
-        {LATEST_AGENT_APPROVAL_JOINS}
-        LEFT JOIN LATERAL (
-            SELECT aa.agent_id, aa.baseline_agent_id, aa.performance_delta, aa.cost_delta,
-                   aa.relative_improvement_units, aa.time_multiplier, aa.initial_reward_score,
-                   aa.approved_at
-            FROM approved_agents aa
-            WHERE aa.agent_id = a.agent_id
-            ORDER BY aa.set_id DESC
-            LIMIT 1
-        ) latest_approval ON TRUE
-        LEFT JOIN agents baseline ON baseline.agent_id = latest_approval.baseline_agent_id
+        {AGENT_PUBLIC_JOINS}
         WHERE a.agent_id = $1
         LIMIT 1
         """,
@@ -116,18 +144,17 @@ async def get_possibly_benchmark_agent_by_id(
     if result is None:
         return None
 
-    return PossiblyBenchmarkAgent(**result)
+    return PublicAgent(**result)
 
 
 @db_operation
-async def get_agent_by_evaluation_run_id(conn: DatabaseConnection, evaluation_run_id: UUID) -> Optional[Agent]:
+async def get_agent_by_evaluation_run_id(conn: DatabaseConnection, evaluation_run_id: UUID) -> PublicAgent | None:
     result = await conn.fetchrow(
         f"""
         SELECT
-            a.*,
-            latest_review.approval_review_status AS approval_review_status
+            {AGENT_PUBLIC_SELECT_COLUMNS}
         FROM agents a
-        {LATEST_AGENT_APPROVAL_JOINS}
+        {AGENT_PUBLIC_JOINS}
         WHERE a.agent_id = (
             SELECT agent_id FROM evaluations WHERE evaluation_id = (
                 SELECT evaluation_id FROM evaluation_runs WHERE evaluation_run_id = $1 LIMIT 1
@@ -140,36 +167,36 @@ async def get_agent_by_evaluation_run_id(conn: DatabaseConnection, evaluation_ru
     if result is None:
         return None
 
-    return Agent(**result)
+    return PublicAgent(**result)
 
 
 @db_operation
-async def get_all_agents_by_miner_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> List[Agent]:
+async def get_all_public_agents_by_miner_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> list[PublicAgent]:
     result = await conn.fetch(
         f"""
         SELECT
-            a.*,
-            latest_review.approval_review_status AS approval_review_status
+            {AGENT_PUBLIC_SELECT_COLUMNS}
         FROM agents a
-        {LATEST_AGENT_APPROVAL_JOINS}
+        {AGENT_PUBLIC_JOINS}
         WHERE a.miner_hotkey = $1
         ORDER BY a.created_at DESC
         """,
         miner_hotkey,
     )
 
-    return [Agent(**agent) for agent in result]
+    return [PublicAgent(**agent) for agent in result]
 
 
 @db_operation
 async def get_latest_agent_for_miner_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> Optional[Agent]:
+    """Return the core latest-agent model used by upload/platform machinery."""
     result = await conn.fetchrow(
         f"""
         SELECT
             a.*,
             latest_review.approval_review_status AS approval_review_status
         FROM agents a
-        {LATEST_AGENT_APPROVAL_JOINS}
+        {LATEST_AGENT_REVIEW_JOIN}
         WHERE a.miner_hotkey = $1
         ORDER BY a.created_at DESC
         LIMIT 1
@@ -181,6 +208,28 @@ async def get_latest_agent_for_miner_hotkey(conn: DatabaseConnection, miner_hotk
         return None
 
     return Agent(**result)
+
+
+@db_operation
+async def get_latest_public_agent_for_miner_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> PublicAgent | None:
+    """Return the latest agent enriched for public competition views."""
+    result = await conn.fetchrow(
+        f"""
+        SELECT
+            {AGENT_PUBLIC_SELECT_COLUMNS}
+        FROM agents a
+        {AGENT_PUBLIC_JOINS}
+        WHERE a.miner_hotkey = $1
+        ORDER BY a.created_at DESC
+        LIMIT 1
+        """,
+        miner_hotkey,
+    )
+
+    if result is None:
+        return None
+
+    return PublicAgent(**result)
 
 
 @db_operation
@@ -215,7 +264,7 @@ async def create_agent(
     openrouter_validated_at: datetime,
     miner_coldkey: Optional[str] = None,
     create_pre_screening_job: bool = False,
-    pre_screening_policy_version: str = DEFAULT_PRE_SCREENING_POLICY_VERSION,
+    pre_screening_policy_version: str,
 ) -> UUID:
     """Create an agent using the deterministic payment-derived agent_id."""
 
@@ -445,24 +494,6 @@ async def update_agent_status(conn: DatabaseConnection, agent_id: UUID, status: 
     )
 
 
-@db_operation
-async def get_benchmark_agents(conn: DatabaseConnection) -> List[BenchmarkAgentScored]:
-    result = await conn.fetch(
-        """
-        SELECT
-            ass.*,
-            NULL::text AS approval_review_status,
-            bai.description AS benchmark_description
-        FROM agent_scores ass
-        LEFT JOIN benchmark_agent_ids bai ON ass.agent_id = bai.agent_id
-        WHERE ass.agent_id IN (SELECT agent_id FROM benchmark_agent_ids)
-        ORDER BY ass.created_at DESC, ass.final_score DESC
-        """
-    )
-
-    return [BenchmarkAgentScored(**agent) for agent in result]
-
-
 # TODO ADAM: fix this section
 
 
@@ -497,7 +528,7 @@ async def record_upload_attempt(conn: DatabaseConnection, upload_type: str, succ
 
 
 @db_operation
-async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, page: int = 1) -> list[AgentScored]:
+async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, page: int = 1) -> list[PublicAgent]:
     """Retrieve the top agents.
 
     Agents are ordered by validator score, then average validator-evaluation cost, then creation time.
@@ -515,7 +546,7 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
 
     Returns
     -------
-    list[AgentScored]
+    list[PublicAgent]
         List of top agents with their scores.
     """
     # TODO ADAM: this query was supposed to be fixed to remove the pagination concept
@@ -525,13 +556,35 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
     results = await conn.fetch(
         """
         select
-            ass.*,
-            review.approval_review_status AS approval_review_status
+            ass.agent_id,
+            ass.miner_hotkey,
+            ass.name,
+            ass.version_num,
+            ass.status,
+            ass.created_at,
+            ass.set_id,
+            (approval.agent_id is not null) as approved,
+            ass.validator_count,
+            ass.final_score,
+            review.approval_review_status,
+            approval.performance_delta,
+            approval.cost_delta,
+            approval.relative_improvement_units,
+            approval.time_multiplier,
+            approval.initial_reward_score,
+            approval.approved_at,
+            approval.baseline_agent_id,
+            baseline.name as baseline_agent_name,
+            baseline.version_num as baseline_agent_version_num
         from agent_scores ass
         join agents a on a.agent_id = ass.agent_id
         left join agent_final_review_statuses review
             on review.agent_id = ass.agent_id
            and review.set_id = ass.set_id
+        left join approved_agents approval
+            on approval.agent_id = ass.agent_id
+           and approval.set_id = ass.set_id
+        left join agents baseline on baseline.agent_id = approval.baseline_agent_id
         left join lateral (
             select avg(eh.avg_cost_usd) as avg_cost_usd
             from evaluations_hydrated eh
@@ -548,10 +601,7 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
             where bc.miner_coldkey = a.miner_coldkey
         )
         and ass.status::text <> 'cancelled'
-        and (
-            ass.approved is true
-            or review.approval_review_status is distinct from 'rejected'
-        )
+        and review.approval_review_status is distinct from 'rejected'
         order by
             round(ass.final_score::numeric, 6) desc,
             rt.avg_cost_usd asc nulls last,
@@ -562,7 +612,7 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
         offset,
     )
 
-    return [AgentScored(**agent) for agent in results]
+    return [PublicAgent(**agent) for agent in results]
 
 
 @db_operation
@@ -801,3 +851,24 @@ async def get_pending_work_counts(conn: DatabaseConnection) -> dict[str, int]:
         "screener_1_pending": row["screener_1_pending"],
         "screener_2_pending": row["screener_2_pending"],
     }
+
+
+@db_operation
+async def get_all_public_agents_by_miner_coldkey(conn: DatabaseConnection, miner_coldkey: str) -> list[PublicAgent]:
+    """All agents stamped with this coldkey at upload time.
+
+    Rows with a NULL coldkey are excluded — miner_coldkey was added 2026-07-10
+    without backfill, so agents uploaded before then (and dev uploads) won't appear.
+    """
+    result = await conn.fetch(
+        f"""
+        SELECT
+            {AGENT_PUBLIC_SELECT_COLUMNS}
+        FROM agents a
+        {AGENT_PUBLIC_JOINS}
+        WHERE a.miner_coldkey = $1
+        ORDER BY a.miner_hotkey, a.created_at DESC, a.agent_id
+        """,
+        miner_coldkey,
+    )
+    return [PublicAgent(**agent) for agent in result]

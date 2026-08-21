@@ -7,7 +7,12 @@ from uuid import UUID, uuid4
 import pytest
 
 import utils.database as _db
-from queries.agent import get_top_agents
+from models.agent import Agent, PublicAgent
+from queries.agent import (
+    get_latest_agent_for_miner_hotkey,
+    get_latest_public_agent_for_miner_hotkey,
+    get_top_agents,
+)
 from queries.banned_coldkey import ban_coldkey, unban_coldkey
 from queries.evaluation import get_approved_leader_ranking_for_set, get_approved_validator_leader_score_for_set
 from queries.scores import (
@@ -359,15 +364,83 @@ async def test_top_agents_uses_coldkey_bans_at_read_time():
             approved_at=now - timedelta(hours=1),
             created_at=SET_CREATED_AT + timedelta(hours=2),
         )
+        await conn.execute(
+            """
+            INSERT INTO agent_approval_states (
+                agent_id, set_id, processing_status, system_verdict, published_verdict
+            ) VALUES ($1, $2, 'completed', 'rejected', 'rejected')
+            """,
+            eligible_id,
+            SET_ID - 1,
+        )
 
     await ban_coldkey("banned-leader-coldkey", "test ban")
-    assert [agent.agent_id for agent in await get_top_agents()] == [eligible_id]
+    agents = await get_top_agents()
+    assert [agent.agent_id for agent in agents] == [eligible_id]
+    assert agents[0].competition_state is not None
+    assert agents[0].competition_state.relative_improvement_units == 1
+    assert agents[0].competition_state.time_multiplier == 1
+    assert agents[0].competition_state.status == "baseline"
+    assert agents[0].competition_state.set_id == SET_ID
+
+    agent_detail = await get_latest_public_agent_for_miner_hotkey("eligible-second-hotkey")
+    assert agent_detail is not None
+    assert isinstance(agent_detail, PublicAgent)
+    assert agent_detail.competition_state is not None
+    assert agent_detail.competition_state.relative_improvement_units == 1
+    assert agent_detail.competition_state.time_multiplier == 1
+    assert agent_detail.competition_state.status == "baseline"
+    assert agent_detail.competition_state.set_id == SET_ID
+    assert agent_detail.competition_state == agents[0].competition_state
+
+    core_agent = await get_latest_agent_for_miner_hotkey("eligible-second-hotkey")
+    assert core_agent is not None
+    assert type(core_agent) is Agent
+    assert "competition_state" not in core_agent.model_dump()
+    assert "approved" not in core_agent.model_dump()
 
     await unban_coldkey("banned-leader-coldkey")
     assert [agent.miner_hotkey for agent in await get_top_agents()] == [
         "banned-leader-hotkey",
         "eligible-second-hotkey",
     ]
+
+
+@pytest.mark.anyio
+async def test_top_agents_excludes_review_rejected_agent_with_approval_snapshot():
+    now = datetime.now(timezone.utc)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn)
+        rejected_id = await _insert_scored_agent(
+            conn,
+            miner_hotkey="rejected-hotkey",
+            final_score=0.50,
+            cost_usd=0.10,
+            approved=True,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=1),
+        )
+        eligible_id = await _insert_scored_agent(
+            conn,
+            miner_hotkey="eligible-hotkey",
+            final_score=0.49,
+            cost_usd=0.10,
+            approved=False,
+            created_at=SET_CREATED_AT + timedelta(hours=2),
+        )
+        await conn.execute(
+            """
+            INSERT INTO agent_approval_states (
+                agent_id, set_id, processing_status, system_verdict, published_verdict
+            ) VALUES ($1, $2, 'completed', 'rejected', 'rejected')
+            """,
+            rejected_id,
+            SET_ID,
+        )
+
+    agents = await get_top_agents()
+
+    assert [agent.agent_id for agent in agents] == [eligible_id]
 
 
 @pytest.mark.anyio

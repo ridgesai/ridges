@@ -39,7 +39,7 @@ from api.endpoints.validator_models import (
     ValidatorUpdateEvaluationRunResponse,
 )
 from db.models import InternalFlagName
-from models.agent import Agent, AgentStatus
+from models.agent import Agent, AgentStatus, PublicAgent
 from models.evaluation import Evaluation, EvaluationStatus
 from models.evaluation_run import (
     EvaluationRun,
@@ -1213,7 +1213,7 @@ async def validator_connected_validators_info() -> List[ConnectedValidatorInfo]:
 
         if validator.current_evaluation_id is not None:
             connected_validator.evaluation = validator.current_evaluation
-            connected_validator.agent = validator.current_agent
+            connected_validator.agent = PublicAgent(**validator.current_agent.model_dump())
 
         connected_validators.append(connected_validator)
 
@@ -1243,7 +1243,11 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
 
             case AgentStatus.screening_2:
                 top_agents = await get_top_agents(number_of_agents=1)
-                top_score = top_agents[0].final_score if top_agents else 0
+                top_score = (
+                    top_agents[0].competition_state.final_score
+                    if top_agents and top_agents[0].competition_state is not None
+                    else 0
+                )
                 pruning_threshold_score = top_score * config.PRUNE_THRESHOLD
 
                 if hydrated_evaluation.score >= max(config.SCREENER_2_THRESHOLD, pruning_threshold_score):
@@ -1274,7 +1278,6 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
             await finish_agent_and_enqueue_approval(
                 agent_id=hydrated_evaluation.agent_id,
                 set_id=hydrated_evaluation.set_id,
-                policy_version=config.AUTO_APPROVAL_POLICY_VERSION,
             )
         else:
             await transition_agent_status_if_matches(

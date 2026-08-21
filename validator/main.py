@@ -41,6 +41,7 @@ from models.problem import ProblemTestResultStatus
 from utils.docker import cleanup_harbor_docker_resources, prune_docker_disk_resources
 from utils.git import COMMIT_HASH, reset_local_repo
 from utils.logger import setup_logging
+from utils.system_metrics import get_system_metrics
 from validator.background_loops import cleanup_loop, send_heartbeat_loop, set_weights_loop
 from validator.http_utils import post_ridges_platform
 from validator.retry_utils import retry_with_backoff
@@ -92,8 +93,60 @@ async def _run_startup_tasks() -> None:
     """Run environment-specific startup tasks before entering the main loop."""
     global _healthz_task
     if config.RIDGES_ENVIRONMENT_TYPE == "docker":
-        cleanup_harbor_docker_resources()
-        prune_docker_disk_resources(include_build_cache=True)
+        if config.CLEANUP_ENABLED and config.CLEANUP_DOCKER_ENABLED:
+            dry_run = config.CLEANUP_DOCKER_DRY_RUN
+            containers = {"count": 0, "names": [], "errors": 0}
+            prune = {"image_bytes": 0, "build_bytes": 0, "errors": 0}
+            disk_percent = None
+            errors = 0
+            logger.info(f"Janitor startup: starting (dry_run={str(dry_run).lower()})")
+
+            try:
+                metrics = await get_system_metrics()
+                disk_percent = metrics.disk_percent
+            except Exception as e:
+                errors += 1
+                logger.warning(f"Janitor startup metrics failed (best-effort): {type(e).__name__}: {e}")
+
+            logger.info("Janitor startup: sweeping containers...")
+            try:
+                containers = await asyncio.to_thread(
+                    cleanup_harbor_docker_resources,
+                    dry_run=dry_run,
+                    stopped_grace_sec=config.CLEANUP_STOPPED_GRACE_MINUTES * 60,
+                    running_ttl_sec=config.CLEANUP_RUNNING_TTL_HOURS * 3600,
+                )
+            except Exception as e:
+                errors += 1
+                logger.warning(f"Janitor startup container cleanup failed (best-effort): {type(e).__name__}: {e}")
+
+            include_build_cache = disk_percent is not None and disk_percent >= config.CLEANUP_DISK_PRESSURE_PERCENT
+            logger.info(
+                f"Janitor startup: pruning dangling images (until=1h, "
+                f"build_cache={str(include_build_cache).lower()})..."
+            )
+            try:
+                prune = await asyncio.to_thread(
+                    prune_docker_disk_resources,
+                    include_build_cache=include_build_cache,
+                    dry_run=dry_run,
+                    until="1h",
+                )
+            except Exception as e:
+                errors += 1
+                logger.warning(f"Janitor startup prune failed (best-effort): {type(e).__name__}: {e}")
+
+            errors += containers.get("errors", 0) + prune.get("errors", 0)
+            disk_display = f"{disk_percent:.0f}" if disk_percent is not None else "unknown"
+            names_display = ",".join((containers.get("names") or [])[:20]) or "-"
+            logger.info(
+                f"Janitor startup: containers={containers.get('count', 0)} "
+                f"prune_bytes={prune.get('image_bytes', 0)} "
+                f"build_bytes={prune.get('build_bytes', 0)} disk_percent={disk_display} "
+                f"errors={errors} dry_run={str(dry_run).lower()} names={names_display}"
+            )
+        else:
+            logger.info("Janitor startup: Docker cleanup disabled")
     elif config.RIDGES_ENVIRONMENT_TYPE == "kubernetes":
         import validator.healthz as healthz
 

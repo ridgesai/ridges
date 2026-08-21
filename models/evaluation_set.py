@@ -5,8 +5,6 @@ from uuid import UUID
 
 from pydantic import AfterValidator, BaseModel, Field
 
-from models.agent import AgentStatus
-
 
 def _r4(v: float) -> float:
     return round(float(v), 4)
@@ -121,33 +119,6 @@ class EvaluationSetDetailEfficiency(BaseModel):
     average_agent_runtime_seconds: Float4 | None
 
 
-class EvaluationSetDetailLeaderboardAgent(BaseModel):
-    rank: int | None
-    agent_id: UUID
-    miner_hotkey: str
-    name: str
-    version_num: int
-    status: AgentStatus
-    approved: bool
-    approval_review_status: str | None
-    performance_delta: Float4 | None
-    cost_delta: Float4 | None
-    relative_improvement_units: Float4 | None
-    time_multiplier: Float4 | None
-    initial_reward_score: Float4 | None
-    approved_at: datetime.datetime | None
-    baseline_agent_name: str | None
-    baseline_agent_version_num: int | None
-    final_score: Float4 | None
-    average_cost_usd: Float4 | None
-    average_runtime_seconds: Float4 | None
-    validator_count: int | None
-    validator_hotkeys: list[str]
-    created_at: datetime.datetime
-    set_id: int
-    disqualified: bool
-
-
 class EvaluationSetDetail(BaseModel):
     """Detailed information about an evaluation set, including submission statistics, scores, and comparison to the previous set."""
 
@@ -192,26 +163,3 @@ class EvaluationSetOverview(BaseModel):
     set_id: int
     performance_distribution: EvaluationSetOverviewPerformanceDistribution
     performance_improvement: list[EvaluationSetOverviewPerformanceImprovementPoint]
-
-
-class ApprovedAgent(BaseModel):
-    id: UUID
-    miner_hotkey: str
-    name: str
-    version_num: int
-    created_at: datetime.datetime
-    final_score: Float4
-    emission: float | None
-    reward_weight: float | None
-    approved_at: datetime.datetime
-    approval_review_status: str | None
-    performance_delta: Float4 | None
-    cost_delta: Float4 | None
-    relative_improvement_units: Float4 | None
-    time_multiplier: Float4 | None
-    initial_reward_score: Float4 | None
-    baseline_agent_id: UUID | None
-    baseline_agent_name: str | None
-    baseline_agent_version_num: int | None
-    average_runtime_seconds: Float4 | None
-    average_cost_usd: Float4 | None

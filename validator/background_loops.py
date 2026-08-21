@@ -19,6 +19,7 @@ from ridges_harbor.shared import DEFAULT_RESULTS_DIR
 from utils.cleanup import prune_dirs_older_than
 from utils.docker import (
     prune_caches_under_disk_pressure,
+    prune_docker_disk_resources,
     sweep_leaked_harbor_images,
     sweep_stale_harbor_containers,
 )
@@ -102,48 +103,86 @@ async def cleanup_loop(active_task_digests: Set[str]):
 
         if config.CLEANUP_DOCKER_ENABLED and config.RIDGES_ENVIRONMENT_TYPE == "docker":
             dry_run = config.CLEANUP_DOCKER_DRY_RUN
+            containers = {"count": 0, "names": [], "errors": 0}
+            images = {"count": 0, "names": [], "errors": 0}
+            prune = {"image_bytes": 0, "build_bytes": 0, "errors": 0}
+            pressure_prune = {"fired": False, "image_bytes": 0, "build_bytes": 0, "errors": 0}
+            disk_percent = None
+            errors = 0
+            logger.info(f"Janitor: starting sweep (dry_run={str(dry_run).lower()})")
+
             try:
-                containers_removed = await asyncio.to_thread(
+                metrics = await get_system_metrics()
+                disk_percent = metrics.disk_percent
+            except Exception as e:
+                errors += 1
+                logger.warning(f"Janitor disk metrics failed (best-effort): {type(e).__name__}: {e}")
+
+            try:
+                containers = await asyncio.to_thread(
                     sweep_stale_harbor_containers,
                     stopped_grace_sec=config.CLEANUP_STOPPED_GRACE_MINUTES * 60,
                     running_ttl_sec=config.CLEANUP_RUNNING_TTL_HOURS * 3600,
                     dry_run=dry_run,
                 )
-                if containers_removed:
-                    logger.info(f"Janitor: {containers_removed} leaked container(s) swept (dry_run={dry_run})")
             except Exception as e:
+                errors += 1
                 logger.warning(f"Janitor container sweep failed (best-effort): {type(e).__name__}: {e}")
 
             try:
-                images_removed = await asyncio.to_thread(
+                images = await asyncio.to_thread(
                     sweep_leaked_harbor_images,
                     tag_grace_sec=config.CLEANUP_IMAGE_TAG_GRACE_HOURS * 3600,
                     dry_run=dry_run,
+                    disk_used_percent=disk_percent,
+                    pulled_image_pressure_percent=config.CLEANUP_PULLED_IMAGE_DISK_PERCENT,
                 )
-                if images_removed:
-                    logger.info(f"Janitor: {images_removed} leaked image tag(s) swept (dry_run={dry_run})")
             except Exception as e:
+                errors += 1
                 logger.warning(f"Janitor image sweep failed (best-effort): {type(e).__name__}: {e}")
 
             try:
+                prune = await asyncio.to_thread(
+                    prune_docker_disk_resources,
+                    dry_run=dry_run,
+                    until="1h",
+                )
+            except Exception as e:
+                errors += 1
+                logger.warning(f"Janitor dangling prune failed (best-effort): {type(e).__name__}: {e}")
+
+            try:
                 metrics = await get_system_metrics()
-                if metrics.disk_percent is None:
+                disk_percent = metrics.disk_percent
+                if disk_percent is None:
                     logger.warning("Janitor: skipping pressure prune (disk metrics unavailable)")
                 else:
-                    prune_summary = await asyncio.to_thread(
+                    pressure_prune = await asyncio.to_thread(
                         prune_caches_under_disk_pressure,
-                        disk_used_percent=metrics.disk_percent,
+                        disk_used_percent=disk_percent,
                         pressure_percent=config.CLEANUP_DISK_PRESSURE_PERCENT,
                         dry_run=dry_run,
                     )
-                    if prune_summary.get("fired"):
+                    if pressure_prune.get("fired"):
                         logger.info(
-                            f"Janitor: pressure prune at {metrics.disk_percent:.0f}% disk reclaimed "
-                            f"{prune_summary.get('image_bytes', 0) / 1e6:.0f} MB (images) + "
-                            f"{prune_summary.get('build_bytes', 0) / 1e6:.0f} MB (build cache), "
-                            f"errors={prune_summary.get('errors', 0)} (dry_run={dry_run})"
+                            f"Janitor: pressure prune at {disk_percent:.0f}% disk reclaimed "
+                            f"{pressure_prune.get('image_bytes', 0) / 1e6:.0f} MB (images) + "
+                            f"{pressure_prune.get('build_bytes', 0) / 1e6:.0f} MB (build cache), "
+                            f"errors={pressure_prune.get('errors', 0)} (dry_run={dry_run})"
                         )
             except Exception as e:
+                errors += 1
                 logger.warning(f"Janitor cache prune failed (best-effort): {type(e).__name__}: {e}")
+
+            errors += sum(summary.get("errors", 0) for summary in (containers, images, prune, pressure_prune))
+            candidate_names = (containers.get("names") or []) + (images.get("names") or [])
+            disk_display = f"{disk_percent:.0f}" if disk_percent is not None else "unknown"
+            names_display = ",".join(candidate_names[:20]) or "-"
+            logger.info(
+                f"Janitor: containers={containers.get('count', 0)} "
+                f"images={images.get('count', 0)} prune_bytes={prune.get('image_bytes', 0)} "
+                f"disk_percent={disk_display} errors={errors} "
+                f"dry_run={str(dry_run).lower()} names={names_display}"
+            )
 
         await asyncio.sleep(config.CLEANUP_INTERVAL_SECONDS)

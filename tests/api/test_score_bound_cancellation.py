@@ -176,7 +176,11 @@ async def test_score_bound_pruning_screener_2_uses_screener_threshold(monkeypatc
     monkeypatch.setattr(
         validator_endpoint, "transition_agent_status_if_matches", fake_transition_agent_status_if_matches
     )
-    monkeypatch.setattr(validator_endpoint, "get_top_agents", fail_if_top_agents_called)
+    monkeypatch.setattr(
+        validator_endpoint,
+        "get_top_agents",
+        fail_if_top_agents_called,
+    )
 
     assert await validator_endpoint._maybe_stop_agent_by_score_bound(evaluation) is True
     assert status_updates == [(agent_id, AgentStatus.screening_2, AgentStatus.failed_screening_2)]

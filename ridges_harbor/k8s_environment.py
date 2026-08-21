@@ -738,6 +738,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         proxy_image: str,
         evaluation_run_id: str,
         max_cost_usd: str = "999999",
+        inference_seed: int | None = None,
         openrouter_sidecar_env: dict[str, str] | None = None,
         proxy_data_dir: str | Path | None = None,
         registry_credentials_secret: str | None = None,
@@ -754,6 +755,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         self.proxy_image = proxy_image
         self.evaluation_run_id = evaluation_run_id
         self.max_cost_usd = max_cost_usd
+        self.inference_seed = inference_seed
         self.openrouter_sidecar_env: dict[str, str] = openrouter_sidecar_env or {}
         self.proxy_data_dir: Path | None = Path(proxy_data_dir) if proxy_data_dir else None
         self.registry_credentials_secret = registry_credentials_secret
@@ -843,13 +845,18 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         # exec path needs (`su <user> -s /bin/bash -c ...` for exec_as_root
         # and exec_as_agent).  allowPrivilegeEscalation must remain True for
         # the same reason: the kernel requires it for setuid binaries like su.
+        # DAC_OVERRIDE/FOWNER/CHOWN let the root verifier reset/clean an
+        # agent-owned worktree: tasks with a non-root [agent] user chown the
+        # repo to that user, and a capability-stripped root cannot write it.
+        # `su` to a non-root uid clears these from the agent process's
+        # permitted/effective sets, so the agent cannot use them.
         # runAsNonRoot and readOnlyRootFilesystem are intentionally omitted:
         # SWE-bench images build as root (no USER directive), verifiers write to
         # /etc and /root at runtime, and conda envs live in root-owned paths.
         main.security_context = k8s_client.V1SecurityContext(
             capabilities=k8s_client.V1Capabilities(
                 drop=["ALL"],
-                add=["SETUID", "SETGID"],
+                add=["SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER", "CHOWN"],
             ),
         )
 
@@ -904,6 +911,8 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
             k8s_client.V1EnvVar(name="MAX_COST_USD", value=self.max_cost_usd),
             k8s_client.V1EnvVar(name="EVALUATION_RUN_ID", value=self.evaluation_run_id),
         ]
+        if self.inference_seed is not None:
+            env.append(k8s_client.V1EnvVar(name="INFERENCE_SEED", value=str(self.inference_seed)))
         for k, v in self.openrouter_sidecar_env.items():
             # sidecar_env_vars() returns RIDGES_-prefixed names for Docker
             # Compose compat; the proxy reads the unprefixed names directly.

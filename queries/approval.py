@@ -3,6 +3,8 @@ import logging
 from datetime import datetime
 from uuid import UUID, uuid4
 
+import asyncpg
+
 import api.config as config
 from models.agent import AgentStatus
 from models.approval import (
@@ -50,17 +52,20 @@ async def enqueue_approval_job(
     *,
     agent_id: UUID,
     set_id: int,
-    policy_version: str,
 ) -> UUID | None:
-    """Create one active approval job and pending state row if none already exists."""
+    """Create one active approval job and pending state row if none already exists. The judge
+    policy is copied from the agent's pre-screening job."""
 
     async with conn.conn.transaction():
-        snapshot = await _build_approval_input_snapshot(conn, agent_id=agent_id, set_id=set_id)
+        pre_screening_job = await _latest_pre_screening_job(conn, agent_id=agent_id)
+        snapshot = await _build_approval_input_snapshot(
+            conn, agent_id=agent_id, set_id=set_id, pre_screening_job=pre_screening_job
+        )
         return await _insert_approval_job_and_state(
             conn,
             agent_id=agent_id,
             set_id=set_id,
-            policy_version=policy_version,
+            policy_version=_approval_policy_version(pre_screening_job, agent_id=agent_id),
             snapshot=snapshot,
         )
 
@@ -71,9 +76,9 @@ async def finish_agent_and_enqueue_approval(
     *,
     agent_id: UUID,
     set_id: int,
-    policy_version: str,
 ) -> bool:
-    """Finish an agent and enqueue approval unless its coldkey is banned."""
+    """Finish an agent and enqueue approval unless its coldkey is banned. The judge policy is
+    copied from the agent's pre-screening job."""
 
     async with conn.conn.transaction():
         agent = await conn.fetchrow(
@@ -103,16 +108,45 @@ async def finish_agent_and_enqueue_approval(
         if miner_coldkey is not None and await get_banned_coldkey(miner_coldkey) is not None:
             return False
 
-        snapshot = await _build_approval_input_snapshot(conn, agent_id=agent_id, set_id=set_id)
+        pre_screening_job = await _latest_pre_screening_job(conn, agent_id=agent_id)
+        snapshot = await _build_approval_input_snapshot(
+            conn, agent_id=agent_id, set_id=set_id, pre_screening_job=pre_screening_job
+        )
         await _insert_approval_job_and_state(
             conn,
             agent_id=agent_id,
             set_id=set_id,
-            policy_version=policy_version,
+            policy_version=_approval_policy_version(pre_screening_job, agent_id=agent_id),
             snapshot=snapshot,
         )
 
     return True
+
+
+async def _latest_pre_screening_job(conn: DatabaseConnection, *, agent_id: UUID) -> asyncpg.Record | None:
+    """The agent's most recent pre-screening job."""
+
+    return await conn.fetchrow(
+        """
+        SELECT job_id, status, reviewer_id, policy_version
+        FROM pre_screening_jobs
+        WHERE agent_id = $1
+        ORDER BY created_at DESC, job_id DESC
+        LIMIT 1
+        """,
+        agent_id,
+    )
+
+
+def _approval_policy_version(pre_screening_job: asyncpg.Record | None, *, agent_id: UUID) -> str:
+    """Approval reuses the judge policy stamped at upload."""
+
+    if pre_screening_job is not None:
+        return pre_screening_job["policy_version"]
+    logger.warning(
+        f"Agent {agent_id} has no pre-screening job; approval uses configured policy {config.HARDCODING_POLICY_VERSION}"
+    )
+    return config.HARDCODING_POLICY_VERSION
 
 
 @db_operation
@@ -253,8 +287,7 @@ async def _insert_incentive_approval(
     competition_elapsed_hours = _elapsed_hours(last_competition_improvement, decision_time)
     time_multiplier = calculate_time_multiplier(
         elapsed_hours=competition_elapsed_hours,
-        half_life_hours=config.INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS,
-        maximum=config.INCENTIVE_TIME_MULTIPLIER_MAX,
+        scale_hours=config.INCENTIVE_TIME_MULTIPLIER_SCALE_HOURS,
     )
 
     initial_reward_score = calculate_initial_reward_score(
@@ -380,6 +413,7 @@ async def _build_approval_input_snapshot(
     *,
     agent_id: UUID,
     set_id: int,
+    pre_screening_job: asyncpg.Record | None,
 ) -> ApprovalInputSnapshot:
     validator_rows = await conn.fetch(
         f"""
@@ -414,25 +448,17 @@ async def _build_approval_input_snapshot(
         computed_average = sum(score.score for score in validator_scores) / len(validator_scores)
 
     pre_screening = None
-    job_row = await conn.fetchrow(
-        """
-        SELECT job_id, status, reviewer_id
-        FROM pre_screening_jobs
-        WHERE agent_id = $1
-        ORDER BY created_at DESC
-        LIMIT 1
-        """,
-        agent_id,
-    )
+    job_row = pre_screening_job
     if job_row is not None and job_row["reviewer_id"] is not None:
         pre_screening = ApprovalPreScreeningContext(
             verdict=_pre_screening_verdict_from_job_status(job_row["status"]),
+            policy_version=job_row["policy_version"],
             resolution="human",
         )
     elif job_row is not None:
         result_row = await conn.fetchrow(
             """
-            SELECT verdict, confidence, summary, policy_version
+            SELECT verdict, confidence, summary
             FROM pre_screening_results
             WHERE job_id = $1
             ORDER BY created_at DESC
@@ -450,7 +476,7 @@ async def _build_approval_input_snapshot(
                 verdict=_pre_screening_verdict_from_job_status(job_row["status"]),
                 confidence=result_row["confidence"],
                 summary=result_row["summary"],
-                policy_version=result_row["policy_version"],
+                policy_version=job_row["policy_version"],
                 resolution="auto",
             )
 

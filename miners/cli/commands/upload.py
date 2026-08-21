@@ -16,6 +16,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt
 
 from miners.cli.click_ext import click, format_help
+from utils.upload_ticket import FUNDING_BURN, FUNDING_CREDIT, UploadTicket, encode_ticket, sign_ticket
 
 console = Console()
 DEFAULT_API_BASE_URL = "https://agent-upload.ridges.ai"
@@ -48,6 +49,11 @@ class PaymentReceipt:
     block_hash: str
     extrinsic_index: int
     quote_id: Optional[str] = None
+
+
+@dataclass(frozen=True, slots=True)
+class CreditReceipt:
+    credit_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +165,8 @@ def _check_upload_allowed(
     target: UploadTarget,
     pending: PendingUpload,
     credentials: OpenRouterUploadCredentials,
+    use_credit: bool = False,
+    credit_id: Optional[str] = None,
 ) -> dict:
     check_payload = {
         "public_key": pending.public_key,
@@ -168,6 +176,10 @@ def _check_upload_allowed(
         "openrouter_api_key": credentials.runtime_api_key,
         "openrouter_management_key": credentials.management_key,
     }
+    if use_credit:
+        check_payload["use_credit"] = "true"
+    if credit_id is not None:
+        check_payload["credit_id"] = credit_id
     response = client.post(
         f"{target.api_url}/upload/agent/check",
         files={"agent_file": ("agent.py", target.file_content, "text/plain")},
@@ -199,7 +211,7 @@ def _confirm_payment(payment_method_details: dict) -> bool:
     confirm_payment = Prompt.ask(
         (
             f"\n[bold yellow]Proceed with an IRREVERSIBLE burn of {amount_alpha:,.4f} alpha "
-            f"({payment_method_details['amount_alpha_rao']} in 1e9 units) "
+            f"({payment_method_details['amount_alpha_rao']} rao) "
             f"on SN{payment_netuid}?[/bold yellow]"
         ),
         choices=["y", "n"],
@@ -249,10 +261,49 @@ def _print_payment_receipt(receipt: PaymentReceipt) -> None:
     console.print(f"[cyan]Payment Extrinsic Index:[/cyan] {receipt.extrinsic_index}\n")
 
 
+def _print_credit_receipt(receipt: CreditReceipt) -> None:
+    console.print(f"\n[cyan]Upload Credit ID:[/cyan] {receipt.credit_id}\n")
+
+
+def _signed_ticket(
+    wallet,
+    *,
+    funding: str,
+    quote_id: Optional[str] = None,
+    payment_block_hash: Optional[str] = None,
+    payment_extrinsic_index: Optional[int] = None,
+    credit_id: Optional[str] = None,
+) -> UploadTicket:
+    unsigned = UploadTicket(
+        hotkey=wallet.hotkey.ss58_address,
+        public_key=wallet.hotkey.public_key.hex(),
+        funding=funding,
+        quote_id=quote_id,
+        payment_block_hash=payment_block_hash,
+        payment_extrinsic_index=payment_extrinsic_index,
+        credit_id=credit_id,
+    )
+    return sign_ticket(unsigned, wallet.hotkey.sign)
+
+
+def _print_ticket(ticket: UploadTicket) -> None:
+    console.print(
+        Panel(
+            "[bold cyan]Upload ticket[/bold cyan]\n"
+            "Paste this on the Ridges dashboard (Miner -> Upload) to finish the upload there.\n"
+            "[bold yellow]Treat it like a password:[/bold yellow] this is a bearer credential — anyone holding it "
+            "can upload an agent under your hotkey until it is redeemed.",
+            title="Web upload",
+            border_style="cyan",
+        )
+    )
+    console.print(encode_ticket(ticket), soft_wrap=True)
+
+
 def _upload_payload(
     *,
     pending: PendingUpload,
-    receipt: PaymentReceipt,
+    receipt: PaymentReceipt | CreditReceipt,
     credentials: OpenRouterUploadCredentials,
 ) -> dict[str, str | int]:
     payload: dict[str, str | int] = {
@@ -260,13 +311,16 @@ def _upload_payload(
         "file_info": pending.file_info,
         "signature": pending.signature,
         "name": pending.name,
-        "payment_block_hash": receipt.block_hash,
-        "payment_extrinsic_index": receipt.extrinsic_index,
         "openrouter_api_key": credentials.runtime_api_key,
         "openrouter_management_key": credentials.management_key,
     }
-    if receipt.quote_id is not None:
-        payload["quote_id"] = receipt.quote_id
+    if isinstance(receipt, CreditReceipt):
+        payload["credit_id"] = receipt.credit_id
+    else:
+        payload["payment_block_hash"] = receipt.block_hash
+        payload["payment_extrinsic_index"] = receipt.extrinsic_index
+        if receipt.quote_id is not None:
+            payload["quote_id"] = receipt.quote_id
     return payload
 
 
@@ -289,9 +343,10 @@ def _submit_upload(client: httpx.Client, *, target: UploadTarget, payload: dict[
 
 def _handle_upload_result(response: httpx.Response, *, name: str) -> None:
     if response.status_code == 200:
+        message = response.json().get("message") or f"Miner '{name}' uploaded successfully!"
         console.print(
             Panel(
-                f"[bold green]Upload Complete[/bold green]\n[cyan]Miner '{name}' uploaded successfully![/cyan]",
+                f"[bold green]Upload Complete[/bold green]\n[cyan]{message}[/cyan]",
                 title="Success",
                 border_style="green",
             )
@@ -324,9 +379,10 @@ def _execute_upload(
     wallet: Wallet,
     target: UploadTarget,
     credentials: OpenRouterUploadCredentials,
-    receipt: PaymentReceipt,
+    receipt: PaymentReceipt | CreditReceipt,
     pending: Optional[PendingUpload] = None,
     run_check: bool = True,
+    emit_ticket_on_failure: bool = False,
 ) -> None:
     """Shared post-payment upload steps used by both upload and resume-upload.
 
@@ -350,8 +406,33 @@ def _execute_upload(
     if run_check:
         _check_upload_allowed(client, target=target, pending=pending, credentials=credentials)
     payload = _upload_payload(pending=pending, receipt=receipt, credentials=credentials)
-    response = _submit_upload(client, target=target, payload=payload)
-    _handle_upload_result(response, name=pending.name)
+    try:
+        response = _submit_upload(client, target=target, payload=payload)
+        _handle_upload_result(response, name=pending.name)
+    except Exception:
+        # Catches click.ClickException, httpx.HTTPError (timeouts, disconnects, DNS), and
+        # malformed response bodies (JSONDecodeError/ValueError/AttributeError from
+        # _handle_upload_result) — any exception here means the upload didn't succeed while
+        # the payment is already spent, so recovery must print a ticket for all of these too.
+        if emit_ticket_on_failure:
+            console.print(
+                "[yellow]Your payment is safe. Finish the upload on the Ridges dashboard "
+                "(Miner → Upload) with this ticket, or run `ridges resume-upload`:[/yellow]"
+            )
+            if isinstance(receipt, CreditReceipt):
+                _print_ticket(_signed_ticket(wallet, funding=FUNDING_CREDIT, credit_id=receipt.credit_id))
+            elif receipt.quote_id is not None:
+                # Burn tickets require a quote_id; quote-less receipts (owner/synthetic) get no ticket.
+                _print_ticket(
+                    _signed_ticket(
+                        wallet,
+                        funding=FUNDING_BURN,
+                        quote_id=receipt.quote_id,
+                        payment_block_hash=receipt.block_hash,
+                        payment_extrinsic_index=int(receipt.extrinsic_index),
+                    )
+                )
+        raise
 
 
 def _resolve_wallet_and_target(
@@ -379,12 +460,15 @@ def _resolve_wallet_and_target(
         "Upload a local agent.py to the Ridges API to enter the competition. "
         "Uploads require both an OpenRouter runtime API key and an OpenRouter management key.",
         "ridges upload --file agent.py",
+        "ridges upload --file agent.py --use-credit",
         "ridges upload --file agent.py --coldkey-name miner --hotkey-name default",
     ),
 )
 @click.option("--file", help="Path to agent.py file")
 @click.option("--coldkey-name", help="Coldkey name")
 @click.option("--hotkey-name", help="Hotkey name")
+@click.option("--use-credit", is_flag=True, help="Use a one-shot upload credit instead of burning alpha.")
+@click.option("--credit-id", help="Specific upload credit ID to retry. Requires --use-credit.")
 @click.option(
     "--openrouter-api-key",
     help="OpenRouter runtime API key. Falls back to RIDGES_OPENROUTER_API_KEY or an interactive prompt.",
@@ -399,10 +483,15 @@ def upload(
     file: Optional[str],
     coldkey_name: Optional[str],
     hotkey_name: Optional[str],
+    use_credit: bool,
+    credit_id: Optional[str],
     openrouter_api_key: Optional[str],
     openrouter_management_key: Optional[str],
 ):
     """Upload a miner agent to the Ridges API."""
+    if credit_id is not None and not use_credit:
+        raise click.ClickException("--credit-id requires --use-credit")
+
     wallet, target = _resolve_wallet_and_target(ctx, file=file, coldkey_name=coldkey_name, hotkey_name=hotkey_name)
     credentials = _resolve_openrouter_upload_credentials(
         openrouter_api_key=openrouter_api_key,
@@ -414,15 +503,28 @@ def upload(
         with httpx.Client() as client:
             pending = _prepare_pending_upload(client=client, wallet=wallet, target=target)
             payment_method_details = _check_upload_allowed(
-                client, target=target, pending=pending, credentials=credentials
+                client,
+                target=target,
+                pending=pending,
+                credentials=credentials,
+                use_credit=use_credit,
+                credit_id=credit_id,
             )
-            _unlock_coldkey(wallet)
-            if not _confirm_payment(payment_method_details):
-                console.print("[bold red]Payment cancelled by user. Upload aborted.[/bold red]")
-                return
+            if use_credit:
+                if payment_method_details.get("payment_method") != "credit" or not payment_method_details.get(
+                    "credit_id"
+                ):
+                    raise click.ClickException("Server did not provide an upload credit; no burn was attempted")
+                receipt = CreditReceipt(credit_id=payment_method_details["credit_id"])
+                _print_credit_receipt(receipt)
+            else:
+                _unlock_coldkey(wallet)
+                if not _confirm_payment(payment_method_details):
+                    console.print("[bold red]Payment cancelled by user. Upload aborted.[/bold red]")
+                    return
 
-            receipt = _submit_eval_payment(wallet=wallet, payment_method_details=payment_method_details)
-            _print_payment_receipt(receipt)
+                receipt = _submit_eval_payment(wallet=wallet, payment_method_details=payment_method_details)
+                _print_payment_receipt(receipt)
 
             _execute_upload(
                 client,
@@ -432,6 +534,7 @@ def upload(
                 receipt=receipt,
                 pending=pending,
                 run_check=False,
+                emit_ticket_on_failure=True,
             )
 
     except click.ClickException:
@@ -563,7 +666,13 @@ def resume_upload(
     try:
         with httpx.Client() as client:
             _execute_upload(
-                client, wallet=wallet, target=target, credentials=credentials, receipt=receipt, run_check=False
+                client,
+                wallet=wallet,
+                target=target,
+                credentials=credentials,
+                receipt=receipt,
+                run_check=False,
+                emit_ticket_on_failure=True,
             )
 
     except click.ClickException:

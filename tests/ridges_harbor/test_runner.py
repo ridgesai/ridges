@@ -20,7 +20,26 @@ from ridges_harbor._stdlib_contract import (
     SETUP_LOG_FILENAME,
 )
 from ridges_harbor.agents import MinerRuntimeError, RidgesMinerAgent
+from ridges_harbor.docker_runtime import docker_environment_env
 from ridges_harbor.runner import _run_task_dir
+
+
+def test_docker_environment_defaults_to_buildkit_bake(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("DOCKER_BUILDKIT", raising=False)
+    monkeypatch.delenv("COMPOSE_BAKE", raising=False)
+
+    env = docker_environment_env(
+        ridges_trial_id="trial-1",
+        upstream_url="http://127.0.0.1:1234",
+        upstream_host="127.0.0.1",
+        evaluation_run_id="eval-1",
+        max_cost_usd="1",
+        proxy_data_dir=str(tmp_path),
+        openrouter_config=None,
+    )
+
+    assert env["DOCKER_BUILDKIT"] == "1"
+    assert env["COMPOSE_BAKE"] == "true"
 
 
 class FakeTaskConfig:
@@ -55,10 +74,12 @@ class FakeEnvironmentConfig:
         env: dict[str, str] | None = None,
         type: str = "docker",
         import_path: str | None = None,
+        kwargs: dict[str, object] | None = None,
     ):
         self.env = env or {}
         self.type = type
         self.import_path = import_path
+        self.kwargs = kwargs or {}
 
 
 class FakeVerifierConfig:
@@ -231,9 +252,9 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
         "RIDGES_OPENROUTER_MANAGEMENT_KEY": "",
         "RIDGES_OPENROUTER_WORKSPACE_ID": "",
         "RIDGES_OPENROUTER_EXPECTED_API_KEY_SHA256": "",
-        "DOCKER_BUILDKIT": os.environ.get("DOCKER_BUILDKIT", "0"),
+        "DOCKER_BUILDKIT": os.environ.get("DOCKER_BUILDKIT", "1"),
         "COMPOSE_DOCKER_CLI_BUILD": os.environ.get("COMPOSE_DOCKER_CLI_BUILD", "0"),
-        "COMPOSE_BAKE": os.environ.get("COMPOSE_BAKE", "false"),
+        "COMPOSE_BAKE": os.environ.get("COMPOSE_BAKE", "true"),
     }
     assert (results_dir / "job-1" / "proxy_data").is_dir()
     assert len(FakeJob.last_instance.agent_started_hooks) == 0
@@ -242,6 +263,53 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
     assert summary.trial_result is FakeJob.last_instance._trial_result
     assert summary.trial_result.exception_info.occurred_at == "2026-04-09T09:14:51.454327"
     assert os.environ == original_environ
+
+
+@pytest.mark.anyio
+async def test_run_task_dir_uses_loopback_proxy_in_kubernetes(tmp_path: Path, monkeypatch) -> None:
+    from kubernetes import client as k8s_client
+    from kubernetes import config as k8s_config
+
+    from validator import config as validator_config
+
+    _install_fake_harbor(monkeypatch)
+    monkeypatch.setenv("RIDGES_ENVIRONMENT_TYPE", "kubernetes")
+    monkeypatch.setattr(k8s_config, "load_incluster_config", lambda: None)
+    monkeypatch.setattr(k8s_client, "CoreV1Api", lambda: object())
+    # These are absent if another test imported validator.config in Docker mode.
+    monkeypatch.setattr(validator_config, "K8S_MEMORY_REQUEST_FRACTION", 0.25, raising=False)
+    monkeypatch.setattr(validator_config, "K8S_CPU_REQUEST_FRACTION", 0.25, raising=False)
+    monkeypatch.setattr(validator_config, "K8S_MEMORY_LIMIT_MULTIPLIER", 1.0, raising=False)
+
+    task_dir = tmp_path / "dataset" / "update-status-file"
+    task_dir.mkdir(parents=True)
+
+    async def fetch_task_url(task_digest: str) -> str:
+        assert task_digest == f"sha256:{'a' * 64}"
+        return "https://tasks.example.test/task.tar.gz"
+
+    await _run_task_dir(
+        task_dir=task_dir,
+        task_name="update-status-file",
+        task_digest=f"sha256:{'a' * 64}",
+        evaluation_run_id="eval-run-k8s",
+        agent_path=tmp_path / "agent.py",
+        agent_timeout_sec=30.0,
+        verifier_timeout_sec=None,
+        upstream_url="http://127.0.0.1:1234",
+        upstream_host="127.0.0.1",
+        results_dir=tmp_path / "results",
+        debug=False,
+        job_name="job-k8s",
+        inference_seed=123,
+        fetch_task_url=fetch_task_url,
+    )
+
+    config = FakeJob.created_configs[0]
+    assert config.agents[0].env["SANDBOX_PROXY_URL"] == "http://127.0.0.1:8080"
+    assert config.environment.import_path == "ridges_harbor.k8s_environment:RidgesKubernetesEnvironment"
+    assert config.environment.kwargs["inference_seed"] == 123
+    assert runner_module.DEFAULT_AGENT_SANDBOX_PROXY_URL == "http://sandbox-proxy:80"
 
 
 @pytest.mark.anyio
@@ -541,6 +609,38 @@ async def test_install_uploads_stdlib_contract_beside_runtime(tmp_path: Path, mo
     assert miner._env_agent_path in uploaded_destinations
     assert miner._env_runtime_path in uploaded_destinations
     assert miner._env_stdlib_contract_path in uploaded_destinations
+
+
+@pytest.mark.anyio
+async def test_install_makes_uploaded_miner_source_readable_by_agent_user(tmp_path: Path) -> None:
+    """agent.py arrives 0600 root-owned (tempfile mode survives upload); a task whose
+    [agent] user is non-root then cannot read it, so install() must chmod it as root."""
+    agent_path = tmp_path / "agent.py"
+    agent_path.write_text("def agent_main(input):\n    return ''\n")
+    miner = RidgesMinerAgent(logs_dir=tmp_path / "logs", agent_path=str(agent_path))
+
+    events: list[tuple[str, str, str | None]] = []
+
+    class RecordingEnvironment:
+        async def upload_file(self, source: Path, destination: str) -> None:
+            events.append(("upload", destination, None))
+
+        async def exec(self, command: str, user=None, env=None, cwd=None, timeout_sec=None):
+            events.append(("exec", command, user))
+            return SimpleNamespace(return_code=0, stdout="", stderr="")
+
+    await miner.install(RecordingEnvironment())
+
+    upload_index = events.index(("upload", miner._env_agent_path, None))
+    chmod_events = [
+        (index, user)
+        for index, (kind, command, user) in enumerate(events)
+        if kind == "exec" and command.endswith(f"chmod 0755 {miner.runtime_dir} && chmod 0444 {miner._env_agent_path}")
+    ]
+    assert chmod_events, f"no chmod of the miner source among: {events}"
+    chmod_index, chmod_user = chmod_events[0]
+    assert chmod_user == "root"
+    assert chmod_index > upload_index
 
 
 def test_runtime_script_runs_from_uploaded_sibling_stdlib_contract_only(tmp_path: Path) -> None:

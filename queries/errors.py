@@ -18,3 +18,15 @@ class ColdkeyBannedError(Exception):
     def __init__(self, miner_coldkey: str):
         self.miner_coldkey = miner_coldkey
         super().__init__(f"Coldkey {miner_coldkey} is banned")
+
+
+class UploadCreditUnavailableError(Exception):
+    """Raised when a credit does not exist or cannot be used by this hotkey."""
+
+
+class UploadCreditAlreadyRedeemedError(Exception):
+    """Raised when a credit was redeemed for different agent source."""
+
+    def __init__(self, agent_id: "UUID"):
+        self.agent_id = agent_id
+        super().__init__(f"Upload credit was already redeemed for agent {agent_id}")

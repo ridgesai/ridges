@@ -21,6 +21,7 @@ from queries.agent import _derive_agent_id, create_agent
 from queries.banned_coldkey import COLDKEY_BAN_LOCK_NAMESPACE, ban_coldkey
 from queries.errors import ColdkeyBannedError
 from queries.payments import retrieve_payment_by_hash
+from queries.upload_credit import create_agent_with_upload_credit, credit_payment_identity
 
 # ── constants ─────────────────────────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ async def clean_tables(postgres_db):
     yield
     async with _db.pool.acquire() as conn:
         await conn.execute(
-            "TRUNCATE evaluation_payments, upload_payment_quotes, agents, banned_coldkeys, "
+            "TRUNCATE evaluation_payments, upload_credits, upload_payment_quotes, agents, banned_coldkeys, "
             "failed_upload_refunds, upload_attempts RESTART IDENTITY CASCADE"
         )
 
@@ -230,11 +231,38 @@ async def _insert_quote(
     return quote_id
 
 
+async def _insert_credit(
+    *,
+    hotkey: str = FAKE_HOTKEY,
+    expires_at: datetime | None = None,
+    revoked: bool = False,
+) -> uuid.UUID:
+    credit_id = uuid.uuid4()
+    granted_at = expires_at - timedelta(hours=1) if expires_at is not None else datetime.now(timezone.utc)
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO upload_credits (
+                credit_id, miner_hotkey, reason, granted_by, granted_at, expires_at, revoked_at, revoked_by
+            ) VALUES ($1, $2, 'test credit', 'pytest', $3, $4, $5, $6)
+            """,
+            credit_id,
+            hotkey,
+            granted_at,
+            expires_at,
+            datetime.now(timezone.utc) if revoked else None,
+            "pytest" if revoked else None,
+        )
+    return credit_id
+
+
 async def _call_post_agent(
     hotkey: str = FAKE_HOTKEY,
     name: str = "test-agent",
     quote_id: uuid.UUID | None = None,
     include_quote: bool = True,
+    credit_id: uuid.UUID | None = None,
+    content: bytes = b"async def agent_main(input): return 'ok'",
 ) -> AgentUploadResponse:
     """Call the post agent endpoint with the given hotkey and name, using default mocks for all blockchain and S3 interactions.
 
@@ -250,19 +278,20 @@ async def _call_post_agent(
     AgentUploadResponse
         The response from the agent upload endpoint.
     """
-    if quote_id is None and include_quote and hotkey != FAKE_OWNER_HOTKEY:
+    if credit_id is None and quote_id is None and include_quote and hotkey != FAKE_OWNER_HOTKEY:
         quote_id = await _insert_quote(hotkey=hotkey)
 
     return await upload_module.post_agent(
         request=_make_request(),
-        agent_file=_make_upload_file(),
+        agent_file=_make_upload_file(content),
         public_key="deadbeef",
         file_info=f"{hotkey}:0",
         signature="fakesig",
         name=name,
-        payment_block_hash=FAKE_BLOCK_HASH,
-        payment_extrinsic_index=FAKE_EXTRINSIC_INDEX,
+        payment_block_hash=None if credit_id is not None else FAKE_BLOCK_HASH,
+        payment_extrinsic_index=None if credit_id is not None else FAKE_EXTRINSIC_INDEX,
         quote_id=str(quote_id) if quote_id is not None else None,
+        credit_id=str(credit_id) if credit_id is not None else None,
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
     )
@@ -320,6 +349,83 @@ async def test_check_agent_persists_payment_quote():
     assert row["miner_hotkey"] == FAKE_HOTKEY
     assert row["amount_alpha_rao"] == FAKE_AMOUNT_ALPHA_RAO
     assert row["expires_at"] > row["created_at"]
+
+
+@pytest.mark.anyio
+async def test_check_agent_with_credit_skips_rate_limit_and_burn_checks(monkeypatch):
+    credit_id = await _insert_credit()
+    monkeypatch.setattr(
+        upload_module,
+        "get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id",
+        AsyncMock(side_effect=AssertionError("credit preflight must not check the cooldown")),
+    )
+
+    response = await upload_module.check_agent_post(
+        request=_make_request(),
+        agent_file=_make_upload_file(),
+        public_key="deadbeef",
+        file_info=f"{FAKE_HOTKEY}:0",
+        signature="fakesig",
+        name="test-agent",
+        openrouter_api_key="sk-or-v1-runtime",
+        openrouter_management_key="sk-or-v1-management",
+        use_credit=True,
+    )
+
+    assert response.payment_method == "credit"
+    assert response.credit_id == credit_id
+    assert response.amount_alpha_rao == 0
+    assert response.quote_id is None
+    upload_module.subtensor_client.get_alpha_stake_availability.assert_not_awaited()
+    upload_module.get_upload_price.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_check_agent_with_credit_never_falls_back_to_burn():
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc_info:
+        await upload_module.check_agent_post(
+            request=_make_request(),
+            agent_file=_make_upload_file(),
+            public_key="deadbeef",
+            file_info=f"{FAKE_HOTKEY}:0",
+            signature="fakesig",
+            name="test-agent",
+            openrouter_api_key="sk-or-v1-runtime",
+            openrouter_management_key="sk-or-v1-management",
+            use_credit=True,
+        )
+
+    assert exc_info.value.status_code == 402
+    upload_module.subtensor_client.get_alpha_stake_availability.assert_not_awaited()
+    upload_module.get_upload_price.assert_not_awaited()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("unusable", ["expired", "revoked", "wrong_hotkey"])
+async def test_check_agent_rejects_unusable_credit(unusable: str):
+    from fastapi import HTTPException
+
+    hotkey = "5FOtherHotkey" if unusable == "wrong_hotkey" else FAKE_HOTKEY
+    expires_at = datetime.now(timezone.utc) - timedelta(minutes=1) if unusable == "expired" else None
+    credit_id = await _insert_credit(hotkey=hotkey, expires_at=expires_at, revoked=unusable == "revoked")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await upload_module.check_agent_post(
+            request=_make_request(),
+            agent_file=_make_upload_file(),
+            public_key="deadbeef",
+            file_info=f"{FAKE_HOTKEY}:0",
+            signature="fakesig",
+            name="test-agent",
+            openrouter_api_key="sk-or-v1-runtime",
+            openrouter_management_key="sk-or-v1-management",
+            use_credit=True,
+            credit_id=str(credit_id),
+        )
+
+    assert exc_info.value.status_code == 402
 
 
 @pytest.mark.anyio
@@ -439,6 +545,178 @@ async def test_fresh_upload_creates_completed_payment():
 
 
 @pytest.mark.anyio
+async def test_credit_upload_creates_agent_and_zero_value_payment(monkeypatch):
+    credit_id = await _insert_credit()
+    monkeypatch.setattr(
+        upload_module,
+        "get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id",
+        AsyncMock(return_value=datetime.now(timezone.utc)),
+    )
+    monkeypatch.setattr(
+        upload_module,
+        "check_rate_limit",
+        MagicMock(side_effect=AssertionError("credit upload must not check the cooldown")),
+    )
+
+    response = await _call_post_agent(credit_id=credit_id)
+
+    assert response.status == "success"
+    payment_block_hash, payment_extrinsic_index = credit_payment_identity(credit_id)
+    expected_agent_id = _derive_agent_id(payment_block_hash, payment_extrinsic_index)
+    async with _db.pool.acquire() as conn:
+        credit = await conn.fetchrow(
+            "SELECT redeemed_at, redeemed_agent_id FROM upload_credits WHERE credit_id = $1",
+            credit_id,
+        )
+        payment = await conn.fetchrow(
+            """
+            SELECT agent_id, miner_hotkey, miner_coldkey, amount_alpha_rao, quote_id, upload_credit_id
+            FROM evaluation_payments
+            WHERE payment_block_hash = $1 AND payment_extrinsic_index = $2
+            """,
+            payment_block_hash,
+            payment_extrinsic_index,
+        )
+
+    assert credit["redeemed_at"] is not None
+    assert credit["redeemed_agent_id"] == expected_agent_id
+    assert payment["agent_id"] == expected_agent_id
+    assert payment["miner_hotkey"] == FAKE_HOTKEY
+    assert payment["miner_coldkey"] == FAKE_COLDKEY
+    assert payment["amount_alpha_rao"] == 0
+    assert payment["quote_id"] is None
+    assert payment["upload_credit_id"] == credit_id
+    upload_module.subtensor_client.get_block_info.assert_not_awaited()
+    upload_module.subtensor_client.get_events.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_credit_upload_retry_is_idempotent():
+    credit_id = await _insert_credit()
+
+    first = await _call_post_agent(credit_id=credit_id)
+    second = await _call_post_agent(credit_id=credit_id)
+    payment_block_hash, payment_extrinsic_index = credit_payment_identity(credit_id)
+    expected_agent_id = _derive_agent_id(payment_block_hash, payment_extrinsic_index)
+
+    assert first.status == second.status == "success"
+    assert "Successfully uploaded agent" in first.message
+    assert str(credit_id) in second.message
+    assert str(expected_agent_id) in second.message
+    assert "was already used for agent" in second.message
+    assert "No new agent was created" in second.message
+    async with _db.pool.acquire() as conn:
+        assert await conn.fetchval("SELECT count(*) FROM agents") == 1
+        assert await conn.fetchval("SELECT count(*) FROM evaluation_payments") == 1
+
+
+@pytest.mark.anyio
+async def test_concurrent_credit_redemption_creates_one_agent():
+    credit_id = await _insert_credit()
+    payment_block_hash, payment_extrinsic_index = credit_payment_identity(credit_id)
+    agent = AgentCreate(
+        miner_hotkey=FAKE_HOTKEY,
+        name="test-agent",
+        version_num=0,
+        status=AgentStatus.screening_1,
+        created_at=datetime.now(timezone.utc),
+        ip_address="127.0.0.1",
+        payment_block_hash=payment_block_hash,
+        payment_extrinsic_index=payment_extrinsic_index,
+    )
+    kwargs = {
+        "credit_id": credit_id,
+        "miner_hotkey": FAKE_HOTKEY,
+        "miner_coldkey": FAKE_COLDKEY,
+        "agent": agent,
+        "agent_text": "async def agent_main(input): return 'ok'",
+        "source_sha256": "concurrent-credit-source",
+        "runtime_openrouter_api_key_ciphertext": b"runtime",
+        "management_openrouter_api_key_ciphertext": b"management",
+        "openrouter_workspace_id": "workspace",
+        "openrouter_api_key_label": "label",
+        "openrouter_api_key_creator_user_id": "creator",
+        "openrouter_validated_at": datetime.now(timezone.utc),
+        "pre_screening_policy_version": "hardcoding-v1",
+    }
+
+    first_result, second_result = await asyncio.gather(
+        create_agent_with_upload_credit(**kwargs),
+        create_agent_with_upload_credit(**kwargs),
+    )
+
+    first_agent_id, first_was_redeemed = first_result
+    second_agent_id, second_was_redeemed = second_result
+    assert first_agent_id == second_agent_id
+    assert {first_was_redeemed, second_was_redeemed} == {False, True}
+    async with _db.pool.acquire() as conn:
+        assert await conn.fetchval("SELECT count(*) FROM agents") == 1
+        assert await conn.fetchval("SELECT count(*) FROM evaluation_payments") == 1
+
+
+@pytest.mark.anyio
+async def test_redeemed_credit_rejects_different_source():
+    from fastapi import HTTPException
+
+    credit_id = await _insert_credit()
+    await _call_post_agent(credit_id=credit_id)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _call_post_agent(credit_id=credit_id, content=b"async def agent_main(input): return 'changed'")
+
+    assert exc_info.value.status_code == 409
+    assert str(credit_id) in exc_info.value.detail
+    assert "was already used for agent" in exc_info.value.detail
+    async with _db.pool.acquire() as conn:
+        assert await conn.fetchval("SELECT count(*) FROM agents") == 1
+        assert await conn.fetchval("SELECT count(*) FROM evaluation_payments") == 1
+
+
+@pytest.mark.anyio
+async def test_credit_redemption_rolls_back_when_agent_creation_fails(monkeypatch):
+    credit_id = await _insert_credit()
+    monkeypatch.setattr("queries.agent.upload_text_file_to_s3", AsyncMock(side_effect=RuntimeError("S3 failed")))
+
+    with pytest.raises(RuntimeError, match="S3 failed"):
+        await _call_post_agent(credit_id=credit_id)
+
+    async with _db.pool.acquire() as conn:
+        credit = await conn.fetchrow(
+            "SELECT redeemed_at, redeemed_agent_id FROM upload_credits WHERE credit_id = $1",
+            credit_id,
+        )
+        assert credit["redeemed_at"] is None
+        assert credit["redeemed_agent_id"] is None
+        assert await conn.fetchval("SELECT count(*) FROM agents") == 0
+        assert await conn.fetchval("SELECT count(*) FROM evaluation_payments") == 0
+
+
+@pytest.mark.anyio
+async def test_credit_upload_rejects_burn_fields():
+    from fastapi import HTTPException
+
+    credit_id = await _insert_credit()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await upload_module.post_agent(
+            request=_make_request(),
+            agent_file=_make_upload_file(),
+            public_key="deadbeef",
+            file_info=f"{FAKE_HOTKEY}:0",
+            signature="fakesig",
+            name="test-agent",
+            payment_block_hash=FAKE_BLOCK_HASH,
+            payment_extrinsic_index=FAKE_EXTRINSIC_INDEX,
+            quote_id=str(await _insert_quote()),
+            credit_id=str(credit_id),
+            openrouter_api_key="sk-or-v1-runtime",
+            openrouter_management_key="sk-or-v1-management",
+        )
+
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.anyio
 async def test_final_upload_rejects_coldkey_banned_after_quote():
     from fastapi import HTTPException
 
@@ -502,6 +780,7 @@ async def test_agent_insert_waits_for_concurrent_coldkey_ban():
                     openrouter_api_key_creator_user_id="creator",
                     openrouter_validated_at=datetime.now(timezone.utc),
                     miner_coldkey=FAKE_COLDKEY,
+                    pre_screening_policy_version="hardcoding-v1",
                 )
             )
             await asyncio.sleep(0.05)

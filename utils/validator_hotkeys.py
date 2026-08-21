@@ -5,7 +5,7 @@ WHITELISTED_VALIDATORS = [
     {"name": "Yuma", "hotkey": "5Eho9y6iF5aTdKS28Awn2pKTd4dFsJ2o3shGtj1vjnLiaKJ1"},
     {"name": "Rizzo", "hotkey": "5GuRsre3hqm6WKWRCqVxXdM4UtGs457nDhPo9F5wvJ16Ys62"},
     {"name": "Ridges", "hotkey": "5GgJptBaUiWwb8SQDinZ9rDQoVw47mgduXaCLHeJGTtA4JMS"},
-    {"name": "Crucible Labs", "short_name": "Crucible", "hotkey": "5HmkM6X1D3W3CuCSPuHhrbYyZNBy2aGAiZy9NczoJmtY25H7"},
+    {"name": "Crucible Labs", "short_name": "Crucible", "hotkey": "5CAQAgXxoU3NPo1YG5VQKz4Ackh7goNx3TvPD9A6LoqA7FmJ"},
     {"name": "tao.bot", "hotkey": "5E2LP6EnZ54m3wS8s1yPvD5c3xo71kQroBw7aUVK32TKeZ5u"},
     {
         "name": "Opentensor Foundation",
@@ -17,11 +17,7 @@ WHITELISTED_VALIDATORS = [
     {"name": "TAOApp", "hotkey": "5F4U4P2j3ctdDS45naSUCxzYAHWTHarsY5JQdcRmMkc8UQZM"},
     {"name": "WildSage Labs (RT21)", "hotkey": "5G3f2z52RVdSdjCftuW5t9WodCaEGik4zt3V8V9tpqqWSL62"},
     # Developer validators, used for testing
-    {"name": "Adam's Validator", "hotkey": "5Dy9FDg5jshHS7MirAFrRsKiFa6GPRMaiHC4Zng4HAgyi8yf"},
-    {"name": "Alex's Validator (1)", "hotkey": "5HpMvcM593HmizCA3ARLNifxjPSLbN3M5RHYy4GiEqmB3x9n"},
-    {"name": "Alex's Validator (2)", "hotkey": "5HNpAXVzWaW4yD9UqH5sXFPt1gPFqNTViDy61NdiViyDQiTQ"},
-    {"name": "Alex's Validator (3)", "hotkey": "5GgqnYQ3QwnCcmxiGatXS3rrHGmkqU3cMSjQFSdLKHDmxyB6"},
-    {"name": "Shak's Validator", "hotkey": "5F26aNVC3rZVNbH36DWdZzxPVH17iBNGD14Wtb4nQem742Q7"},
+    {"name": "Testnet Validator", "hotkey": "5G699LghHWA18yEPq8NpX9gYi8ZDM3fy2BJvSvYWqtt2DHGE"},
 ]
 
 
