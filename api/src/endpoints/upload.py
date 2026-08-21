@@ -26,7 +26,7 @@ from api.src.utils.upload_agent_helpers import (
     timestamp_ms_to_utc_datetime,
     verify_burn_extrinsic,
 )
-from models.agent import Agent, AgentCreate, AgentStatus
+from models.agent import Agent, AgentCreate
 from models.upload import (
     AgentCheckResponse,
     AgentUploadResponse,
@@ -40,13 +40,14 @@ from models.upload import (
 )
 from queries.agent import (
     create_agent,
-    get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id,
+    get_latest_agent_created_at_for_miner_hotkey_in_current_competition,
     get_latest_agent_for_miner_hotkey,
     record_upload_attempt,
 )
 from queries.banned_coldkey import get_banned_coldkey
 from queries.errors import (
     ColdkeyBannedError,
+    CompetitionNotAcceptingSubmissionsError,
     DuplicateAgentIDError,
     UploadCreditAlreadyRedeemedError,
     UploadCreditUnavailableError,
@@ -117,11 +118,11 @@ async def check_agent_post(
     if use_credit and (config.ENV != "prod" or is_owner_upload):
         raise HTTPException(status_code=400, detail="Upload credits are only available for production miner uploads")
     if not use_credit:
-        latest_agent_created_at_in_latest_set_id = await get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(
-            miner_hotkey=miner_hotkey
+        latest_agent_created_at_in_current_competition = (
+            await get_latest_agent_created_at_for_miner_hotkey_in_current_competition(miner_hotkey=miner_hotkey)
         )
-        if latest_agent_created_at_in_latest_set_id:
-            check_rate_limit(latest_agent_created_at_in_latest_set_id)
+        if latest_agent_created_at_in_current_competition:
+            check_rate_limit(latest_agent_created_at_in_current_competition)
     check_signature(public_key, file_info, signature, miner_hotkey)
     await check_hotkey_registered(miner_hotkey)
     coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey)
@@ -248,11 +249,11 @@ async def prepare_upload(body: PrepareUploadRequest) -> AgentCheckResponse:
             amount_alpha_rao=0,
         )
 
-    latest_agent_created_at_in_latest_set_id = await get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(
-        miner_hotkey=body.hotkey
+    latest_agent_created_at_in_current_competition = (
+        await get_latest_agent_created_at_for_miner_hotkey_in_current_competition(miner_hotkey=body.hotkey)
     )
-    if latest_agent_created_at_in_latest_set_id:
-        check_rate_limit(latest_agent_created_at_in_latest_set_id)
+    if latest_agent_created_at_in_current_competition:
+        check_rate_limit(latest_agent_created_at_in_current_competition)
 
     try:
         alpha_stake = await subtensor_client.get_alpha_stake_availability(
@@ -462,13 +463,13 @@ async def _process_agent_upload(
         async with DebugLock(hotkey_lock, f"Agent upload lock for miner {miner_hotkey}"):
             latest_agent: Optional[Agent] = await get_latest_agent_for_miner_hotkey(miner_hotkey=miner_hotkey)
 
-            latest_agent_created_at_in_latest_set_id = (
-                await get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(miner_hotkey=miner_hotkey)
+            latest_agent_created_at_in_current_competition = (
+                await get_latest_agent_created_at_for_miner_hotkey_in_current_competition(miner_hotkey=miner_hotkey)
             )
 
             if prod and not is_owner_upload and not is_credit_upload:
-                if latest_agent_created_at_in_latest_set_id:
-                    check_rate_limit(latest_agent_created_at_in_latest_set_id)
+                if latest_agent_created_at_in_current_competition:
+                    check_rate_limit(latest_agent_created_at_in_current_competition)
 
                 payment_row = await reserve_payment(
                     payment_block_hash=payment_block_hash,
@@ -490,9 +491,6 @@ async def _process_agent_upload(
 
             encrypted_openrouter_api_key = encrypt_agent_secret(validated_openrouter_keys.runtime_api_key)
             encrypted_openrouter_management_key = encrypt_agent_secret(validated_openrouter_keys.management_api_key)
-            initial_status = (
-                AgentStatus.pre_screening if config.PRE_SCREENING_JUDGE_ENABLED else AgentStatus.screening_1
-            )
             if is_credit_upload:
                 agent_payment_block_hash = f"credit:{credit_uuid}"
                 agent_payment_extrinsic_index = "0"
@@ -506,7 +504,6 @@ async def _process_agent_upload(
                 name=name if not latest_agent else latest_agent.name,
                 version_num=latest_agent.version_num + 1 if latest_agent else 0,
                 created_at=datetime.now(timezone.utc),
-                status=initial_status,
                 ip_address=request.client.host if request.client else None,
                 payment_block_hash=agent_payment_block_hash,
                 payment_extrinsic_index=agent_payment_extrinsic_index,
@@ -526,8 +523,6 @@ async def _process_agent_upload(
                         openrouter_api_key_label=validated_openrouter_keys.api_key_label,
                         openrouter_api_key_creator_user_id=validated_openrouter_keys.api_key_creator_user_id,
                         openrouter_validated_at=validated_openrouter_keys.validated_at,
-                        create_pre_screening_job=config.PRE_SCREENING_JUDGE_ENABLED,
-                        pre_screening_policy_version=config.HARDCODING_POLICY_VERSION,
                     )
                 else:
                     agent_id = await create_agent(
@@ -541,11 +536,11 @@ async def _process_agent_upload(
                         openrouter_api_key_creator_user_id=validated_openrouter_keys.api_key_creator_user_id,
                         openrouter_validated_at=validated_openrouter_keys.validated_at,
                         miner_coldkey=coldkey if prod else None,
-                        create_pre_screening_job=config.PRE_SCREENING_JUDGE_ENABLED,
-                        pre_screening_policy_version=config.HARDCODING_POLICY_VERSION,
                     )
             except ColdkeyBannedError as e:
                 raise HTTPException(status_code=403, detail="Your miner coldkey has been banned") from e
+            except CompetitionNotAcceptingSubmissionsError as e:
+                raise HTTPException(status_code=409, detail=str(e)) from e
             except UploadCreditUnavailableError as e:
                 raise HTTPException(status_code=402, detail="Upload credit is not available for this hotkey") from e
             except UploadCreditAlreadyRedeemedError as e:
