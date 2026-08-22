@@ -23,6 +23,11 @@ class Evaluation(Base, CreatedAtMixin):
     )
 
     __table_args__ = (
+        sa.ForeignKeyConstraint(
+            ["agent_id", "set_id"],
+            ["agents.agent_id", "agents.set_id"],
+            name="fk_evaluations_agent_competition",
+        ),
         sa.Index("idx_evaluations_id", "evaluation_id"),
         sa.Index("idx_evaluations_agent_id", "agent_id"),
         sa.Index(
@@ -66,5 +71,15 @@ class ApprovedAgent(Base):
 
     __table_args__ = (
         sa.UniqueConstraint("agent_id", "set_id"),
+        sa.ForeignKeyConstraint(
+            ["agent_id", "set_id"],
+            ["agents.agent_id", "agents.set_id"],
+            name="fk_approved_agents_agent_competition",
+        ),
+        sa.ForeignKeyConstraint(
+            ["baseline_agent_id", "set_id"],
+            ["agents.agent_id", "agents.set_id"],
+            name="fk_approved_agents_baseline_competition",
+        ),
         sa.Index("idx_approved_agents_set_approved_at", "set_id", approved_at.desc()),
     )
