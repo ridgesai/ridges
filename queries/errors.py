@@ -49,11 +49,15 @@ class CompetitionNotAcceptingSubmissionsError(Exception):
         super().__init__(message)
 
 
-class EvaluationSetMembershipMismatchError(Exception):
-    """Raised when evaluation issuance tries to override an agent's competition."""
+class AgentCompetitionMembershipMismatchError(Exception):
+    """Raised when work is requested in a set other than the agent's competition."""
 
     def __init__(self, agent_id: "UUID", agent_set_id: int, requested_set_id: int):
         self.agent_id = agent_id
         self.agent_set_id = agent_set_id
         self.requested_set_id = requested_set_id
         super().__init__(f"Agent {agent_id} belongs to set {agent_set_id}, not requested set {requested_set_id}")
+
+
+class EvaluationSetMembershipMismatchError(AgentCompetitionMembershipMismatchError):
+    """Raised when evaluation issuance tries to override an agent's competition."""

@@ -141,8 +141,7 @@ async def lock_current_competition_context(conn: DatabaseConnection) -> Competit
     return await _get_current_competition_context(conn, for_update=True)
 
 
-@db_operation
-async def get_competition_policy(conn: DatabaseConnection, set_id: int) -> CompetitionPolicy | None:
+async def _get_competition_policy(conn: DatabaseConnection, set_id: int) -> CompetitionPolicy | None:
     row = await conn.fetchrow(
         """
         SELECT
@@ -165,6 +164,11 @@ async def get_competition_policy(conn: DatabaseConnection, set_id: int) -> Compe
         set_id,
     )
     return None if row is None else _policy_from_row(row)
+
+
+@db_operation
+async def get_competition_policy(conn: DatabaseConnection, set_id: int) -> CompetitionPolicy | None:
+    return await _get_competition_policy(conn, set_id)
 
 
 @db_operation
