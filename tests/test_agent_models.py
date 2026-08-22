@@ -56,20 +56,24 @@ def test_core_agent_does_not_expose_competition_payload():
         created_at=datetime.now(timezone.utc),
     )
 
-    assert {
-        "set_id",
-        "approved",
-        "performance_delta",
-        "cost_delta",
-        "relative_improvement_units",
-        "time_multiplier",
-        "initial_reward_score",
-        "approved_at",
-        "baseline_agent_id",
-        "baseline_agent_name",
-        "baseline_agent_version_num",
-        "competition_state",
-    }.isdisjoint(agent.model_dump())
+    assert (
+        {
+            "set_id",
+            "approved",
+            "performance_delta",
+            "cost_delta",
+            "relative_improvement_units",
+            "time_multiplier",
+            "initial_reward_score",
+            "approved_at",
+            "baseline_agent_id",
+            "baseline_agent_name",
+            "baseline_agent_version_num",
+            "competition_state",
+        }
+        - {"set_id"}
+    ).isdisjoint(agent.model_dump())
+    assert agent.model_dump()["set_id"] is None
 
 
 def test_rejection_takes_precedence_over_published_approval():

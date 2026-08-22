@@ -160,20 +160,32 @@ async def _insert_agent_row(
     created_at: datetime | None = None,
 ):
     agent_id = uuid4()
-    await conn.execute(
-        """
-        INSERT INTO agents (
-            agent_id, miner_hotkey, name, version_num, status, created_at,
-            ip_address, source_sha256, set_id
+
+    async def insert() -> None:
+        await conn.execute(
+            """
+            INSERT INTO agents (
+                agent_id, miner_hotkey, name, version_num, status, created_at,
+                ip_address, source_sha256, set_id
+            )
+            VALUES ($1, $2, 'agent', 0, 'screening_1', $3, '127.0.0.1', $4, $5)
+            """,
+            agent_id,
+            miner_hotkey,
+            created_at or datetime.now(timezone.utc),
+            source_sha256,
+            set_id,
         )
-        VALUES ($1, $2, 'agent', 0, 'screening_1', $3, '127.0.0.1', $4, $5)
-        """,
-        agent_id,
-        miner_hotkey,
-        created_at or datetime.now(timezone.utc),
-        source_sha256,
-        set_id,
-    )
+
+    if set_id is None:
+        # Recreate a pre-migration row to verify the legacy read path. New NULL
+        # memberships are rejected by the production trigger.
+        async with conn.transaction():
+            await conn.execute("ALTER TABLE agents DISABLE TRIGGER trg_agents_competition_membership")
+            await insert()
+            await conn.execute("ALTER TABLE agents ENABLE TRIGGER trg_agents_competition_membership")
+    else:
+        await insert()
     return agent_id
 
 
