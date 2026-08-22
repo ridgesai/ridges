@@ -14,7 +14,12 @@ from queries.agent import (
     get_top_agents,
 )
 from queries.banned_coldkey import ban_coldkey, unban_coldkey
-from queries.evaluation import get_approved_leader_ranking_for_set, get_approved_validator_leader_score_for_set
+from queries.evaluation import (
+    get_approved_leader_ranking_for_set,
+    get_approved_validator_leader_score_for_set,
+    get_top_agent_score_for_set,
+    get_validator_agent_score_for_set,
+)
 from queries.scores import (
     get_incentive_reward_candidates,
     get_weight_receiving_agent_hotkey,
@@ -24,7 +29,7 @@ from queries.scores import (
 SET_ID = 23
 SET_CREATED_AT = datetime(2026, 6, 1, tzinfo=timezone.utc)
 TRUNCATE_SCORE_TEST_TABLES = (
-    "TRUNCATE evaluation_runs, evaluations, agent_scores, evaluation_sets, "
+    "TRUNCATE evaluation_runs, evaluations, agent_scores, evaluation_sets, competitions, "
     "benchmark_agent_ids, banned_coldkeys, banned_hotkeys, agents RESTART IDENTITY CASCADE"
 )
 
@@ -69,8 +74,11 @@ async def _insert_scored_agent(
     agent_id = uuid4()
     await conn.execute(
         """
-        INSERT INTO agents (agent_id, miner_hotkey, miner_coldkey, name, version_num, status, created_at, ip_address)
-        VALUES ($1, $2, $3, $4, 0, $6, $5, '127.0.0.1')
+        INSERT INTO agents (
+            agent_id, miner_hotkey, miner_coldkey, name, version_num,
+            status, created_at, ip_address, set_id
+        )
+        VALUES ($1, $2, $3, $4, 0, $6, $5, '127.0.0.1', $7)
         """,
         agent_id,
         miner_hotkey,
@@ -78,6 +86,7 @@ async def _insert_scored_agent(
         miner_hotkey,
         created_at,
         status,
+        SET_ID,
     )
     evaluation_id = uuid4()
     await conn.execute(
@@ -307,6 +316,64 @@ async def test_current_approved_leader_can_be_selected_without_exclusion():
 
 
 @pytest.mark.anyio
+async def test_operational_score_queries_ignore_grandfathered_cross_set_score() -> None:
+    now = datetime.now(timezone.utc)
+    cross_set_agent_id = uuid4()
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn)
+        matching_agent_id = await _insert_scored_agent(
+            conn,
+            miner_hotkey="matching-hotkey",
+            final_score=0.50,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=1),
+        )
+        await conn.execute("INSERT INTO competitions (set_id) VALUES ($1)", SET_ID + 1)
+        await conn.execute(
+            """
+            INSERT INTO agents (
+                agent_id, miner_hotkey, name, version_num, status, created_at, ip_address, set_id
+            ) VALUES ($1, 'cross-set-hotkey', 'cross-set', 1, 'finished', NOW(), '127.0.0.1', $2)
+            """,
+            cross_set_agent_id,
+            SET_ID + 1,
+        )
+        # Recreate a score row that predates the prospective membership FK.
+        async with conn.transaction():
+            await conn.execute("ALTER TABLE agent_scores DISABLE TRIGGER ALL")
+            await conn.execute(
+                """
+                INSERT INTO agent_scores (
+                    agent_id, miner_hotkey, name, version_num, created_at, status,
+                    set_id, approved, approved_at, validator_count, final_score
+                ) VALUES ($1, 'cross-set-hotkey', 'cross-set', 1, NOW(), 'finished',
+                          $2, true, $3, 1, 0.99)
+                """,
+                cross_set_agent_id,
+                SET_ID,
+                now - timedelta(hours=1),
+            )
+            await conn.execute("ALTER TABLE agent_scores ENABLE TRIGGER ALL")
+
+    assert await get_top_agent_score_for_set(SET_ID) == pytest.approx(0.50)
+    assert await get_approved_validator_leader_score_for_set(SET_ID, uuid4(), 1) == pytest.approx(0.50)
+
+    leader = await get_approved_leader_ranking_for_set(SET_ID, required_validator_count=1)
+    assert leader is not None
+    assert leader.agent_id == matching_agent_id
+    assert leader.final_score == pytest.approx(0.50)
+    assert leader.avg_cost_usd == pytest.approx(0.10)
+
+    assert await get_validator_agent_score_for_set(cross_set_agent_id, SET_ID, 1) is None
+    candidate = await get_validator_agent_score_for_set(matching_agent_id, SET_ID, 1)
+    assert candidate is not None
+    assert candidate.agent_id == matching_agent_id
+    assert candidate.final_score == pytest.approx(0.50)
+    assert candidate.avg_cost_usd == pytest.approx(0.10)
+
+
+@pytest.mark.anyio
 async def test_banned_coldkey_is_skipped_for_incentive():
     now = datetime.now(timezone.utc)
     async with _db.pool.acquire() as conn:
@@ -364,15 +431,20 @@ async def test_top_agents_uses_coldkey_bans_at_read_time():
             approved_at=now - timedelta(hours=1),
             created_at=SET_CREATED_AT + timedelta(hours=2),
         )
-        await conn.execute(
-            """
-            INSERT INTO agent_approval_states (
-                agent_id, set_id, processing_status, system_verdict, published_verdict
-            ) VALUES ($1, $2, 'completed', 'rejected', 'rejected')
-            """,
-            eligible_id,
-            SET_ID - 1,
-        )
+        # Recreate a pre-migration cross-set review row. New rows are protected
+        # by the composite membership constraint.
+        async with conn.transaction():
+            await conn.execute("ALTER TABLE agent_approval_states DISABLE TRIGGER ALL")
+            await conn.execute(
+                """
+                INSERT INTO agent_approval_states (
+                    agent_id, set_id, processing_status, system_verdict, published_verdict
+                ) VALUES ($1, $2, 'completed', 'rejected', 'rejected')
+                """,
+                eligible_id,
+                SET_ID - 1,
+            )
+            await conn.execute("ALTER TABLE agent_approval_states ENABLE TRIGGER ALL")
 
     await ban_coldkey("banned-leader-coldkey", "test ban")
     agents = await get_top_agents()

@@ -22,7 +22,7 @@ SET_CREATED = datetime(2026, 5, 1, tzinfo=timezone.utc)
 
 _CLEAN_TABLES_SQL = (
     "TRUNCATE evaluation_runs, evaluations, evaluation_sets, benchmark_agent_ids, banned_coldkeys, "
-    "banned_hotkeys, agent_scores, agents RESTART IDENTITY CASCADE"
+    "banned_hotkeys, agent_scores, agents, competitions RESTART IDENTITY CASCADE"
 )
 
 
@@ -30,6 +30,7 @@ _CLEAN_TABLES_SQL = (
 async def clean_tables(postgres_db):
     async with _db.pool.acquire() as conn:
         await conn.execute(_CLEAN_TABLES_SQL)
+        await _insert_competition(conn, set_id=1, required_validator_count=1)
     yield
     async with _db.pool.acquire() as conn:
         await conn.execute(_CLEAN_TABLES_SQL)
@@ -41,6 +42,7 @@ async def _insert_agent(
     created_at: datetime | None = None,
     miner_coldkey: str | None = None,
     miner_hotkey: str = "test-hotkey",
+    set_id: int = 1,
 ) -> uuid.UUID:
     agent_id = uuid.uuid4()
     async with _db.pool.acquire() as conn:
@@ -48,9 +50,9 @@ async def _insert_agent(
             """
             INSERT INTO agents (
                 agent_id, miner_hotkey, miner_coldkey, name, version_num,
-                status, created_at, ip_address
+                status, created_at, ip_address, set_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6::agentstatus, $7, $8)
+            VALUES ($1, $2, $3, $4, $5, $6::agentstatus, $7, $8, $9)
             """,
             agent_id,
             miner_hotkey,
@@ -60,6 +62,7 @@ async def _insert_agent(
             status,
             created_at or datetime.now(timezone.utc),
             "127.0.0.1",
+            set_id,
         )
     return agent_id
 
@@ -73,6 +76,37 @@ async def _insert_eval_set(set_id: int) -> None:
             "problem-a",
             SET_CREATED,
         )
+
+
+async def _insert_competition(conn, *, set_id: int, required_validator_count: int) -> None:
+    await conn.execute(
+        """
+        INSERT INTO competitions (
+            set_id, start_date, scoring_mode, screener_1_threshold, screener_2_threshold,
+            prune_threshold, required_validator_count, pre_screening_enabled,
+            auto_approval_enabled, hardcoding_policy_version, incentive_enabled,
+            incentive_performance_threshold, incentive_cost_threshold,
+            incentive_reward_half_life_hours, incentive_time_multiplier_scale_hours
+        ) VALUES ($1, NOW(), 'consensus', 0.4, 0.4, 0.4, $2, true, true,
+                  'hardcoding-v1', false, 0.03, 0.06, 336, 12)
+        ON CONFLICT (set_id) DO UPDATE
+        SET required_validator_count = EXCLUDED.required_validator_count,
+            scoring_mode = EXCLUDED.scoring_mode,
+            screener_1_threshold = EXCLUDED.screener_1_threshold,
+            screener_2_threshold = EXCLUDED.screener_2_threshold,
+            prune_threshold = EXCLUDED.prune_threshold,
+            pre_screening_enabled = EXCLUDED.pre_screening_enabled,
+            auto_approval_enabled = EXCLUDED.auto_approval_enabled,
+            hardcoding_policy_version = EXCLUDED.hardcoding_policy_version,
+            incentive_enabled = EXCLUDED.incentive_enabled,
+            incentive_performance_threshold = EXCLUDED.incentive_performance_threshold,
+            incentive_cost_threshold = EXCLUDED.incentive_cost_threshold,
+            incentive_reward_half_life_hours = EXCLUDED.incentive_reward_half_life_hours,
+            incentive_time_multiplier_scale_hours = EXCLUDED.incentive_time_multiplier_scale_hours
+        """,
+        set_id,
+        required_validator_count,
+    )
 
 
 async def _insert_agent_score(*, agent_id: uuid.UUID, set_id: int, final_score: float) -> None:
@@ -280,6 +314,54 @@ async def test_failed_evals_dont_consume_slots():
     await _insert_run(eval_id, status="error", error_code=9000)
     result = await get_next_agent_id_awaiting_evaluation_for_validator_hotkey(HOTKEY)
     assert result == agent_id
+
+
+@pytest.mark.anyio
+async def test_validator_candidates_use_each_competitions_required_count():
+    await _insert_eval_set(1)
+    await _insert_eval_set(2)
+    async with _db.pool.acquire() as conn:
+        await _insert_competition(conn, set_id=2, required_validator_count=2)
+
+    full_agent = await _insert_agent(miner_hotkey="full-agent", set_id=1)
+    available_agent = await _insert_agent(miner_hotkey="available-agent", set_id=2)
+    for agent_id, set_id in ((full_agent, 1), (available_agent, 2)):
+        evaluation_id = await _insert_evaluation(
+            agent_id,
+            group="validator",
+            validator_hotkey=OTHER_HOTKEY,
+            set_id=set_id,
+        )
+        await _insert_run(evaluation_id, status="finished")
+
+    assert await get_next_agent_id_awaiting_evaluation_for_validator_hotkey(HOTKEY) == available_agent
+
+
+@pytest.mark.anyio
+async def test_validator_candidates_ignore_grandfathered_cross_set_evaluations():
+    await _insert_eval_set(1)
+    await _insert_eval_set(2)
+    agent_id = await _insert_agent(set_id=1)
+
+    async with _db.pool.acquire() as conn:
+        await conn.execute("ALTER TABLE evaluations DISABLE TRIGGER ALL")
+        try:
+            evaluation_id = uuid.uuid4()
+            await conn.execute(
+                """
+                INSERT INTO evaluations (
+                    evaluation_id, agent_id, validator_hotkey, set_id, evaluation_set_group
+                ) VALUES ($1, $2, $3, 2, 'validator')
+                """,
+                evaluation_id,
+                agent_id,
+                HOTKEY,
+            )
+        finally:
+            await conn.execute("ALTER TABLE evaluations ENABLE TRIGGER ALL")
+    await _insert_run(evaluation_id, status="finished")
+
+    assert await get_next_agent_id_awaiting_evaluation_for_validator_hotkey(HOTKEY) == agent_id
 
 
 @pytest.mark.anyio
