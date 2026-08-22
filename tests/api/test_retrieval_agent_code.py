@@ -17,7 +17,7 @@ async def clean_tables(postgres_db):
     yield
     async with _db.pool.acquire() as conn:
         await conn.execute(
-            "TRUNCATE evaluation_sets, agents, agent_scores, benchmark_agent_ids, banned_coldkeys "
+            "TRUNCATE evaluation_sets, agents, agent_scores, competitions, benchmark_agent_ids, banned_coldkeys "
             "RESTART IDENTITY CASCADE"
         )
 
@@ -48,16 +48,17 @@ async def _insert_eval_set(conn, set_id: int = 1) -> None:
     )
 
 
-async def _insert_agent(conn, *, agent_id, status: str = "finished") -> None:
+async def _insert_agent(conn, *, agent_id, status: str = "finished", set_id: int = 1) -> None:
     await conn.execute(
-        """INSERT INTO agents (agent_id, miner_hotkey, name, version_num, status, created_at, ip_address)
-           VALUES ($1, $2, $3, $4, $5, NOW(), $6)""",
+        """INSERT INTO agents (agent_id, miner_hotkey, name, version_num, status, created_at, ip_address, set_id)
+           VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7)""",
         agent_id,
         f"hotkey-{agent_id}",
         f"agent-{agent_id}",
         1,
         status,
         "127.0.0.1",
+        set_id,
     )
 
 
@@ -78,13 +79,13 @@ async def _insert_agent_score(conn, *, agent_id, set_id: int = 1, final_score: f
     )
 
 
-async def _seed_scored_agents(conn, scores: list[float]) -> list[UUID]:
+async def _seed_scored_agents(conn, scores: list[float], *, set_id: int = 1) -> list[UUID]:
     """Insert one finished agent + score row per entry, returning agent ids in input order."""
     agent_ids = []
     for score in scores:
         agent_id = uuid4()
-        await _insert_agent(conn, agent_id=agent_id)
-        await _insert_agent_score(conn, agent_id=agent_id, final_score=score)
+        await _insert_agent(conn, agent_id=agent_id, set_id=set_id)
+        await _insert_agent_score(conn, agent_id=agent_id, set_id=set_id, final_score=score)
         agent_ids.append(agent_id)
     return agent_ids
 

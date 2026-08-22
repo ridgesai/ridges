@@ -907,6 +907,7 @@ async def test_evaluation_set_detail_returns_404_for_unknown_set():
 @pytest.mark.anyio
 async def test_evaluation_set_detail_no_previous_set_returns_null_vs_previous():
     agent_a = uuid4()
+    agent_b = uuid4()
 
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
@@ -919,9 +920,17 @@ async def test_evaluation_set_detail_no_previous_set_returns_null_vs_previous():
             created_at=AGENT_TS_SET_2,
             set_id=1,
         )
+        await _insert_agent(
+            conn,
+            agent_id=agent_b,
+            miner_hotkey="miner-b",
+            status="finished",
+            created_at=AGENT_TS_SET_2,
+            set_id=2,
+        )
         await _insert_evaluation(conn, agent_id=agent_a, set_id=1, set_group="screener_1")
-        await _insert_evaluation(conn, agent_id=agent_a, set_id=2, set_group="screener_2")
-        await _insert_evaluation(conn, agent_id=agent_a, set_id=2, set_group="validator")
+        await _insert_evaluation(conn, agent_id=agent_b, set_id=2, set_group="screener_2")
+        await _insert_evaluation(conn, agent_id=agent_b, set_id=2, set_group="validator")
         await _insert_agent_score(
             conn,
             agent_id=agent_a,

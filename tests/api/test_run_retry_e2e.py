@@ -25,7 +25,7 @@ async def clean_tables(postgres_db):
     async with _db.pool.acquire() as conn:
         await conn.execute(
             "TRUNCATE evaluation_run_logs, evaluation_run_attempts, evaluation_runs, evaluations,"
-            " agents, evaluation_sets RESTART IDENTITY CASCADE"
+            " agents, evaluation_sets, competitions RESTART IDENTITY CASCADE"
         )
 
 
@@ -37,8 +37,22 @@ async def _seed(conn):
         datetime(2026, 7, 1, tzinfo=timezone.utc),
     )
     await conn.execute(
-        "INSERT INTO agents (agent_id, miner_hotkey, name, version_num, status, created_at, ip_address)"
-        " VALUES ($1, '5FakeHotkey', 'agent-a', 1, 'evaluating', NOW(), '127.0.0.1')",
+        """
+        UPDATE competitions
+        SET start_date = NOW(), scoring_mode = 'consensus',
+            screener_1_threshold = 0.4, screener_2_threshold = 0.4,
+            prune_threshold = 0.4, required_validator_count = 1,
+            pre_screening_enabled = true, auto_approval_enabled = false,
+            hardcoding_policy_version = 'hardcoding-v1', incentive_enabled = false,
+            incentive_performance_threshold = 0.03, incentive_cost_threshold = 0.06,
+            incentive_reward_half_life_hours = 336,
+            incentive_time_multiplier_scale_hours = 12
+        WHERE set_id = 1
+        """
+    )
+    await conn.execute(
+        "INSERT INTO agents (agent_id, miner_hotkey, name, version_num, status, created_at, ip_address, set_id)"
+        " VALUES ($1, '5FakeHotkey', 'agent-a', 1, 'evaluating', NOW(), '127.0.0.1', 1)",
         agent_id,
     )
     evaluation_id = uuid4()

@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 import utils.database as _db
 from api.endpoints import retrieval as retrieval_module
 from models.agent import PublicAgent
+from queries.competition import initialize_current_competition_policy
 from utils.ttl import clear_all_ttl_caches
 
 pytestmark = pytest.mark.anyio
@@ -26,10 +27,14 @@ BASE_TIME = datetime(2026, 8, 1, 12, 0, 0, tzinfo=timezone.utc)
 @pytest.fixture(autouse=True)
 async def clean_tables(postgres_db):
     clear_all_ttl_caches()
+    async with _db.pool.acquire() as conn:
+        await conn.execute("TRUNCATE agents, competitions RESTART IDENTITY CASCADE")
+        await conn.execute("INSERT INTO competitions (set_id, start_date) VALUES (1, NOW())")
+    await initialize_current_competition_policy()
     yield
     clear_all_ttl_caches()
     async with _db.pool.acquire() as conn:
-        await conn.execute("TRUNCATE agents RESTART IDENTITY CASCADE")
+        await conn.execute("TRUNCATE agents, competitions RESTART IDENTITY CASCADE")
 
 
 async def _insert_agent(
@@ -43,8 +48,11 @@ async def _insert_agent(
     async with _db.pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO agents (agent_id, miner_hotkey, miner_coldkey, name, version_num, status, created_at, ip_address)
-            VALUES ($1, $2, $3, $4, $5, 'screening_1', $6, '127.0.0.1')
+            INSERT INTO agents (
+                agent_id, miner_hotkey, miner_coldkey, name, version_num,
+                status, created_at, ip_address, set_id
+            )
+            VALUES ($1, $2, $3, $4, $5, 'screening_1', $6, '127.0.0.1', 1)
             """,
             agent_id,
             hotkey,
