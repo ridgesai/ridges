@@ -194,17 +194,68 @@ async def update_evaluation_finished_at(conn: DatabaseConnection, evaluation_id:
 
 
 @db_operation
-async def get_num_successful_validator_evaluations_for_agent_id(conn: DatabaseConnection, agent_id: UUID) -> int:
+async def get_num_successful_validator_evaluations_for_agent_in_set(
+    conn: DatabaseConnection,
+    agent_id: UUID,
+    set_id: int,
+) -> int:
     return await conn.fetchval(
         f"""
         SELECT COUNT(*)
         FROM evaluations_hydrated
         WHERE 
             agent_id = $1
+            AND set_id = $2
             AND status = '{EvaluationStatus.success.value}'
             AND evaluation_set_group = '{EvaluationSetGroup.validator.value}'::EvaluationSetGroup
         """,
         agent_id,
+        set_id,
+    )
+
+
+@db_operation
+async def get_top_agent_score_for_set(conn: DatabaseConnection, set_id: int) -> Optional[float]:
+    """Return the best eligible score in one explicit competition."""
+
+    return await conn.fetchval(
+        """
+        SELECT agent_score.final_score
+        FROM agent_scores agent_score
+        INNER JOIN agents agent
+            ON agent.agent_id = agent_score.agent_id
+           AND agent.set_id = agent_score.set_id
+        LEFT JOIN agent_final_review_statuses review
+            ON review.agent_id = agent_score.agent_id
+           AND review.set_id = agent_score.set_id
+        LEFT JOIN LATERAL (
+            SELECT AVG(evaluation.avg_cost_usd) AS avg_cost_usd
+            FROM evaluations_hydrated evaluation
+            WHERE evaluation.agent_id = agent_score.agent_id
+              AND evaluation.set_id = agent_score.set_id
+              AND evaluation.evaluation_set_group = 'validator'::evaluationsetgroup
+              AND evaluation.status = 'success'::evaluationstatus
+        ) runtime ON TRUE
+        WHERE agent_score.set_id = $1
+          AND agent_score.status::text <> 'cancelled'
+          AND review.approval_review_status IS DISTINCT FROM 'rejected'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM benchmark_agent_ids benchmark_agent
+              WHERE benchmark_agent.agent_id = agent_score.agent_id
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM banned_coldkeys banned_coldkey
+              WHERE banned_coldkey.miner_coldkey = agent.miner_coldkey
+          )
+        ORDER BY
+            ROUND(agent_score.final_score::numeric, 6) DESC,
+            runtime.avg_cost_usd ASC NULLS LAST,
+            agent_score.created_at ASC
+        LIMIT 1
+        """,
+        set_id,
     )
 
 
@@ -219,7 +270,9 @@ async def get_approved_validator_leader_score_for_set(
         """
         SELECT MAX(agent_score.final_score)
         FROM agent_scores agent_score
-        INNER JOIN agents agent ON agent.agent_id = agent_score.agent_id
+        INNER JOIN agents agent
+            ON agent.agent_id = agent_score.agent_id
+           AND agent.set_id = agent_score.set_id
         LEFT JOIN agent_final_review_statuses review
             ON review.agent_id = agent_score.agent_id
             AND review.set_id = agent_score.set_id
@@ -316,7 +369,9 @@ async def get_approved_leader_ranking_for_set(
             agent.miner_coldkey,
             clock_timestamp() AS observed_at
         FROM agent_scores ass
-        INNER JOIN agents agent ON agent.agent_id = ass.agent_id
+        INNER JOIN agents agent
+            ON agent.agent_id = ass.agent_id
+           AND agent.set_id = ass.set_id
         LEFT JOIN agent_final_review_statuses review
             ON review.agent_id = ass.agent_id
             AND review.set_id = ass.set_id
@@ -380,6 +435,9 @@ async def get_validator_agent_score_for_set(
             rt.avg_cost_usd,
             ass.created_at
         FROM agent_scores ass
+        INNER JOIN agents agent
+            ON agent.agent_id = ass.agent_id
+           AND agent.set_id = ass.set_id
         LEFT JOIN LATERAL (
             SELECT AVG(eh.avg_cost_usd) AS avg_cost_usd
             FROM evaluations_hydrated eh
