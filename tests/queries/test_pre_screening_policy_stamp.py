@@ -69,10 +69,12 @@ async def test_create_agent_stamps_policy_version_on_pre_screening_job(monkeypat
 
     async with _db.pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT policy_version, status FROM pre_screening_jobs WHERE agent_id = $1",
+            "SELECT set_id, policy_version, status FROM pre_screening_jobs WHERE agent_id = $1",
             agent_id,
         )
-    assert [(row["policy_version"], row["status"]) for row in rows] == [("hardcoding-linting-v1", "pending")]
+    assert [(row["set_id"], row["policy_version"], row["status"]) for row in rows] == [
+        (1, "hardcoding-linting-v1", "pending")
+    ]
 
 
 @pytest.mark.anyio
