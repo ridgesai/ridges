@@ -59,6 +59,18 @@ class ApprovalJob(Base):
     )
 
     __table_args__ = (
+        sa.UniqueConstraint(
+            "job_id",
+            "agent_id",
+            "set_id",
+            name="uq_approval_jobs_job_id_agent_id_set_id",
+        ),
+        sa.ForeignKeyConstraint(
+            ["agent_id", "set_id"],
+            ["agents.agent_id", "agents.set_id"],
+            name="fk_approval_jobs_agent_competition",
+            ondelete="CASCADE",
+        ),
         sa.CheckConstraint(
             "status IN ('pending', 'running', 'error', 'completed', 'needs_review')",
             name="ck_approval_jobs_status",
@@ -158,6 +170,17 @@ class AgentApprovalState(Base):
     )
 
     __table_args__ = (
+        sa.ForeignKeyConstraint(
+            ["agent_id", "set_id"],
+            ["agents.agent_id", "agents.set_id"],
+            name="fk_agent_approval_states_agent_competition",
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["latest_job_id", "agent_id", "set_id"],
+            ["approval_jobs.job_id", "approval_jobs.agent_id", "approval_jobs.set_id"],
+            name="fk_agent_approval_states_latest_job",
+        ),
         sa.CheckConstraint(
             "processing_status IN ('pending', 'running', 'error', 'completed', 'needs_review')",
             name="ck_agent_approval_states_processing_status",
