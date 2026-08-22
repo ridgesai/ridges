@@ -20,7 +20,24 @@ async def clean_tables(postgres_db, monkeypatch):
     async with _db.pool.acquire() as conn:
         await conn.execute(
             "TRUNCATE approval_job_rounds, agent_approval_states, approval_jobs, approved_agents, "
-            "agent_scores, banned_coldkeys, benchmark_agent_ids, agents RESTART IDENTITY CASCADE"
+            "agent_scores, banned_coldkeys, benchmark_agent_ids, agents, competitions RESTART IDENTITY CASCADE"
+        )
+        await conn.execute(
+            """
+            INSERT INTO competitions (
+                set_id, start_date, scoring_mode, screener_1_threshold, screener_2_threshold,
+                prune_threshold, required_validator_count, pre_screening_enabled,
+                auto_approval_enabled, hardcoding_policy_version, incentive_enabled,
+                incentive_performance_threshold, incentive_cost_threshold,
+                incentive_reward_half_life_hours, incentive_time_multiplier_scale_hours
+            ) VALUES ($1, NOW(), 'consensus', 0.4, 0.4, 0.4, $2, true, true,
+                      'hardcoding-v1', true, $3, $4, 336, $5)
+            """,
+            SET_ID,
+            config.NUM_EVALS_PER_AGENT,
+            config.INCENTIVE_PERFORMANCE_THRESHOLD,
+            config.INCENTIVE_COST_THRESHOLD,
+            config.INCENTIVE_TIME_MULTIPLIER_SCALE_HOURS,
         )
     yield
 
@@ -43,14 +60,15 @@ async def _insert_agent_score(
         """
         INSERT INTO agents (
             agent_id, miner_hotkey, miner_coldkey, name, version_num,
-            status, created_at, ip_address
-        ) VALUES ($1, $2, $3, $2, 1, $5, $4, '127.0.0.1')
+            status, created_at, ip_address, set_id
+        ) VALUES ($1, $2, $3, $2, 1, $5, $4, '127.0.0.1', $6)
         """,
         agent_id,
         hotkey,
         coldkey,
         created_at,
         status,
+        SET_ID,
     )
     if approved:
         await conn.execute(
