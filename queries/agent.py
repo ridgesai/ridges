@@ -375,6 +375,7 @@ async def create_agent(
                 await insert_terminal_pre_screening_job_with_result(
                     conn,
                     agent_id=agent_id,
+                    set_id=competition.set_id,
                     policy_version=policy.hardcoding_policy_version,
                     job_status="failed",
                     result=duplicate_source_result(
@@ -386,6 +387,7 @@ async def create_agent(
                 await insert_pending_pre_screening_job(
                     conn,
                     agent_id=agent_id,
+                    set_id=competition.set_id,
                     policy_version=policy.hardcoding_policy_version,
                 )
 
@@ -703,12 +705,16 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
             f"""
             WITH candidates AS MATERIALIZED (
                 SELECT
-                    agent_id,
-                    created_at
+                    agents.agent_id,
+                    agents.created_at,
+                    agents.set_id,
+                    competitions.required_validator_count
                 FROM
                     agents
+                    INNER JOIN competitions ON competitions.set_id = agents.set_id
                 WHERE
                     agents.status = '{AgentStatus.evaluating.value}'
+                    AND competitions.required_validator_count IS NOT NULL
                     AND NOT EXISTS (
                         SELECT
                             1
@@ -746,6 +752,7 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
                 FROM
                     candidates c
                     JOIN evaluations e ON e.agent_id = c.agent_id
+                    AND e.set_id = c.set_id
                     AND e.evaluation_set_group IN (
                         '{EvaluationSetGroup.validator.value}' :: EvaluationSetGroup,
                         '{EvaluationSetGroup.screener_2.value}' :: EvaluationSetGroup
@@ -797,7 +804,8 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
                 LEFT JOIN combined_eval_stats s ON s.agent_id = c.agent_id
             WHERE
                 NOT COALESCE(s.already_evaluated, false)
-                AND COALESCE(s.num_running_evals, 0) + COALESCE(s.num_finished_evals, 0) < $2
+                AND COALESCE(s.num_running_evals, 0) + COALESCE(s.num_finished_evals, 0)
+                    < c.required_validator_count
             ORDER BY
                 COALESCE(s.screener_2_score, 0) DESC,
                 c.created_at ASC
@@ -805,7 +813,6 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
                 1
             """,
             validator_hotkey,
-            config.NUM_EVALS_PER_AGENT,
         )
 
     if result is None:
