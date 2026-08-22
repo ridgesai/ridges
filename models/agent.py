@@ -202,6 +202,7 @@ class Agent(AgentBase):
 
     agent_id: UUID
     status: AgentStatus
+    set_id: int | None = None
     approval_review_status: ApprovalReviewStatus | None = None
 
 
