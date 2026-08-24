@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import base64
 import importlib
 import io
@@ -145,13 +144,13 @@ def _patch_upload_dependencies(
         assert openrouter_management_key is not None
         return validated_keys or _validated_keys()
 
-    async def fake_get_hotkey_lock(_hotkey: str) -> asyncio.Lock:
-        return asyncio.Lock()
-
-    async def fake_latest_agent(*, miner_hotkey: str):
+    async def fake_latest_created(*, miner_hotkey: str, set_id: int):
         return None
 
-    async def fake_latest_created(*, miner_hotkey: str):
+    async def fake_resolve_upload_set_id(set_id: int | None):
+        return 1 if set_id is None else set_id
+
+    async def fake_upload_text_file_to_s3(*_args, **_kwargs):
         return None
 
     async def fake_record_upload_attempt(*_args, **_kwargs) -> None:
@@ -175,19 +174,19 @@ def _patch_upload_dependencies(
         )
 
     monkeypatch.setattr(upload_endpoint, "validate_openrouter_keys", fake_validate_openrouter_keys)
-    monkeypatch.setattr(upload_endpoint, "get_hotkey_lock", fake_get_hotkey_lock)
-    monkeypatch.setattr(upload_endpoint, "get_latest_agent_for_miner_hotkey", fake_latest_agent)
     monkeypatch.setattr(
         upload_endpoint,
-        "get_latest_agent_created_at_for_miner_hotkey_in_current_competition",
+        "get_latest_agent_created_at_for_miner_hotkey_in_competition",
         fake_latest_created,
     )
+    monkeypatch.setattr(upload_endpoint, "_resolve_upload_set_id", fake_resolve_upload_set_id)
+    monkeypatch.setattr(upload_endpoint, "upload_text_file_to_s3", fake_upload_text_file_to_s3)
     monkeypatch.setattr(upload_endpoint, "record_upload_attempt", fake_record_upload_attempt)
     monkeypatch.setattr(upload_endpoint, "check_hotkey_registered", fake_check_hotkey_registered)
     monkeypatch.setattr(upload_endpoint, "check_coldkey_banned", fake_check_coldkey_banned)
     monkeypatch.setattr(upload_endpoint, "get_upload_price", fake_get_upload_price)
     monkeypatch.setattr(upload_endpoint, "create_payment_quote", fake_create_payment_quote)
-    monkeypatch.setattr(upload_endpoint, "create_agent", create_agent_impl)
+    monkeypatch.setattr(upload_endpoint, "admit_agent", create_agent_impl)
     return upload_endpoint
 
 
@@ -413,8 +412,8 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
 
     async def fake_create_agent(
         agent,
-        agent_text,
         *,
+        set_id=None,
         source_sha256=None,
         runtime_openrouter_api_key_ciphertext=None,
         management_openrouter_api_key_ciphertext=None,
@@ -423,9 +422,11 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
         openrouter_api_key_creator_user_id=None,
         openrouter_validated_at=None,
         miner_coldkey=None,
-    ) -> None:
+        funding=None,
+        enforce_cooldown=None,
+    ):
         captured["agent"] = agent
-        captured["agent_text"] = agent_text
+        captured["set_id"] = set_id
         captured["runtime_ciphertext"] = runtime_openrouter_api_key_ciphertext
         captured["management_ciphertext"] = management_openrouter_api_key_ciphertext
         captured["workspace_id"] = openrouter_workspace_id
@@ -433,6 +434,7 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
         captured["api_key_creator_user_id"] = openrouter_api_key_creator_user_id
         captured["validated_at"] = openrouter_validated_at
         captured["miner_coldkey"] = miner_coldkey
+        return SimpleNamespace(agent_id=uuid4(), replayed=False)
 
     upload_endpoint = _patch_upload_dependencies(
         monkeypatch,
@@ -454,7 +456,7 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
     )
 
     assert response.status == "success"
-    assert captured["agent_text"] == "print('hi')\n"
+    assert captured["set_id"] == 1
     assert decrypt_agent_secret(captured["runtime_ciphertext"]) == "sk-or-v1-runtime"
     assert decrypt_agent_secret(captured["management_ciphertext"]) == "sk-or-v1-management"
     assert captured["workspace_id"] == validated_keys.workspace_id
