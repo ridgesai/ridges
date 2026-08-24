@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID, uuid5
 
@@ -16,13 +16,28 @@ from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
 from models.queue import QueueStage
 from queries.banned_coldkey import get_banned_coldkey, lock_coldkey_ban_state
-from queries.competition import lock_current_competition_context
-from queries.errors import ColdkeyBannedError, CompetitionNotAcceptingSubmissionsError, DuplicateAgentIDError
+from queries.competition import (
+    get_current_competition_context,
+    lock_competition_for_admission,
+    resolve_upload_competition,
+)
+from queries.errors import (
+    ColdkeyBannedError,
+    CompetitionNotAcceptingSubmissionsError,
+    DuplicateAgentIDError,
+    UploadCooldownError,
+    UploadCreditAlreadyRedeemedError,
+    UploadCreditUnavailableError,
+    UploadFundingConflictError,
+)
 from utils.agent_secrets import decrypt_agent_secret
 from utils.database import DatabaseConnection, db_operation
 from utils.s3 import upload_text_file_to_s3
 
 logger = logging.getLogger(__name__)
+
+UPLOAD_HOTKEY_LOCK_NAMESPACE = -1730
+UPLOAD_SOURCE_LOCK_NAMESPACE = -1731
 
 
 @dataclass(slots=True, frozen=True)
@@ -33,6 +48,29 @@ class AgentOpenRouterSecrets:
     api_key_label: str
     api_key_creator_user_id: str
     validated_at: datetime
+
+
+@dataclass(slots=True, frozen=True)
+class BurnUploadFunding:
+    payment_block_hash: str
+    payment_extrinsic_index: str
+    miner_hotkey: str
+    miner_coldkey: str
+    amount_alpha_rao: int
+    quote_id: UUID
+
+
+@dataclass(slots=True, frozen=True)
+class CreditUploadFunding:
+    credit_id: UUID
+    miner_hotkey: str
+    miner_coldkey: str
+
+
+@dataclass(slots=True, frozen=True)
+class AgentAdmissionResult:
+    agent_id: UUID
+    replayed: bool = False
 
 
 def _derive_agent_id(payment_block_hash: str, payment_extrinsic_index: str) -> UUID:
@@ -259,6 +297,24 @@ async def get_latest_agent_created_at_for_miner_hotkey_in_current_competition(
 
 
 @db_operation
+async def get_latest_agent_created_at_for_miner_hotkey_in_competition(
+    conn: DatabaseConnection,
+    miner_hotkey: str,
+    set_id: int,
+) -> Optional[datetime]:
+    return await conn.fetchval(
+        """
+        SELECT MAX(created_at)
+        FROM agents
+        WHERE miner_hotkey = $1
+          AND set_id = $2
+        """,
+        miner_hotkey,
+        set_id,
+    )
+
+
+@db_operation
 async def create_agent(
     conn: DatabaseConnection,
     agent: AgentCreate,
@@ -272,8 +328,181 @@ async def create_agent(
     openrouter_api_key_creator_user_id: str,
     openrouter_validated_at: datetime,
     miner_coldkey: Optional[str] = None,
+    set_id: int | None = None,
 ) -> UUID:
-    """Create an agent using the deterministic payment-derived agent_id."""
+    """Create an unfunded dev/owner agent through the admission transaction."""
+
+    if set_id is None:
+        current = await get_current_competition_context()
+        if current is None:
+            raise CompetitionNotAcceptingSubmissionsError(set_id=None, state=None)
+        resolved_set_id = current.set_id
+    else:
+        resolved_set_id = await resolve_upload_competition(set_id)
+
+    agent_id = _derive_agent_id(agent.payment_block_hash, agent.payment_extrinsic_index)
+    await upload_text_file_to_s3(f"{agent_id}/agent.py", agent_text)
+
+    result = await admit_agent(
+        agent,
+        set_id=resolved_set_id,
+        source_sha256=source_sha256,
+        runtime_openrouter_api_key_ciphertext=runtime_openrouter_api_key_ciphertext,
+        management_openrouter_api_key_ciphertext=management_openrouter_api_key_ciphertext,
+        openrouter_workspace_id=openrouter_workspace_id,
+        openrouter_api_key_label=openrouter_api_key_label,
+        openrouter_api_key_creator_user_id=openrouter_api_key_creator_user_id,
+        openrouter_validated_at=openrouter_validated_at,
+        miner_coldkey=miner_coldkey,
+        funding=None,
+        enforce_cooldown=False,
+    )
+    return result.agent_id
+
+
+async def _lock_burn_funding(conn: DatabaseConnection, funding: BurnUploadFunding) -> None:
+    await conn.execute(
+        """
+        INSERT INTO evaluation_payments (
+            payment_block_hash,
+            payment_extrinsic_index,
+            agent_id,
+            miner_hotkey,
+            miner_coldkey,
+            amount_alpha_rao,
+            quote_id
+        ) VALUES ($1, $2, NULL, $3, $4, $5, $6)
+        ON CONFLICT DO NOTHING
+        """,
+        funding.payment_block_hash,
+        funding.payment_extrinsic_index,
+        funding.miner_hotkey,
+        funding.miner_coldkey,
+        funding.amount_alpha_rao,
+        funding.quote_id,
+    )
+    row = await conn.fetchrow(
+        """
+        SELECT *
+        FROM evaluation_payments
+        WHERE payment_block_hash = $1
+          AND payment_extrinsic_index = $2
+        FOR UPDATE
+        """,
+        funding.payment_block_hash,
+        funding.payment_extrinsic_index,
+    )
+    if row is None:
+        raise UploadFundingConflictError()
+
+    if row["agent_id"] is not None:
+        raise DuplicateAgentIDError(row["agent_id"])
+
+    if (
+        row["miner_hotkey"] != funding.miner_hotkey
+        or row["miner_coldkey"] != funding.miner_coldkey
+        or row["amount_alpha_rao"] != funding.amount_alpha_rao
+        or row["amount_rao"] is not None
+        or row["quote_id"] != funding.quote_id
+        or row["upload_credit_id"] is not None
+    ):
+        raise UploadFundingConflictError()
+
+
+async def _lock_credit_funding(
+    conn: DatabaseConnection,
+    funding: CreditUploadFunding,
+    *,
+    source_sha256: str,
+    set_id: int,
+) -> AgentAdmissionResult | None:
+    credit = await conn.fetchrow(
+        """
+        SELECT *, expires_at IS NOT NULL AND expires_at <= clock_timestamp() AS is_expired
+        FROM upload_credits
+        WHERE credit_id = $1
+          AND miner_hotkey = $2
+        FOR UPDATE
+        """,
+        funding.credit_id,
+        funding.miner_hotkey,
+    )
+    if credit is None or credit["revoked_at"] is not None:
+        raise UploadCreditUnavailableError()
+
+    if credit["redeemed_at"] is None and credit["is_expired"]:
+        raise UploadCreditUnavailableError()
+
+    if credit["redeemed_agent_id"] is None:
+        return None
+
+    existing = await conn.fetchrow(
+        """
+        SELECT miner_hotkey, source_sha256, set_id
+        FROM agents
+        WHERE agent_id = $1
+        """,
+        credit["redeemed_agent_id"],
+    )
+    if (
+        existing is not None
+        and existing["miner_hotkey"] == funding.miner_hotkey
+        and existing["source_sha256"] == source_sha256
+        and existing["set_id"] == set_id
+    ):
+        return AgentAdmissionResult(agent_id=credit["redeemed_agent_id"], replayed=True)
+    raise UploadCreditAlreadyRedeemedError(credit["redeemed_agent_id"])
+
+
+async def _selected_set_name_and_version(
+    conn: DatabaseConnection,
+    *,
+    set_id: int,
+    miner_hotkey: str,
+    requested_name: str,
+) -> tuple[str, int]:
+    row = await conn.fetchrow(
+        """
+        SELECT
+            MAX(version_num) AS max_version,
+            (
+                SELECT existing.name
+                FROM agents existing
+                WHERE existing.set_id = $1
+                  AND existing.miner_hotkey = $2
+                ORDER BY existing.version_num DESC, existing.created_at DESC, existing.agent_id
+                LIMIT 1
+            ) AS current_name
+        FROM agents
+        WHERE set_id = $1
+          AND miner_hotkey = $2
+        """,
+        set_id,
+        miner_hotkey,
+    )
+    if row["max_version"] is None:
+        return requested_name, 0
+    return row["current_name"], int(row["max_version"]) + 1
+
+
+@db_operation
+async def admit_agent(
+    conn: DatabaseConnection,
+    agent: AgentCreate,
+    *,
+    set_id: int,
+    source_sha256: str,
+    runtime_openrouter_api_key_ciphertext: bytes,
+    management_openrouter_api_key_ciphertext: bytes,
+    openrouter_workspace_id: str,
+    openrouter_api_key_label: str,
+    openrouter_api_key_creator_user_id: str,
+    openrouter_validated_at: datetime,
+    miner_coldkey: Optional[str],
+    funding: BurnUploadFunding | CreditUploadFunding | None,
+    enforce_cooldown: bool,
+) -> AgentAdmissionResult:
+    """Atomically bind a fresh upload to one competition and consume its funding."""
 
     from queries.pre_screening_judge import (
         duplicate_source_result,
@@ -282,12 +511,11 @@ async def create_agent(
     )
 
     agent_id = _derive_agent_id(agent.payment_block_hash, agent.payment_extrinsic_index)
-    await upload_text_file_to_s3(f"{agent_id}/agent.py", agent_text)
 
     async with conn.conn.transaction():
-        competition = await lock_current_competition_context()
+        competition = await lock_competition_for_admission(conn, set_id)
         if competition is None:
-            raise CompetitionNotAcceptingSubmissionsError(set_id=None, state=None)
+            raise CompetitionNotAcceptingSubmissionsError(set_id=set_id, state=None)
 
         if competition.state is not CompetitionState.open:
             raise CompetitionNotAcceptingSubmissionsError(
@@ -301,16 +529,72 @@ async def create_agent(
         policy = competition.policy
         initial_status = AgentStatus.pre_screening if policy.pre_screening_enabled else AgentStatus.screening_1
 
+        replay: AgentAdmissionResult | None = None
+        if isinstance(funding, BurnUploadFunding):
+            await _lock_burn_funding(conn, funding)
+
+        elif isinstance(funding, CreditUploadFunding):
+            replay = await _lock_credit_funding(
+                conn,
+                funding,
+                source_sha256=source_sha256,
+                set_id=set_id,
+            )
+
+        if replay is not None:
+            return replay
+
         await conn.execute(
             "SELECT pg_advisory_xact_lock($1, hashtext($2))",
-            competition.set_id,
-            source_sha256,
+            UPLOAD_HOTKEY_LOCK_NAMESPACE,
+            f"{set_id}:{agent.miner_hotkey}",
+        )
+        await conn.execute(
+            "SELECT pg_advisory_xact_lock($1, hashtext($2))",
+            UPLOAD_SOURCE_LOCK_NAMESPACE,
+            f"{set_id}:{source_sha256}",
         )
 
         if miner_coldkey is not None:
             await lock_coldkey_ban_state(conn, miner_coldkey)
             if await get_banned_coldkey(miner_coldkey) is not None:
                 raise ColdkeyBannedError(miner_coldkey)
+
+        if enforce_cooldown:
+            latest_created_at = await conn.fetchval(
+                """
+                SELECT MAX(created_at)
+                FROM agents
+                WHERE set_id = $1
+                  AND miner_hotkey = $2
+                """,
+                set_id,
+                agent.miner_hotkey,
+            )
+            now = await conn.fetchval("SELECT clock_timestamp()")
+            if latest_created_at is not None and now < latest_created_at + timedelta(
+                seconds=config.MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
+            ):
+                raise UploadCooldownError(latest_created_at)
+
+        selected_name, version_num = await _selected_set_name_and_version(
+            conn,
+            set_id=set_id,
+            miner_hotkey=agent.miner_hotkey,
+            requested_name=agent.name,
+        )
+        duplicate_agent_id = await conn.fetchval(
+            """
+            SELECT agent_id
+            FROM agents
+            WHERE set_id = $1
+              AND source_sha256 = $2
+            ORDER BY created_at ASC, agent_id ASC
+            LIMIT 1
+            """,
+            set_id,
+            source_sha256,
+        )
 
         result = await conn.fetchval(
             """
@@ -326,19 +610,19 @@ async def create_agent(
                 source_sha256,
                 set_id
             )
-            VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, clock_timestamp(), $6, $7, $8, $9)
             ON CONFLICT (agent_id) DO NOTHING
             RETURNING agent_id
             """,
             agent_id,
             agent.miner_hotkey,
             miner_coldkey,
-            agent.name,
-            agent.version_num,
+            selected_name,
+            version_num,
             initial_status.value,
             agent.ip_address,
             source_sha256,
-            competition.set_id,
+            set_id,
         )
 
         if result is None:
@@ -369,13 +653,11 @@ async def create_agent(
 
         # 5. Optionally create a pre-screening job for the agent
         if policy.pre_screening_enabled:
-            duplicate_agent_id = await find_duplicate_source_agent_in_current_set(agent_id)
-
             if duplicate_agent_id is not None:
                 await insert_terminal_pre_screening_job_with_result(
                     conn,
                     agent_id=agent_id,
-                    set_id=competition.set_id,
+                    set_id=set_id,
                     policy_version=policy.hardcoding_policy_version,
                     job_status="failed",
                     result=duplicate_source_result(
@@ -387,11 +669,56 @@ async def create_agent(
                 await insert_pending_pre_screening_job(
                     conn,
                     agent_id=agent_id,
-                    set_id=competition.set_id,
+                    set_id=set_id,
                     policy_version=policy.hardcoding_policy_version,
                 )
 
-    return agent_id
+        if isinstance(funding, BurnUploadFunding):
+            updated = await conn.execute(
+                """
+                UPDATE evaluation_payments
+                SET agent_id = $3
+                WHERE payment_block_hash = $1
+                  AND payment_extrinsic_index = $2
+                  AND agent_id IS NULL
+                """,
+                funding.payment_block_hash,
+                funding.payment_extrinsic_index,
+                agent_id,
+            )
+            if updated != "UPDATE 1":
+                raise UploadFundingConflictError()
+
+        elif isinstance(funding, CreditUploadFunding):
+            await conn.execute(
+                """
+                INSERT INTO evaluation_payments (
+                    payment_block_hash,
+                    payment_extrinsic_index,
+                    agent_id,
+                    miner_hotkey,
+                    miner_coldkey,
+                    amount_alpha_rao,
+                    upload_credit_id
+                ) VALUES ($1, '0', $2, $3, $4, 0, $5)
+                """,
+                agent.payment_block_hash,
+                agent_id,
+                funding.miner_hotkey,
+                funding.miner_coldkey,
+                funding.credit_id,
+            )
+            await conn.execute(
+                """
+                UPDATE upload_credits
+                SET redeemed_at = clock_timestamp(), redeemed_agent_id = $2
+                WHERE credit_id = $1
+                """,
+                funding.credit_id,
+                agent_id,
+            )
+
+    return AgentAdmissionResult(agent_id=agent_id)
 
 
 @db_operation
@@ -439,7 +766,7 @@ async def find_duplicate_source_agent_in_current_set(conn: DatabaseConnection, a
     return await conn.fetchval(
         """
         WITH self AS (
-            SELECT agent_id, source_sha256, created_at, set_id
+            SELECT agent_id, source_sha256, set_id
             FROM agents
             WHERE agent_id = $1
         )
@@ -449,8 +776,7 @@ async def find_duplicate_source_agent_in_current_set(conn: DatabaseConnection, a
           AND s.source_sha256 IS NOT NULL
           AND a.source_sha256 = s.source_sha256
           AND a.set_id = s.set_id
-          AND a.created_at < s.created_at
-        ORDER BY a.created_at ASC
+        ORDER BY a.created_at ASC, a.agent_id ASC
         LIMIT 1
         """,
         agent_id,
