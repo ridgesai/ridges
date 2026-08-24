@@ -49,11 +49,6 @@ UPLOAD_SEND_ADDRESS = os.getenv("UPLOAD_SEND_ADDRESS")
 if not UPLOAD_SEND_ADDRESS:
     logger.fatal("UPLOAD_SEND_ADDRESS is not set in .env")
 
-BURN = os.getenv("BURN")
-if not BURN:
-    logger.fatal("BURN is not set in .env")
-BURN = BURN.lower() == "true"
-
 DISALLOW_UPLOADS = os.getenv("DISALLOW_UPLOADS")
 if not DISALLOW_UPLOADS:
     logger.fatal("DISALLOW_UPLOADS is not set in .env")
@@ -287,8 +282,6 @@ if ENV == "prod":
 else:
     logger.info("Agent Upload running in development mode.")
 
-if BURN:
-    logger.warning("Burn mode is active — all payments will be burned")
 if DISALLOW_UPLOADS:
     logger.warning(f"Uploads are disallowed: {DISALLOW_UPLOADS_REASON}")
     logger.info("-------------------------")
