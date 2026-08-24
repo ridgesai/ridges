@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from enum import Enum
 from typing import Annotated, Literal
 
@@ -23,6 +24,18 @@ class CompetitionState(str, Enum):
     paused = "paused"
     draining = "draining"
     open = "open"
+
+
+def exact_decimal_sum(values: Iterable[Decimal]) -> Decimal:
+    items = list(values)
+    if not items:
+        return Decimal("0")
+
+    integer_places = max([1, *(value.adjusted() + 1 for value in items if value)])
+    fractional_places = max([0, *(-value.as_tuple().exponent for value in items)])
+    with localcontext() as context:
+        context.prec = integer_places + fractional_places + len(str(len(items))) + 2
+        return sum(items, Decimal("0"))
 
 
 def derive_competition_state(
@@ -124,7 +137,7 @@ class CompetitionAllocationUpdateRequest(BaseModel):
         set_ids = [allocation.set_id for allocation in self.allocations]
         if len(set_ids) != len(set(set_ids)):
             raise ValueError("allocations must contain each set_id at most once")
-        if sum((allocation.raw_emission_weight for allocation in self.allocations), Decimal("0")) > 1:
+        if exact_decimal_sum(allocation.raw_emission_weight for allocation in self.allocations) > 1:
             raise ValueError("raw emission weights must sum to at most 1")
         return self
 
