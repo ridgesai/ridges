@@ -90,7 +90,8 @@ async def _insert_competition(conn, *, set_id: int, required_validator_count: in
         ) VALUES ($1, NOW(), 'consensus', 0.4, 0.4, 0.4, $2, true, true,
                   'hardcoding-v1', false, 0.03, 0.06, 336, 12)
         ON CONFLICT (set_id) DO UPDATE
-        SET required_validator_count = EXCLUDED.required_validator_count,
+        SET start_date = EXCLUDED.start_date,
+            required_validator_count = EXCLUDED.required_validator_count,
             scoring_mode = EXCLUDED.scoring_mode,
             screener_1_threshold = EXCLUDED.screener_1_threshold,
             screener_2_threshold = EXCLUDED.screener_2_threshold,

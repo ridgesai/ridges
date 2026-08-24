@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -158,6 +159,7 @@ async def _insert_agent_row(
     miner_hotkey: str = "miner-hotkey",
     source_sha256: str | None = None,
     created_at: datetime | None = None,
+    status: str = "screening_1",
 ):
     agent_id = uuid4()
 
@@ -168,13 +170,14 @@ async def _insert_agent_row(
                 agent_id, miner_hotkey, name, version_num, status, created_at,
                 ip_address, source_sha256, set_id
             )
-            VALUES ($1, $2, 'agent', 0, 'screening_1', $3, '127.0.0.1', $4, $5)
+            VALUES ($1, $2, 'agent', 0, $6, $3, '127.0.0.1', $4, $5)
             """,
             agent_id,
             miner_hotkey,
             created_at or datetime.now(timezone.utc),
             source_sha256,
             set_id,
+            status,
         )
 
     if set_id is None:
@@ -313,6 +316,26 @@ async def test_admission_rejects_non_open_current_without_fallback(monkeypatch, 
         assert await conn.fetchval("SELECT count(*) FROM agents") == 0
 
 
+async def test_admission_rechecks_open_state_after_competition_lock(monkeypatch) -> None:
+    now = datetime.now(timezone.utc)
+    async with _db.pool.acquire() as conn:
+        await _insert_competition(conn, set_id=10, start_date=now - timedelta(days=1), policy=_policy())
+
+    monkeypatch.setattr("queries.agent.upload_text_file_to_s3", AsyncMock())
+    async with _db.pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("SELECT 1 FROM competitions WHERE set_id = 10 FOR UPDATE")
+            admission = asyncio.create_task(_create_agent(monkeypatch, payment="pause-race"))
+            await asyncio.sleep(0.05)
+            assert not admission.done()
+            await conn.execute("UPDATE competitions SET is_paused = true WHERE set_id = 10")
+
+    with pytest.raises(CompetitionNotAcceptingSubmissionsError):
+        await asyncio.wait_for(admission, timeout=2)
+    async with _db.pool.acquire() as conn:
+        assert await conn.fetchval("SELECT count(*) FROM agents") == 0
+
+
 async def test_cooldown_and_duplicate_checks_are_membership_bound() -> None:
     now = datetime.now(timezone.utc)
     async with _db.pool.acquire() as conn:
@@ -372,9 +395,32 @@ async def test_evaluation_issuance_uses_agent_membership_and_rejects_conflicts()
             """,
             now,
         )
-        await conn.execute("UPDATE competitions SET start_date = NULL WHERE set_id = 99")
-        active_agent = await _insert_agent_row(conn, set_id=10)
-        conflicting_agent = await _insert_agent_row(conn, set_id=10, miner_hotkey="conflicting")
+        policy = _policy(required_validator_count=3).model_dump()
+        await conn.execute(
+            """
+            UPDATE competitions
+            SET
+                start_date = CASE WHEN set_id = 10 THEN NOW() ELSE NULL END,
+                scoring_mode = $1,
+                screener_1_threshold = $2,
+                screener_2_threshold = $3,
+                prune_threshold = $4,
+                required_validator_count = $5,
+                pre_screening_enabled = $6,
+                auto_approval_enabled = $7,
+                hardcoding_policy_version = $8,
+                incentive_enabled = $9,
+                incentive_performance_threshold = $10,
+                incentive_cost_threshold = $11,
+                incentive_reward_half_life_hours = $12,
+                incentive_time_multiplier_scale_hours = $13
+            WHERE set_id IN (10, 99)
+            """,
+            *(policy[column] for column in CompetitionPolicy.model_fields),
+        )
+        active_agent = await _insert_agent_row(conn, set_id=10, status="evaluating")
+        matching_agent = await _insert_agent_row(conn, set_id=10, miner_hotkey="matching", status="evaluating")
+        conflicting_agent = await _insert_agent_row(conn, set_id=10, miner_hotkey="conflicting", status="evaluating")
         null_member = await _insert_agent_row(conn, set_id=None, miner_hotkey="legacy")
 
     evaluation, runs = await create_new_evaluation_and_evaluation_runs(active_agent, "validator-hotkey")
@@ -382,8 +428,8 @@ async def test_evaluation_issuance_uses_agent_membership_and_rejects_conflicts()
     assert evaluation.set_id == 10
     assert [run.problem_name for run in runs] == ["active-problem"]
     matching_override = await create_new_evaluation_and_evaluation_runs(
-        active_agent,
-        "validator-hotkey",
+        matching_agent,
+        "matching-validator-hotkey",
         set_id=10,
     )
     assert matching_override is not None

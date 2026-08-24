@@ -29,7 +29,7 @@ async def clean_tables(postgres_db):
         )
 
 
-async def _seed(conn):
+async def _seed(conn, *, paused: bool = False):
     agent_id = uuid4()
     await conn.execute(
         "INSERT INTO evaluation_sets (set_id, set_group, problem_name, created_at)"
@@ -40,6 +40,7 @@ async def _seed(conn):
         """
         UPDATE competitions
         SET start_date = NOW(), scoring_mode = 'consensus',
+            is_paused = $1,
             screener_1_threshold = 0.4, screener_2_threshold = 0.4,
             prune_threshold = 0.4, required_validator_count = 1,
             pre_screening_enabled = true, auto_approval_enabled = false,
@@ -48,7 +49,8 @@ async def _seed(conn):
             incentive_reward_half_life_hours = 336,
             incentive_time_multiplier_scale_hours = 12
         WHERE set_id = 1
-        """
+        """,
+        paused,
     )
     await conn.execute(
         "INSERT INTO agents (agent_id, miner_hotkey, name, version_num, status, created_at, ip_address, set_id)"
@@ -213,3 +215,68 @@ async def test_retry_denied_once_attempt_cap_reached(monkeypatch, postgres_db):
 
     hydrated = await get_hydrated_evaluation_by_id(evaluation_id)
     assert hydrated.status.value == "failure"  # falls back to today's full-restart path
+
+
+async def test_in_session_retry_and_completion_continue_while_competition_is_paused(monkeypatch, postgres_db):
+    async def fake_presign(_s3_key):
+        return "https://s3.example.com/fresh-upload-url"
+
+    monkeypatch.setattr(validator_endpoint, "generate_presigned_upload_url", fake_presign)
+
+    async with _db.pool.acquire() as conn:
+        agent_id, evaluation_id = await _seed(conn, paused=True)
+
+    await create_evaluation_runs(
+        evaluation_id,
+        [
+            EvaluationSetProblem(
+                set_id=1,
+                set_group=EvaluationSetGroup.validator,
+                problem_name="prob-1",
+                created_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+            )
+        ],
+    )
+    (run,) = await get_all_evaluation_runs_in_evaluation_id(evaluation_id)
+    validator = await _make_session(evaluation_id, agent_id)
+
+    response = await _update(
+        validator,
+        run.evaluation_run_id,
+        EvaluationRunStatus.error,
+        error_code=int(EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR),
+        error_message="transient failure while paused",
+        agent_logs="attempt 1 agent logs",
+        eval_logs="attempt 1 eval logs",
+    )
+    assert response.retry is True
+
+    await _update(validator, run.evaluation_run_id, EvaluationRunStatus.initializing_agent)
+    await _update(validator, run.evaluation_run_id, EvaluationRunStatus.running_agent)
+    await _update(
+        validator,
+        run.evaluation_run_id,
+        EvaluationRunStatus.initializing_eval,
+        patch="the patch",
+        agent_logs="attempt 2 agent logs",
+    )
+    await _update(validator, run.evaluation_run_id, EvaluationRunStatus.running_eval)
+    await _update(
+        validator,
+        run.evaluation_run_id,
+        EvaluationRunStatus.finished,
+        verifier_reward=1.0,
+        test_results=[
+            ProblemTestResult(name="t", category=ProblemTestCategory.default, status=ProblemTestResultStatus.PASS)
+        ],
+        eval_logs="attempt 2 eval logs",
+    )
+    from api.endpoints.validator_models import ValidatorFinishEvaluationRequest
+
+    await validator_endpoint.validator_finish_evaluation.__wrapped__(
+        ValidatorFinishEvaluationRequest(),
+        validator=validator,
+    )
+
+    evaluation = await get_evaluation_by_id(evaluation_id)
+    assert evaluation.finished_at is not None
