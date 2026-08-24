@@ -1,4 +1,3 @@
-import asyncio
 import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
@@ -26,9 +25,10 @@ from api.src.utils.upload_agent_helpers import (
     timestamp_ms_to_utc_datetime,
     verify_burn_extrinsic,
 )
-from models.agent import Agent, AgentCreate
+from models.agent import AgentCreate
 from models.upload import (
     AgentCheckResponse,
+    AgentDirectCheckResponse,
     AgentUploadResponse,
     ErrorResponse,
     OpenRouterKeysCheckRequest,
@@ -36,34 +36,39 @@ from models.upload import (
     PrepareUploadRequest,
     TicketCheckRequest,
     TicketCheckResponse,
+    UploadCompetition,
     UploadPriceResponse,
 )
 from queries.agent import (
-    create_agent,
-    get_latest_agent_created_at_for_miner_hotkey_in_current_competition,
-    get_latest_agent_for_miner_hotkey,
+    BurnUploadFunding,
+    CreditUploadFunding,
+    _derive_agent_id,
+    admit_agent,
+    get_latest_agent_created_at_for_miner_hotkey_in_competition,
     record_upload_attempt,
 )
 from queries.banned_coldkey import get_banned_coldkey
+from queries.competition import get_accepting_upload_competitions, resolve_upload_competition
 from queries.errors import (
     ColdkeyBannedError,
     CompetitionNotAcceptingSubmissionsError,
     DuplicateAgentIDError,
+    UploadCompetitionSelectionError,
+    UploadCooldownError,
     UploadCreditAlreadyRedeemedError,
     UploadCreditUnavailableError,
+    UploadFundingConflictError,
 )
 from queries.payments import (
-    complete_payment,
     create_payment_quote,
-    reserve_payment,
     retrieve_payment_by_hash,
     retrieve_payment_quote,
 )
 from queries.refund import is_payment_refunded
-from queries.upload_credit import create_agent_with_upload_credit, get_upload_credit_by_id, get_upload_credit_for_check
+from queries.upload_credit import get_exact_upload_credit_replay, get_upload_credit_by_id, get_upload_credit_for_check
 from utils.agent_secrets import encrypt_agent_secret
 from utils.bittensor import subtensor_client
-from utils.debug_lock import DebugLock
+from utils.s3 import upload_text_file_to_s3
 from utils.upload_ticket import (
     FUNDING_BURN,
     FUNDING_CREDIT,
@@ -77,22 +82,59 @@ logger = logging.getLogger(__name__)
 UPLOAD_PAYMENT_QUOTE_TTL_SECONDS = 60 * 60
 OUTDATED_UPLOAD_CLIENT_MESSAGE = "This upload client is outdated. Please upgrade Ridges CLI and retry."
 
-# We use a lock per hotkey to prevent multiple agents being uploaded at the same time for the same hotkey
-hotkey_locks: dict[str, asyncio.Lock] = {}
-hotkey_locks_lock = asyncio.Lock()
-
-
-async def get_hotkey_lock(hotkey: str) -> asyncio.Lock:
-    async with hotkey_locks_lock:
-        if hotkey not in hotkey_locks:
-            hotkey_locks[hotkey] = asyncio.Lock()
-        return hotkey_locks[hotkey]
-
-
 router = APIRouter()
 
 
-@router.post("/agent/check", tags=["upload"], response_model=AgentCheckResponse)
+async def _resolve_upload_set_id(set_id: int | None) -> int:
+    try:
+        return await resolve_upload_competition(set_id)
+    except (CompetitionNotAcceptingSubmissionsError, UploadCompetitionSelectionError) as exception:
+        raise HTTPException(status_code=409, detail=str(exception)) from exception
+
+
+@router.get("/competitions", tags=["upload"], response_model=list[UploadCompetition])
+async def get_upload_competitions() -> list[UploadCompetition]:
+    """Return the uncached, upload-specific accepting competition list."""
+    return await get_accepting_upload_competitions()
+
+
+async def _exact_credit_replay_response(
+    *,
+    credit_id: UUID,
+    miner_hotkey: str,
+    source_sha256: str,
+    set_id: int | None,
+    upload_data: dict,
+) -> AgentUploadResponse | None:
+    try:
+        replayed_agent_id = await get_exact_upload_credit_replay(
+            credit_id=credit_id,
+            miner_hotkey=miner_hotkey,
+            source_sha256=source_sha256,
+            set_id=set_id,
+        )
+    except UploadCreditAlreadyRedeemedError as exception:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Upload credit {credit_id} was already used for agent {exception.agent_id}",
+        ) from exception
+
+    if replayed_agent_id is None:
+        return None
+
+    success_message = (
+        f"Upload credit {credit_id} was already used for agent {replayed_agent_id}. No new agent was created."
+    )
+    await record_upload_attempt(
+        upload_type="agent",
+        success=True,
+        agent_id=replayed_agent_id,
+        **upload_data,
+    )
+    return AgentUploadResponse(status="success", message=success_message)
+
+
+@router.post("/agent/check", tags=["upload"], response_model=AgentDirectCheckResponse)
 async def check_agent_post(
     request: Request,
     agent_file: UploadFile = File(..., description="Python file containing the agent code (must be named agent.py)"),
@@ -108,21 +150,24 @@ async def check_agent_post(
     ),
     use_credit: Annotated[bool, Form(description="Use a upload credit instead of burning alpha")] = False,
     credit_id: Annotated[Optional[str], Form(description="Specific upload credit ID for a retry")] = None,
-) -> AgentCheckResponse:
+    set_id: Annotated[Optional[int], Form(description="Competition to enter")] = None,
+) -> AgentDirectCheckResponse:
     if config.DISALLOW_UPLOADS:
         raise HTTPException(status_code=503, detail=config.DISALLOW_UPLOADS_REASON)
     miner_hotkey = get_miner_hotkey(file_info)
     is_owner_upload = miner_hotkey == config.OWNER_HOTKEY
+    resolved_set_id = await _resolve_upload_set_id(set_id)
     if credit_id is not None and not use_credit:
         raise HTTPException(status_code=400, detail="credit_id requires use_credit")
     if use_credit and (config.ENV != "prod" or is_owner_upload):
         raise HTTPException(status_code=400, detail="Upload credits are only available for production miner uploads")
-    if not use_credit:
-        latest_agent_created_at_in_current_competition = (
-            await get_latest_agent_created_at_for_miner_hotkey_in_current_competition(miner_hotkey=miner_hotkey)
+    if config.ENV == "prod" and not use_credit and not is_owner_upload:
+        latest_agent_created_at = await get_latest_agent_created_at_for_miner_hotkey_in_competition(
+            miner_hotkey=miner_hotkey,
+            set_id=resolved_set_id,
         )
-        if latest_agent_created_at_in_current_competition:
-            check_rate_limit(latest_agent_created_at_in_current_competition)
+        if latest_agent_created_at:
+            check_rate_limit(latest_agent_created_at)
     check_signature(public_key, file_info, signature, miner_hotkey)
     await check_hotkey_registered(miner_hotkey)
     coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey)
@@ -152,12 +197,13 @@ async def check_agent_post(
             openrouter_api_key=openrouter_api_key,
             openrouter_management_key=openrouter_management_key,
         )
-        return AgentCheckResponse(
+        return AgentDirectCheckResponse(
             status="success",
             message="Agent check successful",
             payment_method="credit",
             credit_id=credit.credit_id,
             amount_alpha_rao=0,
+            set_id=resolved_set_id,
         )
 
     try:
@@ -191,7 +237,7 @@ async def check_agent_post(
         amount_alpha_rao=payment_cost.amount_alpha_rao,
         expires_at=expires_at,
     )
-    return AgentCheckResponse(
+    return AgentDirectCheckResponse(
         status="success",
         message="Agent check successful",
         payment_method="burn",
@@ -199,6 +245,7 @@ async def check_agent_post(
         amount_alpha_rao=quote.amount_alpha_rao,
         payment_netuid=config.NETUID,
         expires_at=quote.expires_at,
+        set_id=resolved_set_id,
     )
 
 
@@ -249,12 +296,6 @@ async def prepare_upload(body: PrepareUploadRequest) -> AgentCheckResponse:
             amount_alpha_rao=0,
         )
 
-    latest_agent_created_at_in_current_competition = (
-        await get_latest_agent_created_at_for_miner_hotkey_in_current_competition(miner_hotkey=body.hotkey)
-    )
-    if latest_agent_created_at_in_current_competition:
-        check_rate_limit(latest_agent_created_at_in_current_competition)
-
     try:
         alpha_stake = await subtensor_client.get_alpha_stake_availability(
             coldkey=coldkey,
@@ -304,6 +345,7 @@ async def _process_agent_upload(
     openrouter_api_key: str,
     openrouter_management_key: str,
     legacy_signature: Optional[tuple[str, str, str]],
+    set_id: int | None,
 ) -> AgentUploadResponse:
     """Shared upload core for /upload/agent (legacy file_info signature) and /upload/agent/ticket.
 
@@ -353,6 +395,7 @@ async def _process_agent_upload(
         source_sha256 = hashlib.sha256(agent_bytes).hexdigest()
 
         credit_uuid: Optional[UUID] = None
+        resolved_set_id: int | None = None
         if prod and not is_owner_upload and is_credit_upload:
             if any(value is not None for value in (quote_id, payment_block_hash, payment_extrinsic_index)):
                 raise HTTPException(status_code=400, detail="Credit uploads cannot include burn payment fields")
@@ -365,6 +408,9 @@ async def _process_agent_upload(
             if coldkey is None:
                 raise HTTPException(status_code=400, detail="Hotkey owner not found")
             await check_coldkey_banned(coldkey)
+
+        if not is_credit_upload:
+            resolved_set_id = await _resolve_upload_set_id(set_id)
 
         if prod and not is_owner_upload and not is_credit_upload:
             if quote_id is None:
@@ -458,105 +504,126 @@ async def _process_agent_upload(
             openrouter_management_key=openrouter_management_key,
         )
 
-        hotkey_lock = await get_hotkey_lock(miner_hotkey)
-        credit_was_already_redeemed = False
-        async with DebugLock(hotkey_lock, f"Agent upload lock for miner {miner_hotkey}"):
-            latest_agent: Optional[Agent] = await get_latest_agent_for_miner_hotkey(miner_hotkey=miner_hotkey)
-
-            latest_agent_created_at_in_current_competition = (
-                await get_latest_agent_created_at_for_miner_hotkey_in_current_competition(miner_hotkey=miner_hotkey)
-            )
-
-            if prod and not is_owner_upload and not is_credit_upload:
-                if latest_agent_created_at_in_current_competition:
-                    check_rate_limit(latest_agent_created_at_in_current_competition)
-
-                payment_row = await reserve_payment(
-                    payment_block_hash=payment_block_hash,
-                    payment_extrinsic_index=payment_extrinsic_index,
-                    miner_hotkey=miner_hotkey,
-                    miner_coldkey=coldkey,
-                    amount_alpha_rao=payment_value,
-                    quote_id=quote.quote_id,
-                )
-
-                if payment_row is None:
-                    raise HTTPException(status_code=409, detail="Payment or quote is already reserved")
-
-                if payment_row.agent_id is not None:
-                    raise DuplicateAgentIDError(agent_id=payment_row.agent_id)
-
-                if payment_row.quote_id != quote.quote_id:
-                    raise HTTPException(status_code=409, detail="Payment is already reserved for a different quote")
-
-            encrypted_openrouter_api_key = encrypt_agent_secret(validated_openrouter_keys.runtime_api_key)
-            encrypted_openrouter_management_key = encrypt_agent_secret(validated_openrouter_keys.management_api_key)
-            if is_credit_upload:
-                agent_payment_block_hash = f"credit:{credit_uuid}"
-                agent_payment_extrinsic_index = "0"
-            else:
-                agent_payment_block_hash = payment_block_hash
-                agent_payment_extrinsic_index = payment_extrinsic_index
-            if agent_payment_block_hash is None or agent_payment_extrinsic_index is None:
-                raise HTTPException(status_code=400, detail="Payment information is required")
-            agent = AgentCreate(
+        if credit_uuid is not None:
+            replay_response = await _exact_credit_replay_response(
+                credit_id=credit_uuid,
                 miner_hotkey=miner_hotkey,
-                name=name if not latest_agent else latest_agent.name,
-                version_num=latest_agent.version_num + 1 if latest_agent else 0,
-                created_at=datetime.now(timezone.utc),
-                ip_address=request.client.host if request.client else None,
-                payment_block_hash=agent_payment_block_hash,
-                payment_extrinsic_index=agent_payment_extrinsic_index,
+                source_sha256=source_sha256,
+                set_id=set_id,
+                upload_data=upload_data,
             )
+            if replay_response is not None:
+                return replay_response
             try:
-                if prod and not is_owner_upload and is_credit_upload:
-                    agent_id, credit_was_already_redeemed = await create_agent_with_upload_credit(
-                        credit_id=credit_uuid,
-                        miner_hotkey=miner_hotkey,
-                        miner_coldkey=coldkey,
-                        agent=agent,
-                        agent_text=agent_text,
-                        source_sha256=source_sha256,
-                        runtime_openrouter_api_key_ciphertext=encrypted_openrouter_api_key,
-                        management_openrouter_api_key_ciphertext=encrypted_openrouter_management_key,
-                        openrouter_workspace_id=validated_openrouter_keys.workspace_id,
-                        openrouter_api_key_label=validated_openrouter_keys.api_key_label,
-                        openrouter_api_key_creator_user_id=validated_openrouter_keys.api_key_creator_user_id,
-                        openrouter_validated_at=validated_openrouter_keys.validated_at,
-                    )
-                else:
-                    agent_id = await create_agent(
-                        agent,
-                        agent_text,
-                        source_sha256=source_sha256,
-                        runtime_openrouter_api_key_ciphertext=encrypted_openrouter_api_key,
-                        management_openrouter_api_key_ciphertext=encrypted_openrouter_management_key,
-                        openrouter_workspace_id=validated_openrouter_keys.workspace_id,
-                        openrouter_api_key_label=validated_openrouter_keys.api_key_label,
-                        openrouter_api_key_creator_user_id=validated_openrouter_keys.api_key_creator_user_id,
-                        openrouter_validated_at=validated_openrouter_keys.validated_at,
-                        miner_coldkey=coldkey if prod else None,
-                    )
-            except ColdkeyBannedError as e:
-                raise HTTPException(status_code=403, detail="Your miner coldkey has been banned") from e
-            except CompetitionNotAcceptingSubmissionsError as e:
-                raise HTTPException(status_code=409, detail=str(e)) from e
-            except UploadCreditUnavailableError as e:
-                raise HTTPException(status_code=402, detail="Upload credit is not available for this hotkey") from e
-            except UploadCreditAlreadyRedeemedError as e:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Upload credit {credit_uuid} was already used for agent {e.agent_id}",
-                ) from e
+                resolved_set_id = await _resolve_upload_set_id(set_id)
+            except HTTPException:
+                replay_response = await _exact_credit_replay_response(
+                    credit_id=credit_uuid,
+                    miner_hotkey=miner_hotkey,
+                    source_sha256=source_sha256,
+                    set_id=set_id,
+                    upload_data=upload_data,
+                )
+                if replay_response is not None:
+                    return replay_response
+                raise
 
-        if prod and not is_owner_upload and not is_credit_upload:
-            await complete_payment(
+        if resolved_set_id is None:
+            raise HTTPException(status_code=409, detail="No competition was selected")
+
+        encrypted_openrouter_api_key = encrypt_agent_secret(validated_openrouter_keys.runtime_api_key)
+        encrypted_openrouter_management_key = encrypt_agent_secret(validated_openrouter_keys.management_api_key)
+        if is_credit_upload:
+            agent_payment_block_hash = f"credit:{credit_uuid}"
+            agent_payment_extrinsic_index = "0"
+        else:
+            agent_payment_block_hash = payment_block_hash
+            agent_payment_extrinsic_index = payment_extrinsic_index
+        if agent_payment_block_hash is None or agent_payment_extrinsic_index is None:
+            raise HTTPException(status_code=400, detail="Payment information is required")
+
+        agent = AgentCreate(
+            miner_hotkey=miner_hotkey,
+            name=name,
+            version_num=0,
+            created_at=datetime.now(timezone.utc),
+            ip_address=request.client.host if request.client else None,
+            payment_block_hash=agent_payment_block_hash,
+            payment_extrinsic_index=agent_payment_extrinsic_index,
+        )
+        agent_id = _derive_agent_id(agent_payment_block_hash, agent_payment_extrinsic_index)
+        await upload_text_file_to_s3(f"{agent_id}/agent.py", agent_text)
+
+        funding: BurnUploadFunding | CreditUploadFunding | None
+        if prod and not is_owner_upload and is_credit_upload:
+            funding = CreditUploadFunding(
+                credit_id=credit_uuid,
+                miner_hotkey=miner_hotkey,
+                miner_coldkey=coldkey,
+            )
+        elif prod and not is_owner_upload:
+            funding = BurnUploadFunding(
                 payment_block_hash=payment_block_hash,
                 payment_extrinsic_index=payment_extrinsic_index,
-                agent_id=agent_id,
+                miner_hotkey=miner_hotkey,
+                miner_coldkey=coldkey,
+                amount_alpha_rao=payment_value,
+                quote_id=quote.quote_id,
             )
+        else:
+            funding = None
 
-        if credit_was_already_redeemed:
+        try:
+            admission = await admit_agent(
+                agent,
+                set_id=resolved_set_id,
+                source_sha256=source_sha256,
+                runtime_openrouter_api_key_ciphertext=encrypted_openrouter_api_key,
+                management_openrouter_api_key_ciphertext=encrypted_openrouter_management_key,
+                openrouter_workspace_id=validated_openrouter_keys.workspace_id,
+                openrouter_api_key_label=validated_openrouter_keys.api_key_label,
+                openrouter_api_key_creator_user_id=validated_openrouter_keys.api_key_creator_user_id,
+                openrouter_validated_at=validated_openrouter_keys.validated_at,
+                miner_coldkey=coldkey if prod else None,
+                funding=funding,
+                enforce_cooldown=prod and not is_owner_upload,
+            )
+        except ColdkeyBannedError as exception:
+            raise HTTPException(status_code=403, detail="Your miner coldkey has been banned") from exception
+        except CompetitionNotAcceptingSubmissionsError as exception:
+            if credit_uuid is not None:
+                replay_response = await _exact_credit_replay_response(
+                    credit_id=credit_uuid,
+                    miner_hotkey=miner_hotkey,
+                    source_sha256=source_sha256,
+                    set_id=set_id,
+                    upload_data=upload_data,
+                )
+                if replay_response is not None:
+                    return replay_response
+            raise HTTPException(status_code=409, detail=str(exception)) from exception
+
+        except UploadCooldownError as exception:
+            try:
+                check_rate_limit(exception.latest_created_at)
+            except HTTPException:
+                raise
+            raise HTTPException(status_code=429, detail="Upload cooldown has not elapsed") from exception
+
+        except UploadFundingConflictError as exception:
+            raise HTTPException(status_code=409, detail="Payment or quote is already reserved") from exception
+
+        except UploadCreditUnavailableError as exception:
+            raise HTTPException(status_code=402, detail="Upload credit is not available for this hotkey") from exception
+
+        except UploadCreditAlreadyRedeemedError as exception:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Upload credit {credit_uuid} was already used for agent {exception.agent_id}",
+            ) from exception
+
+        agent_id = admission.agent_id
+        if admission.replayed:
             success_message = (
                 f"Upload credit {credit_uuid} was already used for agent {agent_id}. No new agent was created."
             )
@@ -644,6 +711,7 @@ async def post_agent(
     openrouter_management_key: str = Form(
         ..., description="OpenRouter management key used to validate workspace privacy settings"
     ),
+    set_id: Annotated[Optional[int], Form(description="Competition to enter")] = None,
 ) -> AgentUploadResponse:
     """
     Upload a new agent version for evaluation
@@ -669,6 +737,7 @@ async def post_agent(
         openrouter_api_key=openrouter_api_key,
         openrouter_management_key=openrouter_management_key,
         legacy_signature=(public_key, file_info, signature),
+        set_id=set_id,
     )
 
 
@@ -698,6 +767,7 @@ async def post_agent_ticket(
     openrouter_management_key: str = Form(
         ..., description="OpenRouter management key used to validate workspace privacy settings"
     ),
+    set_id: Annotated[Optional[int], Form(description="Competition to enter")] = None,
 ) -> AgentUploadResponse:
     """Redeem a prepare-upload ticket: same verification and creation flow as /upload/agent."""
     try:
@@ -754,6 +824,7 @@ async def post_agent_ticket(
             openrouter_api_key=openrouter_api_key,
             openrouter_management_key=openrouter_management_key,
             legacy_signature=None,
+            set_id=set_id,
         )
     return await _process_agent_upload(
         request=request,
@@ -767,6 +838,7 @@ async def post_agent_ticket(
         openrouter_api_key=openrouter_api_key,
         openrouter_management_key=openrouter_management_key,
         legacy_signature=None,
+        set_id=set_id,
     )
 
 
