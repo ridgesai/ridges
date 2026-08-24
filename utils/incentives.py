@@ -161,8 +161,8 @@ def decay_reward_score(*, value: float, elapsed_hours: float, half_life_hours: f
     """
     if not _is_finite_nonnegative(value):
         raise ValueError("Reward score must be finite and non-negative")
-    if half_life_hours <= 0:
-        raise ValueError("Reward half-life must be positive")
+    if not math.isfinite(half_life_hours) or half_life_hours <= 0:
+        raise ValueError("Reward half-life must be finite and positive")
 
     return value * 2 ** (-max(0.0, elapsed_hours) / half_life_hours)
 
@@ -180,7 +180,10 @@ def rank_reward_candidates(
     """
     ranked: list[RankedRewardCandidate] = []
     for candidate in candidates:
-        if not _is_finite_nonnegative(candidate.initial_reward_score) or candidate.initial_reward_score == 0:
+        if not _is_finite_nonnegative(candidate.initial_reward_score):
+            raise ValueError(f"Agent {candidate.agent_id} has an invalid reward score")
+
+        if candidate.initial_reward_score == 0:
             continue
 
         elapsed_hours = max(0.0, (observed_at - candidate.approved_at).total_seconds() / 3600)
@@ -189,7 +192,10 @@ def rank_reward_candidates(
             elapsed_hours=elapsed_hours,
             half_life_hours=reward_half_life_hours,
         )
-        if math.isfinite(current_reward_score) and current_reward_score > 0:
+        if not math.isfinite(current_reward_score) or current_reward_score < 0:
+            raise ValueError(f"Agent {candidate.agent_id} produced an invalid decayed reward score")
+
+        if current_reward_score > 0:
             ranked.append(RankedRewardCandidate(candidate, current_reward_score))
 
     ranked.sort(
@@ -205,6 +211,8 @@ def rank_reward_candidates(
 
 def normalize_agent_reward_weights(candidates: list[RankedRewardCandidate]) -> dict[UUID, float]:
     total = sum(candidate.current_reward_score for candidate in candidates)
-    if not math.isfinite(total) or total <= 0:
+    if not math.isfinite(total) or total < 0:
+        raise ValueError("Reward candidate total must be finite and non-negative")
+    if total == 0:
         return {}
     return {candidate.candidate.agent_id: candidate.current_reward_score / total for candidate in candidates}
