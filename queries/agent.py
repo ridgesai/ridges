@@ -73,6 +73,18 @@ class AgentAdmissionResult:
     replayed: bool = False
 
 
+@dataclass(slots=True, frozen=True)
+class EvaluationCandidate:
+    agent_id: UUID
+    set_id: int
+
+
+@dataclass(slots=True, frozen=True)
+class EvaluationCandidateBatch:
+    observed_last_served_set_id: int | None
+    candidates: tuple[EvaluationCandidate, ...]
+
+
 def _derive_agent_id(payment_block_hash: str, payment_extrinsic_index: str) -> UUID:
     return uuid5(
         config.AGENT_UUID_NAMESPACE,
@@ -1001,10 +1013,24 @@ async def get_agents_in_queue(conn: DatabaseConnection, queue_stage: QueueStage)
     return [Agent(**agent) for agent in queue]
 
 
+def _evaluation_candidate_batch(rows, *, family: EvaluationSetGroup) -> EvaluationCandidateBatch:
+    if not rows:
+        raise RuntimeError(f"Missing competition work cursor for {family.value}")
+
+    return EvaluationCandidateBatch(
+        observed_last_served_set_id=rows[0]["observed_last_served_set_id"],
+        candidates=tuple(
+            EvaluationCandidate(agent_id=row["agent_id"], set_id=row["set_id"])
+            for row in rows
+            if row["agent_id"] is not None
+        ),
+    )
+
+
 @db_operation
-async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
+async def get_evaluation_candidates_for_validator_hotkey(
     conn: DatabaseConnection, validator_hotkey: str
-) -> Optional[UUID]:
+) -> EvaluationCandidateBatch:
     if validator_hotkey.startswith(("screener-1", "screener-2")):
         set_group = (
             EvaluationSetGroup.screener_1
@@ -1014,53 +1040,87 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
         expected_status = (
             AgentStatus.screening_1 if set_group is EvaluationSetGroup.screener_1 else AgentStatus.screening_2
         )
-        result = await conn.fetchrow(f"""
-            SELECT agent.agent_id
-            FROM agents agent
-            INNER JOIN competitions competition ON competition.set_id = agent.set_id
-            WHERE agent.status = '{expected_status.value}'
-              AND competition.start_date IS NOT NULL
-              AND competition.end_date IS NULL
-              AND competition.is_paused IS FALSE
-              AND competition.scoring_mode IS NOT NULL
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM evaluations evaluation
-                  WHERE evaluation.agent_id = agent.agent_id
-                    AND evaluation.set_id = agent.set_id
-                    AND evaluation.evaluation_set_group = '{set_group.value}'::evaluationsetgroup
-                    AND (
-                        SELECT CASE
-                            WHEN COUNT(*) = 0 THEN NULL
-                            WHEN EVERY(
-                                evaluation_run.status = 'finished'
-                                OR (
-                                    evaluation_run.status = 'error'
-                                    AND evaluation_run.error_code BETWEEN 1000 AND 1999
-                                )
-                            ) THEN 'success'
-                            WHEN EVERY(evaluation_run.status IN ('finished', 'error')) THEN 'failure'
-                            ELSE 'running'
-                        END
-                        FROM evaluation_runs_hydrated evaluation_run
-                        WHERE evaluation_run.evaluation_id = evaluation.evaluation_id
-                    ) IN ('success', 'running')
-              )
-              AND NOT EXISTS (
-                  SELECT 1 FROM benchmark_agent_ids benchmark WHERE benchmark.agent_id = agent.agent_id
-              )
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM banned_coldkeys banned
-                  WHERE banned.miner_coldkey = agent.miner_coldkey
-              )
-              AND NOT EXISTS (
-                  SELECT 1 FROM unapproved_agent_ids unapproved WHERE unapproved.agent_id = agent.agent_id
-              )
-            ORDER BY agent.created_at ASC
-            LIMIT 1
-        """)
+        rows = await conn.fetch(
+            f"""
+            WITH cursor AS MATERIALIZED (
+                SELECT last_served_set_id
+                FROM competition_work_cursors
+                WHERE family = $1
+            ),
+            ranked_candidates AS MATERIALIZED (
+                SELECT
+                    agent.agent_id,
+                    agent.set_id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY agent.set_id
+                        ORDER BY agent.created_at ASC, agent.agent_id ASC
+                    ) AS position_in_competition
+                FROM agents agent
+                INNER JOIN competitions competition ON competition.set_id = agent.set_id
+                WHERE agent.status = '{expected_status.value}'
+                  AND competition.start_date IS NOT NULL
+                  AND competition.end_date IS NULL
+                  AND competition.is_paused IS FALSE
+                  AND competition.scoring_mode IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM evaluations evaluation
+                      WHERE evaluation.agent_id = agent.agent_id
+                        AND evaluation.set_id = agent.set_id
+                        AND evaluation.evaluation_set_group = '{set_group.value}'::evaluationsetgroup
+                        AND (
+                            SELECT CASE
+                                WHEN COUNT(*) = 0 THEN NULL
+                                WHEN EVERY(
+                                    evaluation_run.status = 'finished'
+                                    OR (
+                                        evaluation_run.status = 'error'
+                                        AND evaluation_run.error_code BETWEEN 1000 AND 1999
+                                    )
+                                ) THEN 'success'
+                                WHEN EVERY(evaluation_run.status IN ('finished', 'error')) THEN 'failure'
+                                ELSE 'running'
+                            END
+                            FROM evaluation_runs_hydrated evaluation_run
+                            WHERE evaluation_run.evaluation_id = evaluation.evaluation_id
+                        ) IN ('success', 'running')
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM benchmark_agent_ids benchmark WHERE benchmark.agent_id = agent.agent_id
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM banned_coldkeys banned
+                      WHERE banned.miner_coldkey = agent.miner_coldkey
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM unapproved_agent_ids unapproved WHERE unapproved.agent_id = agent.agent_id
+                  )
+            ),
+            competition_heads AS (
+                SELECT agent_id, set_id
+                FROM ranked_candidates
+                WHERE position_in_competition = 1
+            )
+            SELECT
+                cursor.last_served_set_id AS observed_last_served_set_id,
+                head.agent_id,
+                head.set_id
+            FROM cursor
+            LEFT JOIN competition_heads head ON TRUE
+            ORDER BY
+                CASE
+                    WHEN head.set_id IS NULL THEN 2
+                    WHEN cursor.last_served_set_id IS NULL
+                        OR head.set_id > cursor.last_served_set_id THEN 0
+                    ELSE 1
+                END,
+                head.set_id ASC
+            """,
+            set_group.value,
+        )
     else:
+        set_group = EvaluationSetGroup.validator
         # The query is structured to force a candidates-first execution order, avoiding a
         # full scan of evaluation_runs that the planner would otherwise choose.
         #
@@ -1074,9 +1134,14 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
         #   candidates (MATERIALIZED, ~1–50 rows)
         #     → evaluations by agent_id (index seek, ~10–50 rows per candidate)
         #       → evaluation_runs via JOIN LATERAL by evaluation_id (index seek, ~20–50 rows each)
-        result = await conn.fetchrow(
+        rows = await conn.fetch(
             f"""
-            WITH candidates AS MATERIALIZED (
+            WITH cursor AS MATERIALIZED (
+                SELECT last_served_set_id
+                FROM competition_work_cursors
+                WHERE family = $1
+            ),
+            candidates AS MATERIALIZED (
                 SELECT
                     agents.agent_id,
                     agents.created_at,
@@ -1105,7 +1170,7 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
                 SELECT
                     c.agent_id,
                     BOOL_OR(
-                        e.validator_hotkey = $1
+                        e.validator_hotkey = $2
                         AND e.evaluation_set_group = '{EvaluationSetGroup.validator.value}' :: EvaluationSetGroup
                     ) AS already_evaluated,
                     COUNT(*) FILTER (
@@ -1171,31 +1236,49 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
                     )
                 GROUP BY
                     c.agent_id
+            ),
+            ranked_candidates AS MATERIALIZED (
+                SELECT
+                    c.agent_id,
+                    c.set_id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY c.set_id
+                        ORDER BY
+                            COALESCE(s.screener_2_score, 0) DESC,
+                            c.created_at ASC,
+                            c.agent_id ASC
+                    ) AS position_in_competition
+                FROM candidates c
+                LEFT JOIN combined_eval_stats s ON s.agent_id = c.agent_id
+                WHERE NOT COALESCE(s.already_evaluated, false)
+                  AND COALESCE(s.num_running_evals, 0) + COALESCE(s.num_finished_evals, 0)
+                      < c.required_validator_count
+            ),
+            competition_heads AS (
+                SELECT agent_id, set_id
+                FROM ranked_candidates
+                WHERE position_in_competition = 1
             )
             SELECT
-                c.agent_id,
-                COALESCE(s.num_running_evals, 0) AS num_running_evals,
-                COALESCE(s.num_finished_evals, 0) AS num_finished_evals
-            FROM
-                candidates c
-                LEFT JOIN combined_eval_stats s ON s.agent_id = c.agent_id
-            WHERE
-                NOT COALESCE(s.already_evaluated, false)
-                AND COALESCE(s.num_running_evals, 0) + COALESCE(s.num_finished_evals, 0)
-                    < c.required_validator_count
+                cursor.last_served_set_id AS observed_last_served_set_id,
+                head.agent_id,
+                head.set_id
+            FROM cursor
+            LEFT JOIN competition_heads head ON TRUE
             ORDER BY
-                COALESCE(s.screener_2_score, 0) DESC,
-                c.created_at ASC
-            LIMIT
-                1
+                CASE
+                    WHEN head.set_id IS NULL THEN 2
+                    WHEN cursor.last_served_set_id IS NULL
+                        OR head.set_id > cursor.last_served_set_id THEN 0
+                    ELSE 1
+                END,
+                head.set_id ASC
             """,
+            set_group.value,
             validator_hotkey,
         )
 
-    if result is None:
-        return None
-
-    return result["agent_id"]
+    return _evaluation_candidate_batch(rows, family=set_group)
 
 
 @db_operation
