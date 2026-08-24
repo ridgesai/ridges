@@ -55,7 +55,7 @@ from models.openrouter import OpenRouterRuntimeConfig
 from models.validator import ConnectedValidatorInfo, ValidatorStatus
 from queries.agent import (
     get_agent_by_id,
-    get_next_agent_id_awaiting_evaluation_for_validator_hotkey,
+    get_evaluation_candidates_for_validator_hotkey,
     get_openrouter_secrets_for_agent_id,
 )
 from queries.approval import finish_agent_and_enqueue_approval
@@ -430,45 +430,56 @@ async def validator_request_evaluation(
     # TODO: .env
     try:
         async with DebugLock(lock, f"{validator.name} ({validator.hotkey}) for {lock_name}", timeout=60):
-            # Find the next agent awaiting an evaluation from this validator
-            agent_id = await get_next_agent_id_awaiting_evaluation_for_validator_hotkey(validator.hotkey)
-            if agent_id is None:
-                return None
+            candidate_batch = await get_evaluation_candidates_for_validator_hotkey(validator.hotkey)
+            for candidate in candidate_batch.candidates:
+                agent = await get_agent_by_id(candidate.agent_id)
+                if agent is None:
+                    logger.info(f"Skipping missing evaluation candidate {candidate.agent_id}")
+                    continue
 
-            agent = await get_agent_by_id(agent_id)
-            try:
-                agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
-            except Exception as exc:
-                logger.error(f"Failed to download agent code for {agent_id}: {exc}")
-                return None
+                try:
+                    agent_code = await download_text_file_from_s3(f"{candidate.agent_id}/agent.py")
+                except Exception as exc:
+                    logger.error(f"Failed to download agent code for {candidate.agent_id}: {exc}")
+                    continue
 
-            openrouter_config = None
+                openrouter_config = None
 
-            try:
-                openrouter_secrets = await get_openrouter_secrets_for_agent_id(agent_id)
-            except AgentKeyEncryptionConfigError as exc:
-                logger.error(
-                    f"OpenRouter secret decryption is unavailable for agent {agent_id} due to encryption "
-                    f"configuration: {exc}"
-                )
-                return None
-            except AgentKeyDecryptError as exc:
-                logger.error(f"OpenRouter secret unreadable for agent {agent_id}: {exc}")
-                return None
-            else:
-                if openrouter_secrets is not None:
-                    openrouter_config = OpenRouterRuntimeConfig(
-                        api_key=openrouter_secrets.runtime_api_key,
-                        management_key=openrouter_secrets.management_api_key,
-                        workspace_id=openrouter_secrets.workspace_id,
-                        expected_api_key_sha256=sha256_hex(openrouter_secrets.runtime_api_key),
+                try:
+                    openrouter_secrets = await get_openrouter_secrets_for_agent_id(candidate.agent_id)
+                except AgentKeyEncryptionConfigError as exc:
+                    logger.error(
+                        f"OpenRouter secret decryption is unavailable for agent {candidate.agent_id} due to "
+                        f"encryption configuration: {exc}"
                     )
+                    continue
 
-            # Create a new evaluation and evaluation runs for this agent & validator
-            evaluation_bundle = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
-            if evaluation_bundle is None:
+                except AgentKeyDecryptError as exc:
+                    logger.error(f"OpenRouter secret unreadable for agent {candidate.agent_id}: {exc}")
+                    continue
+
+                else:
+                    if openrouter_secrets is not None:
+                        openrouter_config = OpenRouterRuntimeConfig(
+                            api_key=openrouter_secrets.runtime_api_key,
+                            management_key=openrouter_secrets.management_api_key,
+                            workspace_id=openrouter_secrets.workspace_id,
+                            expected_api_key_sha256=sha256_hex(openrouter_secrets.runtime_api_key),
+                        )
+
+                evaluation_bundle = await create_new_evaluation_and_evaluation_runs(
+                    candidate,
+                    validator.hotkey,
+                    candidate_batch.observed_last_served_set_id,
+                )
+                if evaluation_bundle is None:
+                    continue
+
+                evaluation, evaluation_runs = evaluation_bundle
+                agent_id = candidate.agent_id
+                break
+            else:
                 return None
-            evaluation, evaluation_runs = evaluation_bundle
     except asyncio.TimeoutError:
         # We couldn't acquire the lock, just act as though there are no evaluations available
         # The validator will automatically retry in a few seconds
