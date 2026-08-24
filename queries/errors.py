@@ -32,6 +32,27 @@ class UploadCreditAlreadyRedeemedError(Exception):
         super().__init__(f"Upload credit was already redeemed for agent {agent_id}")
 
 
+class UploadFundingConflictError(Exception):
+    """Raised when a burn reservation does not exactly match the verified funding."""
+
+
+class UploadCooldownError(Exception):
+    """Raised when a miner is still inside a competition's upload cooldown."""
+
+    def __init__(self, latest_created_at):
+        self.latest_created_at = latest_created_at
+        super().__init__("Upload cooldown has not elapsed")
+
+
+class UploadCompetitionSelectionError(Exception):
+    """Raised when an omitted upload competition cannot be resolved uniquely."""
+
+    def __init__(self, count: int):
+        self.count = count
+        message = "No competition is accepting uploads" if count == 0 else "Multiple competitions are accepting uploads"
+        super().__init__(message)
+
+
 class CompetitionNotAcceptingSubmissionsError(Exception):
     """Raised when the authoritative current competition cannot accept a new agent."""
 
