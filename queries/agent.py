@@ -679,13 +679,60 @@ async def get_agents_in_queue(conn: DatabaseConnection, queue_stage: QueueStage)
 async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
     conn: DatabaseConnection, validator_hotkey: str
 ) -> Optional[UUID]:
-    if validator_hotkey.startswith("screener-1"):
-        result = await conn.fetchrow("""
-            SELECT agent_id FROM screener_1_queue LIMIT 1
-        """)
-    elif validator_hotkey.startswith("screener-2"):
-        result = await conn.fetchrow("""
-             SELECT agent_id FROM screener_2_queue LIMIT 1
+    if validator_hotkey.startswith(("screener-1", "screener-2")):
+        set_group = (
+            EvaluationSetGroup.screener_1
+            if validator_hotkey.startswith("screener-1")
+            else EvaluationSetGroup.screener_2
+        )
+        expected_status = (
+            AgentStatus.screening_1 if set_group is EvaluationSetGroup.screener_1 else AgentStatus.screening_2
+        )
+        result = await conn.fetchrow(f"""
+            SELECT agent.agent_id
+            FROM agents agent
+            INNER JOIN competitions competition ON competition.set_id = agent.set_id
+            WHERE agent.status = '{expected_status.value}'
+              AND competition.start_date IS NOT NULL
+              AND competition.end_date IS NULL
+              AND competition.is_paused IS FALSE
+              AND competition.scoring_mode IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM evaluations evaluation
+                  WHERE evaluation.agent_id = agent.agent_id
+                    AND evaluation.set_id = agent.set_id
+                    AND evaluation.evaluation_set_group = '{set_group.value}'::evaluationsetgroup
+                    AND (
+                        SELECT CASE
+                            WHEN COUNT(*) = 0 THEN NULL
+                            WHEN EVERY(
+                                evaluation_run.status = 'finished'
+                                OR (
+                                    evaluation_run.status = 'error'
+                                    AND evaluation_run.error_code BETWEEN 1000 AND 1999
+                                )
+                            ) THEN 'success'
+                            WHEN EVERY(evaluation_run.status IN ('finished', 'error')) THEN 'failure'
+                            ELSE 'running'
+                        END
+                        FROM evaluation_runs_hydrated evaluation_run
+                        WHERE evaluation_run.evaluation_id = evaluation.evaluation_id
+                    ) IN ('success', 'running')
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM benchmark_agent_ids benchmark WHERE benchmark.agent_id = agent.agent_id
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM banned_coldkeys banned
+                  WHERE banned.miner_coldkey = agent.miner_coldkey
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM unapproved_agent_ids unapproved WHERE unapproved.agent_id = agent.agent_id
+              )
+            ORDER BY agent.created_at ASC
+            LIMIT 1
         """)
     else:
         # The query is structured to force a candidates-first execution order, avoiding a
@@ -714,6 +761,10 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
                     INNER JOIN competitions ON competitions.set_id = agents.set_id
                 WHERE
                     agents.status = '{AgentStatus.evaluating.value}'
+                    AND competitions.start_date IS NOT NULL
+                    AND competitions.end_date IS NULL
+                    AND competitions.is_paused IS FALSE
+                    AND competitions.scoring_mode IS NOT NULL
                     AND competitions.required_validator_count IS NOT NULL
                     AND NOT EXISTS (
                         SELECT
