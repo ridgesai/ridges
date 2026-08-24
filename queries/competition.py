@@ -19,6 +19,7 @@ from models.competition import (
     CompetitionState,
     CompetitionStateUpdateRequest,
     derive_competition_state,
+    exact_decimal_sum,
 )
 from models.upload import UploadCompetition
 from queries.errors import (
@@ -692,9 +693,10 @@ def _allocation_snapshot(allocations: Mapping[int, Decimal]) -> CompetitionAlloc
         CompetitionAllocation(set_id=set_id, raw_emission_weight=weight)
         for set_id, weight in sorted(allocations.items())
     ]
+    allocated_weight = exact_decimal_sum(allocations.values())
     return CompetitionAllocationSnapshot(
         allocations=sorted_allocations,
-        owner_emission_weight=Decimal("1") - sum(allocations.values(), Decimal("0")),
+        owner_emission_weight=exact_decimal_sum([Decimal("1"), allocated_weight.copy_negate()]),
     )
 
 
