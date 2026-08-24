@@ -113,15 +113,70 @@ def _print_upload_preview(*, hotkey: str, target: UploadTarget) -> None:
     )
 
 
-def _lookup_latest_agent(client: httpx.Client, *, api_url: str, hotkey: str) -> dict | None:
-    response = client.get(f"{api_url}/retrieval/agent-by-hotkey?miner_hotkey={hotkey}")
-    if response.status_code == 200 and response.json():
-        return response.json()
+def _get_upload_competitions(client: httpx.Client, *, api_url: str) -> list[dict]:
+    response = client.get(f"{api_url}/upload/competitions", timeout=UPLOAD_TIMEOUT_SECONDS)
+    if response.status_code != 200:
+        raise click.ClickException(f"Could not discover upload competitions: {response.text}")
+
+    competitions = response.json()
+    if not isinstance(competitions, list):
+        raise click.ClickException("Server returned an invalid upload competition list")
+    return competitions
+
+
+def _select_upload_competition(
+    client: httpx.Client,
+    *,
+    api_url: str,
+    requested_set_id: int | None,
+) -> int:
+    competitions = _get_upload_competitions(client, api_url=api_url)
+    choices = {competition.get("set_id"): competition for competition in competitions}
+    if requested_set_id is not None:
+        if requested_set_id not in choices:
+            raise click.ClickException(f"Competition {requested_set_id} is not accepting uploads")
+        return requested_set_id
+
+    if not competitions:
+        raise click.ClickException("No competition is accepting uploads")
+
+    if len(competitions) == 1:
+        return competitions[0]["set_id"]
+
+    rendered = ", ".join(
+        f"{competition['set_id']} ({competition.get('name') or 'unnamed'})" for competition in competitions
+    )
+    raise click.ClickException(
+        f"Multiple competitions are accepting uploads: {rendered}. Use --competition INTEGER to choose one."
+    )
+
+
+def _lookup_latest_agent(
+    client: httpx.Client,
+    *,
+    api_url: str,
+    hotkey: str,
+    set_id: int,
+) -> dict | None:
+    response = client.get(
+        f"{api_url}/retrieval/all-agents-by-hotkey?miner_hotkey={hotkey}",
+        timeout=UPLOAD_TIMEOUT_SECONDS,
+    )
+    if response.status_code == 200 and isinstance(response.json(), list):
+        matching = [agent for agent in response.json() if agent.get("set_id") == set_id]
+        if matching:
+            return max(matching, key=lambda agent: agent.get("version_num", -1))
     return None
 
 
-def _resolve_upload_name_and_version(client: httpx.Client, *, api_url: str, hotkey: str) -> tuple[str, int]:
-    latest_agent = _lookup_latest_agent(client, api_url=api_url, hotkey=hotkey)
+def _resolve_upload_name_and_version(
+    client: httpx.Client,
+    *,
+    api_url: str,
+    hotkey: str,
+    set_id: int,
+) -> tuple[str, int]:
+    latest_agent = _lookup_latest_agent(client, api_url=api_url, hotkey=hotkey, set_id=set_id)
     if latest_agent:
         return latest_agent.get("name"), latest_agent.get("version_num", -1) + 1
     return Prompt.ask("Enter a name for your miner agent"), 0
@@ -165,6 +220,7 @@ def _check_upload_allowed(
     target: UploadTarget,
     pending: PendingUpload,
     credentials: OpenRouterUploadCredentials,
+    set_id: int | None = None,
     use_credit: bool = False,
     credit_id: Optional[str] = None,
 ) -> dict:
@@ -176,6 +232,8 @@ def _check_upload_allowed(
         "openrouter_api_key": credentials.runtime_api_key,
         "openrouter_management_key": credentials.management_key,
     }
+    if set_id is not None:
+        check_payload["set_id"] = set_id
     if use_credit:
         check_payload["use_credit"] = "true"
     if credit_id is not None:
@@ -305,6 +363,7 @@ def _upload_payload(
     pending: PendingUpload,
     receipt: PaymentReceipt | CreditReceipt,
     credentials: OpenRouterUploadCredentials,
+    set_id: int | None = None,
 ) -> dict[str, str | int]:
     payload: dict[str, str | int] = {
         "public_key": pending.public_key,
@@ -314,6 +373,8 @@ def _upload_payload(
         "openrouter_api_key": credentials.runtime_api_key,
         "openrouter_management_key": credentials.management_key,
     }
+    if set_id is not None:
+        payload["set_id"] = set_id
     if isinstance(receipt, CreditReceipt):
         payload["credit_id"] = receipt.credit_id
     else:
@@ -361,9 +422,18 @@ def _handle_upload_result(response: httpx.Response, *, name: str) -> None:
     raise click.ClickException(f"Upload failed ({response.status_code}): {error}")
 
 
-def _prepare_pending_upload(*, client: httpx.Client, wallet: Wallet, target: UploadTarget) -> PendingUpload:
+def _prepare_pending_upload(
+    *,
+    client: httpx.Client,
+    wallet: Wallet,
+    target: UploadTarget,
+    set_id: int,
+) -> PendingUpload:
     name, version_num = _resolve_upload_name_and_version(
-        client, api_url=target.api_url, hotkey=wallet.hotkey.ss58_address
+        client,
+        api_url=target.api_url,
+        hotkey=wallet.hotkey.ss58_address,
+        set_id=set_id,
     )
     return _build_pending_upload(
         wallet=wallet,
@@ -380,6 +450,7 @@ def _execute_upload(
     target: UploadTarget,
     credentials: OpenRouterUploadCredentials,
     receipt: PaymentReceipt | CreditReceipt,
+    set_id: int | None = None,
     pending: Optional[PendingUpload] = None,
     run_check: bool = True,
     emit_ticket_on_failure: bool = False,
@@ -402,10 +473,12 @@ def _execute_upload(
         If True validate if upload is allowed, by default True
     """
     if pending is None:
-        pending = _prepare_pending_upload(client=client, wallet=wallet, target=target)
+        if set_id is None:
+            raise click.ClickException("No upload competition was selected")
+        pending = _prepare_pending_upload(client=client, wallet=wallet, target=target, set_id=set_id)
     if run_check:
-        _check_upload_allowed(client, target=target, pending=pending, credentials=credentials)
-    payload = _upload_payload(pending=pending, receipt=receipt, credentials=credentials)
+        _check_upload_allowed(client, target=target, pending=pending, credentials=credentials, set_id=set_id)
+    payload = _upload_payload(pending=pending, receipt=receipt, credentials=credentials, set_id=set_id)
     try:
         response = _submit_upload(client, target=target, payload=payload)
         _handle_upload_result(response, name=pending.name)
@@ -467,6 +540,7 @@ def _resolve_wallet_and_target(
 @click.option("--file", help="Path to agent.py file")
 @click.option("--coldkey-name", help="Coldkey name")
 @click.option("--hotkey-name", help="Hotkey name")
+@click.option("--competition", type=int, help="Competition set ID to enter.")
 @click.option("--use-credit", is_flag=True, help="Use a one-shot upload credit instead of burning alpha.")
 @click.option("--credit-id", help="Specific upload credit ID to retry. Requires --use-credit.")
 @click.option(
@@ -483,6 +557,7 @@ def upload(
     file: Optional[str],
     coldkey_name: Optional[str],
     hotkey_name: Optional[str],
+    competition: Optional[int],
     use_credit: bool,
     credit_id: Optional[str],
     openrouter_api_key: Optional[str],
@@ -493,23 +568,40 @@ def upload(
         raise click.ClickException("--credit-id requires --use-credit")
 
     wallet, target = _resolve_wallet_and_target(ctx, file=file, coldkey_name=coldkey_name, hotkey_name=hotkey_name)
-    credentials = _resolve_openrouter_upload_credentials(
-        openrouter_api_key=openrouter_api_key,
-        openrouter_management_key=openrouter_management_key,
-    )
-    _print_upload_preview(hotkey=wallet.hotkey.ss58_address, target=target)
-
     try:
         with httpx.Client() as client:
-            pending = _prepare_pending_upload(client=client, wallet=wallet, target=target)
+            selected_set_id = _select_upload_competition(
+                client,
+                api_url=target.api_url,
+                requested_set_id=competition,
+            )
+            pending = _prepare_pending_upload(
+                client=client,
+                wallet=wallet,
+                target=target,
+                set_id=selected_set_id,
+            )
+            credentials = _resolve_openrouter_upload_credentials(
+                openrouter_api_key=openrouter_api_key,
+                openrouter_management_key=openrouter_management_key,
+            )
+            _print_upload_preview(hotkey=wallet.hotkey.ss58_address, target=target)
             payment_method_details = _check_upload_allowed(
                 client,
                 target=target,
                 pending=pending,
                 credentials=credentials,
+                set_id=selected_set_id,
                 use_credit=use_credit,
                 credit_id=credit_id,
             )
+            preflight_set_id = payment_method_details.get("set_id")
+            if type(preflight_set_id) is not int:
+                raise click.ClickException("Server did not return the selected competition; no payment was attempted")
+
+            if preflight_set_id != selected_set_id:
+                raise click.ClickException("Server changed the selected competition; no payment was attempted")
+
             if use_credit:
                 if payment_method_details.get("payment_method") != "credit" or not payment_method_details.get(
                     "credit_id"
@@ -532,6 +624,7 @@ def upload(
                 target=target,
                 credentials=credentials,
                 receipt=receipt,
+                set_id=preflight_set_id,
                 pending=pending,
                 run_check=False,
                 emit_ticket_on_failure=True,
@@ -558,6 +651,7 @@ def upload(
 @click.option("--file", help="Path to agent.py file")
 @click.option("--coldkey-name", help="Coldkey name")
 @click.option("--hotkey-name", help="Hotkey name")
+@click.option("--competition", type=int, help="Competition set ID to enter.")
 @click.option(
     "--openrouter-api-key",
     help="OpenRouter runtime API key. Falls back to RIDGES_OPENROUTER_API_KEY or an interactive prompt.",
@@ -572,17 +666,12 @@ def team_upload(
     file: Optional[str],
     coldkey_name: Optional[str],
     hotkey_name: Optional[str],
+    competition: Optional[int],
     openrouter_api_key: Optional[str],
     openrouter_management_key: Optional[str],
 ):
     """Upload an agent as the platform owner."""
     wallet, target = _resolve_wallet_and_target(ctx, file=file, coldkey_name=coldkey_name, hotkey_name=hotkey_name)
-    credentials = _resolve_openrouter_upload_credentials(
-        openrouter_api_key=openrouter_api_key,
-        openrouter_management_key=openrouter_management_key,
-    )
-    _print_upload_preview(hotkey=wallet.hotkey.ss58_address, target=target)
-
     # Create a random Payment Receipt that will be used to generate the Agent ID
     receipt = PaymentReceipt(
         block_hash=_uuid.uuid4().hex,
@@ -591,8 +680,24 @@ def team_upload(
 
     try:
         with httpx.Client() as client:
+            selected_set_id = _select_upload_competition(
+                client,
+                api_url=target.api_url,
+                requested_set_id=competition,
+            )
+            credentials = _resolve_openrouter_upload_credentials(
+                openrouter_api_key=openrouter_api_key,
+                openrouter_management_key=openrouter_management_key,
+            )
+            _print_upload_preview(hotkey=wallet.hotkey.ss58_address, target=target)
             _execute_upload(
-                client, wallet=wallet, target=target, credentials=credentials, receipt=receipt, run_check=False
+                client,
+                wallet=wallet,
+                target=target,
+                credentials=credentials,
+                receipt=receipt,
+                set_id=selected_set_id,
+                run_check=False,
             )
 
     except click.ClickException:
@@ -614,6 +719,7 @@ def team_upload(
 @click.option("--file", help="Path to agent.py file")
 @click.option("--coldkey-name", help="Coldkey name")
 @click.option("--hotkey-name", help="Hotkey name")
+@click.option("--competition", type=int, help="Competition set ID to enter.")
 @click.option(
     "--openrouter-api-key",
     help="OpenRouter runtime API key. Falls back to RIDGES_OPENROUTER_API_KEY or an interactive prompt.",
@@ -635,6 +741,7 @@ def resume_upload(
     file: Optional[str],
     coldkey_name: Optional[str],
     hotkey_name: Optional[str],
+    competition: Optional[int],
     openrouter_api_key: Optional[str],
     openrouter_management_key: Optional[str],
     quote_id: Optional[str],
@@ -643,34 +750,46 @@ def resume_upload(
 ):
     """Resume a failed upload using an existing payment receipt."""
     wallet, target = _resolve_wallet_and_target(ctx, file=file, coldkey_name=coldkey_name, hotkey_name=hotkey_name)
-    credentials = _resolve_openrouter_upload_credentials(
-        openrouter_api_key=openrouter_api_key,
-        openrouter_management_key=openrouter_management_key,
-    )
-    _print_upload_preview(hotkey=wallet.hotkey.ss58_address, target=target)
-
-    quote_id = quote_id or Prompt.ask("Payment Quote ID")
-    payment_block_hash = payment_block_hash or Prompt.ask("Payment Block Hash")
-    if payment_extrinsic_index is None:
-        try:
-            payment_extrinsic_index = int(Prompt.ask("Payment Extrinsic Index"))
-        except ValueError:
-            raise click.ClickException("Payment Extrinsic Index must be an integer") from None
-
-    receipt = PaymentReceipt(
-        block_hash=payment_block_hash,
-        extrinsic_index=payment_extrinsic_index,
-        quote_id=quote_id,
-    )
-
     try:
         with httpx.Client() as client:
+            selected_set_id = _select_upload_competition(
+                client,
+                api_url=target.api_url,
+                requested_set_id=competition,
+            )
+            pending = _prepare_pending_upload(
+                client=client,
+                wallet=wallet,
+                target=target,
+                set_id=selected_set_id,
+            )
+            credentials = _resolve_openrouter_upload_credentials(
+                openrouter_api_key=openrouter_api_key,
+                openrouter_management_key=openrouter_management_key,
+            )
+            _print_upload_preview(hotkey=wallet.hotkey.ss58_address, target=target)
+
+            quote_id = quote_id or Prompt.ask("Payment Quote ID")
+            payment_block_hash = payment_block_hash or Prompt.ask("Payment Block Hash")
+            if payment_extrinsic_index is None:
+                try:
+                    payment_extrinsic_index = int(Prompt.ask("Payment Extrinsic Index"))
+                except ValueError:
+                    raise click.ClickException("Payment Extrinsic Index must be an integer") from None
+
+            receipt = PaymentReceipt(
+                block_hash=payment_block_hash,
+                extrinsic_index=payment_extrinsic_index,
+                quote_id=quote_id,
+            )
             _execute_upload(
                 client,
                 wallet=wallet,
                 target=target,
                 credentials=credentials,
                 receipt=receipt,
+                set_id=selected_set_id,
+                pending=pending,
                 run_check=False,
                 emit_ticket_on_failure=True,
             )
