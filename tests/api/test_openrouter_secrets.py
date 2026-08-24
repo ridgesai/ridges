@@ -21,7 +21,11 @@ from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetGroup
-from queries.agent import AgentOpenRouterSecrets
+from queries.agent import (
+    AgentOpenRouterSecrets,
+    EvaluationCandidate,
+    EvaluationCandidateBatch,
+)
 from utils.agent_secrets import AgentKeyDecryptError, AgentKeyEncryptionConfigError, decrypt_agent_secret
 
 
@@ -513,8 +517,10 @@ def _patch_validator_dependencies(
         _make_evaluation_run(evaluation.evaluation_id, problem_name="problem-2"),
     ]
 
-    async def fake_get_next_agent_id(_hotkey: str):
-        return agent_id
+    candidate = EvaluationCandidate(agent_id=agent_id, set_id=1)
+
+    async def fake_get_candidates(_hotkey: str):
+        return EvaluationCandidateBatch(observed_last_served_set_id=None, candidates=(candidate,))
 
     async def fake_get_agent_by_id(_agent_id):
         return _make_agent(agent_id)
@@ -522,9 +528,9 @@ def _patch_validator_dependencies(
     async def fake_download_text(_key: str):
         return "print('agent')\n"
 
-    async def fake_create_bundle(_agent_id, _validator_hotkey):
+    async def fake_create_bundle(_candidate, _validator_hotkey, _observed_last_served_set_id):
         if created_evaluations is not None:
-            created_evaluations.append((_agent_id, _validator_hotkey))
+            created_evaluations.append((_candidate.agent_id, _validator_hotkey))
         return evaluation, evaluation_runs
 
     async def fake_generate_upload_url(_s3_key: str):
@@ -553,8 +559,8 @@ def _patch_validator_dependencies(
     monkeypatch.setattr(validator_endpoint, "record_validator_heartbeat", lambda _validator: None)
     monkeypatch.setattr(
         validator_endpoint,
-        "get_next_agent_id_awaiting_evaluation_for_validator_hotkey",
-        fake_get_next_agent_id,
+        "get_evaluation_candidates_for_validator_hotkey",
+        fake_get_candidates,
     )
     monkeypatch.setattr(validator_endpoint, "get_agent_by_id", fake_get_agent_by_id)
     monkeypatch.setattr(validator_endpoint, "download_text_file_from_s3", fake_download_text)
@@ -682,3 +688,88 @@ async def test_validator_request_evaluation_skips_assignment_when_secret_is_unre
     assert created_evaluations == []
     assert updated_runs == []
     assert handled_evaluations == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "unavailable_source",
+    ["missing_agent", "s3", "secret_ciphertext", "secret_config"],
+)
+async def test_validator_request_evaluation_falls_through_to_next_competition(
+    monkeypatch,
+    unavailable_source: str,
+) -> None:
+    first_agent_id = uuid4()
+    second_agent_id = uuid4()
+    validator_hotkey = "screener-1-test"
+    batch = EvaluationCandidateBatch(
+        observed_last_served_set_id=12,
+        candidates=(
+            EvaluationCandidate(agent_id=first_agent_id, set_id=20),
+            EvaluationCandidate(agent_id=second_agent_id, set_id=30),
+        ),
+    )
+    evaluation = _make_evaluation(second_agent_id, validator_hotkey).model_copy(update={"set_id": 30})
+    evaluation_runs = [_make_evaluation_run(evaluation.evaluation_id)]
+    issued: list[tuple[EvaluationCandidate, int | None]] = []
+
+    async def fake_flags(_flags):
+        return {
+            InternalFlagName.VALIDATORS_PAUSED: False,
+            InternalFlagName.BLACKLISTED_VALIDATORS: [],
+        }
+
+    async def fake_get_candidates(_hotkey: str):
+        return batch
+
+    async def fake_get_agent(candidate_agent_id):
+        if candidate_agent_id == first_agent_id and unavailable_source == "missing_agent":
+            return None
+        return _make_agent(candidate_agent_id)
+
+    async def fake_download(key: str):
+        if key.startswith(str(first_agent_id)) and unavailable_source == "s3":
+            raise RuntimeError("object unavailable")
+        return "print('agent')\n"
+
+    async def fake_get_secrets(candidate_agent_id):
+        if candidate_agent_id == first_agent_id:
+            if unavailable_source == "secret_ciphertext":
+                raise AgentKeyDecryptError("bad ciphertext")
+            if unavailable_source == "secret_config":
+                raise AgentKeyEncryptionConfigError("missing key")
+        return None
+
+    async def fake_issue(candidate, _hotkey, observed_cursor):
+        issued.append((candidate, observed_cursor))
+        return evaluation, evaluation_runs
+
+    async def fake_upload_url(_key: str):
+        return "https://example.com/upload"
+
+    monkeypatch.setattr(validator_endpoint, "get_internal_flags_parsed", fake_flags)
+    monkeypatch.setattr(validator_endpoint, "record_validator_heartbeat", lambda _validator: None)
+    monkeypatch.setattr(validator_endpoint, "get_evaluation_candidates_for_validator_hotkey", fake_get_candidates)
+    monkeypatch.setattr(validator_endpoint, "get_agent_by_id", fake_get_agent)
+    monkeypatch.setattr(validator_endpoint, "download_text_file_from_s3", fake_download)
+    monkeypatch.setattr(validator_endpoint, "get_openrouter_secrets_for_agent_id", fake_get_secrets)
+    monkeypatch.setattr(validator_endpoint, "create_new_evaluation_and_evaluation_runs", fake_issue)
+    monkeypatch.setattr(validator_endpoint, "generate_presigned_upload_url", fake_upload_url)
+    monkeypatch.setattr(validator_endpoint, "read_execution_spec_metadata", lambda *_args, **_kwargs: None)
+
+    validator = validator_endpoint.Validator(
+        session_id=uuid4(),
+        name="validator",
+        hotkey=validator_hotkey,
+        time_connected=datetime.now(timezone.utc),
+        ip_address="127.0.0.1",
+    )
+    response = await validator_endpoint.validator_request_evaluation(
+        ValidatorRequestEvaluationRequest(),
+        validator=validator,
+    )
+
+    assert response is not None
+    assert validator.current_agent is not None
+    assert validator.current_agent.agent_id == second_agent_id
+    assert issued == [(batch.candidates[1], 12)]
