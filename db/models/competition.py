@@ -1,8 +1,11 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
+from uuid import UUID
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db.base import Base, CreatedAtMixin
@@ -102,5 +105,35 @@ class Competition(Base, CreatedAtMixin):
             "OR (submissions_closed_at IS NOT NULL AND emissions_end_at IS NOT NULL "
             "AND emissions_end_at >= submissions_closed_at)",
             name="ck_competitions_submission_emissions_window",
+        ),
+    )
+
+
+class CompetitionAdminEvent(Base, CreatedAtMixin):
+    __tablename__ = "competition_admin_events"
+
+    event_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sa.text("gen_random_uuid()"),
+    )
+    operation: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    actor: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    reason: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    before_state: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    after_state: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "operation IN ('state', 'policy', 'allocation')",
+            name="ck_competition_admin_events_operation",
+        ),
+        sa.CheckConstraint(
+            "length(btrim(actor)) > 0",
+            name="ck_competition_admin_events_actor_nonblank",
+        ),
+        sa.CheckConstraint(
+            "length(btrim(reason)) > 0",
+            name="ck_competition_admin_events_reason_nonblank",
         ),
     )
