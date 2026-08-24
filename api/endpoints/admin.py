@@ -10,8 +10,21 @@ import api.config as config
 from api.endpoints import validator as validator_endpoint
 from db.models import InternalFlagName
 from models.banned_coldkey import BannedColdkey
+from models.competition import (
+    CompetitionAdminSnapshot,
+    CompetitionAllocationSnapshot,
+    CompetitionAllocationUpdateRequest,
+    CompetitionPolicyUpdateRequest,
+    CompetitionStateUpdateRequest,
+)
 from models.upload_credit import UploadCredit
 from queries.banned_coldkey import ban_coldkey, unban_coldkey
+from queries.competition import (
+    replace_competition_allocations,
+    replace_competition_policy,
+    update_competition_state,
+)
+from queries.errors import CompetitionAdminConflictError, CompetitionNotFoundError
 from queries.internal_flag import add_hotkey_to_blacklist, remove_hotkey_from_blacklist, set_internal_flag
 from queries.upload_credit import grant_upload_credit
 from utils.debug_lock import DebugLock
@@ -19,6 +32,7 @@ from utils.ttl import clear_all_ttl_caches
 
 router = APIRouter(tags=["admin"])
 admin_bearer = HTTPBearer(auto_error=False)
+COMPETITION_ADMIN_ACTOR = "coldkey-ban-admin-api-key"
 
 
 class ColdkeyBanRequest(BaseModel):
@@ -38,7 +52,7 @@ class UploadCreditGrantRequest(BaseModel):
 
 def require_coldkey_ban_admin(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(admin_bearer)],
-) -> None:
+) -> str:
     expected = config.COLDKEY_BAN_ADMIN_API_KEY
     if not expected:
         raise HTTPException(status_code=503, detail="Admin API is not configured")
@@ -48,6 +62,7 @@ def require_coldkey_ban_admin(
             detail="Invalid admin credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    return COMPETITION_ADMIN_ACTOR
 
 
 def validate_coldkey(miner_coldkey: str) -> None:
@@ -62,6 +77,51 @@ def validate_hotkey(miner_hotkey: str) -> None:
         Keypair(ss58_address=miner_hotkey)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid hotkey SS58 address") from None
+
+
+def _raise_competition_admin_error(error: Exception) -> None:
+    if isinstance(error, CompetitionNotFoundError):
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+    if isinstance(error, CompetitionAdminConflictError):
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+    raise error
+
+
+@router.put("/competitions/{set_id}/state", response_model=CompetitionAdminSnapshot)
+async def put_competition_state(
+    set_id: int,
+    request: CompetitionStateUpdateRequest,
+    actor: Annotated[str, Depends(require_coldkey_ban_admin)],
+) -> CompetitionAdminSnapshot:
+    try:
+        return await update_competition_state(set_id=set_id, target=request, actor=actor)
+    except (CompetitionNotFoundError, CompetitionAdminConflictError) as error:
+        _raise_competition_admin_error(error)
+
+
+@router.put("/competitions/{set_id}/policy", response_model=CompetitionAdminSnapshot)
+async def put_competition_policy(
+    set_id: int,
+    request: CompetitionPolicyUpdateRequest,
+    actor: Annotated[str, Depends(require_coldkey_ban_admin)],
+) -> CompetitionAdminSnapshot:
+    try:
+        return await replace_competition_policy(set_id=set_id, target=request, actor=actor)
+    except (CompetitionNotFoundError, CompetitionAdminConflictError) as error:
+        _raise_competition_admin_error(error)
+
+
+@router.put("/competition-allocations", response_model=CompetitionAllocationSnapshot)
+async def put_competition_allocations(
+    request: CompetitionAllocationUpdateRequest,
+    actor: Annotated[str, Depends(require_coldkey_ban_admin)],
+) -> CompetitionAllocationSnapshot:
+    try:
+        return await replace_competition_allocations(target=request, actor=actor)
+    except CompetitionAdminConflictError as error:
+        _raise_competition_admin_error(error)
 
 
 @router.post(
