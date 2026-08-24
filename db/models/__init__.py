@@ -12,7 +12,7 @@ from db.models.approval import (
     ApprovalJob,
     ApprovalJobRound,
 )
-from db.models.competition import Competition, CompetitionAdminEvent
+from db.models.competition import Competition, CompetitionAdminEvent, CompetitionWorkCursor
 from db.models.evaluation import ApprovedAgent, Evaluation
 from db.models.evaluation_run import EvaluationRun, EvaluationRunLog
 from db.models.evaluation_set import EvaluationSet
@@ -55,4 +55,5 @@ __all__ = [
     "UploadPaymentQuote",
     "Competition",
     "CompetitionAdminEvent",
+    "CompetitionWorkCursor",
 ]
