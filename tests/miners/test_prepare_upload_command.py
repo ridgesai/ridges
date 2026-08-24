@@ -349,3 +349,14 @@ def test_upload_failure_with_credit_receipt_prints_credit_ticket(monkeypatch):
     assert ticket.funding == FUNDING_CREDIT
     assert ticket.credit_id == CREDIT_ID
     assert verify_ticket_signature(ticket)
+
+
+def test_prepare_upload_remains_competition_free() -> None:
+    result = CliRunner().invoke(
+        prepare_module.prepare_upload,
+        ["--competition", "7"],
+        obj={"url": None},
+    )
+
+    assert result.exit_code != 0
+    assert "No such option: --competition" in result.output

@@ -120,6 +120,7 @@ def chain_and_s3_mocks(monkeypatch):
         ),
     )
     monkeypatch.setattr(upload_module.subtensor_client, "get_hotkey_owner", AsyncMock(return_value=FAKE_COLDKEY))
+    monkeypatch.setattr(upload_module, "upload_text_file_to_s3", AsyncMock())
     monkeypatch.setattr("queries.agent.upload_text_file_to_s3", AsyncMock())
     validated = MagicMock()
     validated.runtime_api_key = "fake-runtime-key"
@@ -359,7 +360,12 @@ async def _check(ticket_blob: str):
     return await upload_module.check_ticket(TicketCheckRequest(ticket=ticket_blob))
 
 
-async def test_check_valid_burn_ticket():
+async def test_check_valid_burn_ticket(monkeypatch):
+    monkeypatch.setattr(
+        upload_module,
+        "_resolve_upload_set_id",
+        AsyncMock(side_effect=AssertionError("ticket-check must remain competition-free")),
+    )
     quote_id = await _insert_quote()
     result = await _check(_burn_ticket_blob(quote_id))
     assert result.valid is True
