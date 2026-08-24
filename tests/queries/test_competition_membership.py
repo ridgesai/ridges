@@ -12,6 +12,7 @@ import utils.database as _db
 from models.agent import AgentCreate
 from models.competition import CompetitionPolicy, CompetitionState
 from queries.agent import (
+    EvaluationCandidate,
     create_agent,
     find_duplicate_source_agent_in_current_set,
     get_latest_agent_created_at_for_miner_hotkey_in_current_competition,
@@ -34,6 +35,10 @@ async def clean_tables(postgres_db):
         await conn.execute(
             "TRUNCATE evaluation_run_attempts, evaluation_runs, evaluations, evaluation_sets, competitions, agents "
             "RESTART IDENTITY CASCADE"
+        )
+        await conn.execute(
+            "UPDATE competition_work_cursors SET last_served_set_id = NULL "
+            "WHERE family IN ('screener_1', 'screener_2', 'validator')"
         )
     yield
     async with _db.pool.acquire() as conn:
@@ -423,22 +428,47 @@ async def test_evaluation_issuance_uses_agent_membership_and_rejects_conflicts()
         conflicting_agent = await _insert_agent_row(conn, set_id=10, miner_hotkey="conflicting", status="evaluating")
         null_member = await _insert_agent_row(conn, set_id=None, miner_hotkey="legacy")
 
-    evaluation, runs = await create_new_evaluation_and_evaluation_runs(active_agent, "validator-hotkey")
+    evaluation, runs = await create_new_evaluation_and_evaluation_runs(
+        EvaluationCandidate(agent_id=active_agent, set_id=10),
+        "validator-hotkey",
+        None,
+    )
 
     assert evaluation.set_id == 10
     assert [run.problem_name for run in runs] == ["active-problem"]
     matching_override = await create_new_evaluation_and_evaluation_runs(
-        matching_agent,
+        EvaluationCandidate(agent_id=matching_agent, set_id=10),
         "matching-validator-hotkey",
-        set_id=10,
+        10,
     )
     assert matching_override is not None
     assert matching_override[0].set_id == 10
 
+    async with _db.pool.acquire() as conn:
+        await conn.execute("UPDATE competitions SET start_date = NOW() WHERE set_id = 99")
+
     with pytest.raises(EvaluationSetMembershipMismatchError):
-        await create_new_evaluation_and_evaluation_runs(conflicting_agent, "validator-hotkey", set_id=99)
-    assert await create_new_evaluation_and_evaluation_runs(null_member, "validator-hotkey") is None
-    assert await create_new_evaluation_and_evaluation_runs(uuid4(), "validator-hotkey") is None
+        await create_new_evaluation_and_evaluation_runs(
+            EvaluationCandidate(agent_id=conflicting_agent, set_id=99),
+            "validator-hotkey",
+            10,
+        )
+    assert (
+        await create_new_evaluation_and_evaluation_runs(
+            EvaluationCandidate(agent_id=null_member, set_id=10),
+            "validator-hotkey",
+            10,
+        )
+        is None
+    )
+    assert (
+        await create_new_evaluation_and_evaluation_runs(
+            EvaluationCandidate(agent_id=uuid4(), set_id=10),
+            "validator-hotkey",
+            10,
+        )
+        is None
+    )
 
     async with _db.pool.acquire() as conn:
         assert await conn.fetchval("SELECT count(*) FROM evaluations WHERE agent_id = $1", conflicting_agent) == 0
