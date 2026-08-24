@@ -137,3 +137,17 @@ class CompetitionAdminEvent(Base, CreatedAtMixin):
             name="ck_competition_admin_events_reason_nonblank",
         ),
     )
+
+
+class CompetitionWorkCursor(Base):
+    __tablename__ = "competition_work_cursors"
+
+    family: Mapped[str] = mapped_column(sa.Text, primary_key=True)
+    last_served_set_id: Mapped[Optional[int]] = mapped_column(sa.Integer)
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "family IN ('screener_1', 'screener_2', 'validator', 'pre_screening_judge', 'approval_judge')",
+            name="ck_competition_work_cursors_family",
+        ),
+    )
