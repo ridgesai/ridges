@@ -30,6 +30,19 @@ class AgentCheckResponse(AgentUploadResponse):
     expires_at: Optional[datetime] = Field(None, description="Latest on-chain burn timestamp accepted for this quote")
 
 
+class AgentDirectCheckResponse(AgentCheckResponse):
+    """Direct upload preflight response with its authoritative competition."""
+
+    set_id: int = Field(..., description="Competition selected for direct agent admission")
+
+
+class UploadCompetition(BaseModel):
+    """Narrow competition choice exposed only for uploads."""
+
+    set_id: int
+    name: Optional[str] = None
+
+
 class ErrorResponse(BaseModel):
     """Error response model"""
 
