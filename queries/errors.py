@@ -61,3 +61,15 @@ class AgentCompetitionMembershipMismatchError(Exception):
 
 class EvaluationSetMembershipMismatchError(AgentCompetitionMembershipMismatchError):
     """Raised when evaluation issuance tries to override an agent's competition."""
+
+
+class CompetitionNotFoundError(Exception):
+    """Raised when an admin mutation targets a competition that does not exist."""
+
+    def __init__(self, set_id: int):
+        self.set_id = set_id
+        super().__init__(f"Competition {set_id} does not exist")
+
+
+class CompetitionAdminConflictError(Exception):
+    """Raised when a requested competition target is invalid for current state."""
