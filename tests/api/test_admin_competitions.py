@@ -373,12 +373,24 @@ async def test_allocation_rejects_stale_catalog_and_model_rejects_invalid_vector
             {"set_id": 50, "raw_emission_weight": Decimal("0.6")},
             {"set_id": 51, "raw_emission_weight": Decimal("0.5")},
         ],
+        [
+            {"set_id": 50, "raw_emission_weight": Decimal("1")},
+            {"set_id": 51, "raw_emission_weight": Decimal("1e-400")},
+        ],
         [{"set_id": 50, "raw_emission_weight": Decimal("NaN")}],
         [{"set_id": 50, "raw_emission_weight": Decimal("-0.1")}],
     ]
     for allocations in invalid_vectors:
         with pytest.raises(ValidationError):
             CompetitionAllocationUpdateRequest(allocations=allocations, reason="invalid")
+
+
+def test_allocation_snapshot_preserves_a_microscopic_owner_remainder() -> None:
+    main_share = Decimal("0." + ("9" * 400))
+
+    snapshot = competition_queries._allocation_snapshot({1: main_share})
+
+    assert snapshot.owner_emission_weight == Decimal("1e-400")
 
 
 async def test_audit_failure_rolls_back_state_change(clean_competitions, monkeypatch) -> None:

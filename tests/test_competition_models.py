@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal
 from math import inf, nan
 
 import pytest
 from pydantic import ValidationError
 
-from models.competition import CompetitionPolicy, CompetitionState, derive_competition_state
+from models.competition import (
+    CompetitionAllocationUpdateRequest,
+    CompetitionPolicy,
+    CompetitionState,
+    derive_competition_state,
+    exact_decimal_sum,
+)
 
 NOW = datetime(2026, 8, 20, tzinfo=timezone.utc)
 
@@ -129,3 +136,19 @@ def test_policy_accepts_closed_threshold_boundaries() -> None:
 def test_policy_rejects_blank_hardcoding_policy_version(value: str) -> None:
     with pytest.raises(ValidationError):
         CompetitionPolicy.model_validate({**VALID_POLICY, "hardcoding_policy_version": value})
+
+
+def test_allocation_model_rejects_a_microscopically_overallocated_vector() -> None:
+    with pytest.raises(ValidationError, match="sum to at most 1"):
+        CompetitionAllocationUpdateRequest(
+            allocations=[
+                {"set_id": 1, "raw_emission_weight": Decimal("1")},
+                {"set_id": 2, "raw_emission_weight": Decimal("1e-400")},
+            ],
+            reason="invalid",
+        )
+
+
+def test_exact_decimal_sum_preserves_empty_and_microscopic_values() -> None:
+    assert exact_decimal_sum([]) == Decimal("0")
+    assert exact_decimal_sum([Decimal("1"), Decimal("1e-400")]) > 1
