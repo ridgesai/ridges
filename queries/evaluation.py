@@ -9,6 +9,7 @@ from models.agent import AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus, HydratedEvaluation
 from models.evaluation_run import EvaluationRun, EvaluationRunErrorCode, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetGroup
+from queries.agent import EvaluationCandidate
 from queries.errors import EvaluationSetMembershipMismatchError
 from queries.evaluation_run import create_evaluation_runs, get_all_evaluation_runs_in_evaluation_id
 from queries.evaluation_set import get_all_evaluation_set_problems_in_set_group_in_set_id
@@ -78,7 +79,7 @@ async def _lock_processable_competition(conn: DatabaseConnection, set_id: int):
         SELECT start_date, end_date, is_paused, scoring_mode, required_validator_count
         FROM competitions
         WHERE set_id = $1
-        FOR SHARE
+        FOR SHARE SKIP LOCKED
         """,
         set_id,
     )
@@ -91,6 +92,29 @@ async def _lock_processable_competition(conn: DatabaseConnection, set_id: int):
     ):
         return None
     return row
+
+
+async def _lock_matching_work_cursor(
+    conn: DatabaseConnection,
+    *,
+    family: EvaluationSetGroup,
+    observed_last_served_set_id: int | None,
+) -> bool:
+    row = await conn.fetchrow(
+        """
+        SELECT
+            last_served_set_id,
+            last_served_set_id IS NOT DISTINCT FROM $2::integer AS observation_matches
+        FROM competition_work_cursors
+        WHERE family = $1
+        FOR UPDATE
+        """,
+        family.value,
+        observed_last_served_set_id,
+    )
+    if row is None:
+        raise RuntimeError(f"Missing competition work cursor for {family.value}")
+    return row["observation_matches"]
 
 
 def _required_agent_status(set_group: EvaluationSetGroup) -> AgentStatus:
@@ -156,64 +180,63 @@ async def _evaluation_claim_stats(
 
 @db_operation
 async def create_new_evaluation_and_evaluation_runs(
-    conn: DatabaseConnection, agent_id: UUID, validator_hotkey: str, set_id: int = None
+    conn: DatabaseConnection,
+    candidate: EvaluationCandidate,
+    validator_hotkey: str,
+    observed_last_served_set_id: int | None,
 ) -> Optional[Tuple[Evaluation, List[EvaluationRun]]]:
     async with conn.conn.transaction():
-        agent_set_id = await conn.fetchval(
-            "SELECT set_id FROM agents WHERE agent_id = $1",
-            agent_id,
-        )
-        if agent_set_id is None:
-            logger.info(
-                f"Skipping evaluation issuance for agent {agent_id}: agent is missing or has no competition membership"
-            )
-            return None
-
-        if set_id is not None and set_id != agent_set_id:
-            raise EvaluationSetMembershipMismatchError(
-                agent_id=agent_id,
-                agent_set_id=agent_set_id,
-                requested_set_id=set_id,
-            )
-        set_id = agent_set_id
-
-        competition = await _lock_processable_competition(conn, set_id)
-        if competition is None:
-            logger.info(f"Skipping evaluation issuance for agent {agent_id}: competition {set_id} is not processable")
-            return None
-
         set_group = EvaluationSetGroup.from_validator_hotkey(validator_hotkey)
+        if not await _lock_matching_work_cursor(
+            conn,
+            family=set_group,
+            observed_last_served_set_id=observed_last_served_set_id,
+        ):
+            logger.info(f"Skipping stale {set_group.value} candidate {candidate.agent_id}: work cursor changed")
+            return None
+
+        competition = await _lock_processable_competition(conn, candidate.set_id)
+        if competition is None:
+            logger.info(
+                f"Skipping evaluation issuance for agent {candidate.agent_id}: "
+                f"competition {candidate.set_id} is locked or not processable"
+            )
+            return None
+
         agent = await conn.fetchrow(
             """
             SELECT set_id, status::text AS status
             FROM agents
             WHERE agent_id = $1
-            FOR UPDATE
+            FOR UPDATE SKIP LOCKED
             """,
-            agent_id,
+            candidate.agent_id,
         )
         if agent is None or agent["set_id"] is None:
             logger.info(
-                f"Skipping evaluation issuance for agent {agent_id}: agent is missing or has no competition membership"
+                f"Skipping evaluation issuance for agent {candidate.agent_id}: "
+                "agent is locked, missing, or has no competition membership"
             )
             return None
-        if agent["set_id"] != set_id:
+
+        if agent["set_id"] != candidate.set_id:
             raise EvaluationSetMembershipMismatchError(
-                agent_id=agent_id,
+                agent_id=candidate.agent_id,
                 agent_set_id=agent["set_id"],
-                requested_set_id=set_id,
+                requested_set_id=candidate.set_id,
             )
+
         if agent["status"] != _required_agent_status(set_group).value:
             logger.info(
-                f"Skipping evaluation issuance for agent {agent_id}: status {agent['status']} "
+                f"Skipping evaluation issuance for agent {candidate.agent_id}: status {agent['status']} "
                 f"is not eligible for {set_group.value}"
             )
             return None
 
         claim_stats = await _evaluation_claim_stats(
             conn,
-            agent_id=agent_id,
-            set_id=set_id,
+            agent_id=candidate.agent_id,
+            set_id=candidate.set_id,
             set_group=set_group,
             validator_hotkey=validator_hotkey,
         )
@@ -222,32 +245,53 @@ async def create_new_evaluation_and_evaluation_runs(
             or claim_stats["active_count"] > 0
             and set_group is not EvaluationSetGroup.validator
         ):
-            logger.info(f"Skipping evaluation issuance for agent {agent_id}: {set_group.value} already has active work")
+            logger.info(
+                f"Skipping evaluation issuance for agent {candidate.agent_id}: "
+                f"{set_group.value} already has active work"
+            )
             return None
+
         if (
             set_group is EvaluationSetGroup.validator
             and claim_stats["active_count"] >= competition["required_validator_count"]
         ):
-            logger.info(f"Skipping evaluation issuance for agent {agent_id}: validator target is already satisfied")
-            return None
-
-        logger.debug(
-            f"Creating new evaluation and evaluation runs for agent {agent_id} with validator hotkey "
-            f"{validator_hotkey} and set ID {set_id}"
-        )
-
-        evaluation_set_problems = await get_all_evaluation_set_problems_in_set_group_in_set_id(set_id, set_group)
-        if not evaluation_set_problems:
             logger.info(
-                f"Skipping evaluation issuance for agent {agent_id}: set_id {set_id} has no tasks for {set_group.value}"
+                f"Skipping evaluation issuance for agent {candidate.agent_id}: validator target is already satisfied"
             )
             return None
 
-        logger.debug(f"# of problems in set ID {set_id}, set group {set_group.value}: {len(evaluation_set_problems)}")
+        logger.debug(
+            f"Creating new evaluation and evaluation runs for agent {candidate.agent_id} with validator hotkey "
+            f"{validator_hotkey} and set ID {candidate.set_id}"
+        )
 
-        evaluation_id = await create_evaluation(agent_id, validator_hotkey, set_id)
+        evaluation_set_problems = await get_all_evaluation_set_problems_in_set_group_in_set_id(
+            candidate.set_id, set_group
+        )
+        if not evaluation_set_problems:
+            logger.info(
+                f"Skipping evaluation issuance for agent {candidate.agent_id}: "
+                f"set_id {candidate.set_id} has no tasks for {set_group.value}"
+            )
+            return None
+
+        logger.debug(
+            f"# of problems in set ID {candidate.set_id}, set group {set_group.value}: {len(evaluation_set_problems)}"
+        )
+
+        evaluation_id = await create_evaluation(candidate.agent_id, validator_hotkey, candidate.set_id)
 
         await create_evaluation_runs(evaluation_id, evaluation_set_problems)
+
+        await conn.execute(
+            """
+            UPDATE competition_work_cursors
+            SET last_served_set_id = $2
+            WHERE family = $1
+            """,
+            set_group.value,
+            candidate.set_id,
+        )
 
         return await get_evaluation_by_id(evaluation_id), await get_all_evaluation_runs_in_evaluation_id(evaluation_id)
 
