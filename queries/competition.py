@@ -20,7 +20,13 @@ from models.competition import (
     CompetitionStateUpdateRequest,
     derive_competition_state,
 )
-from queries.errors import CompetitionAdminConflictError, CompetitionNotFoundError
+from models.upload import UploadCompetition
+from queries.errors import (
+    CompetitionAdminConflictError,
+    CompetitionNotAcceptingSubmissionsError,
+    CompetitionNotFoundError,
+    UploadCompetitionSelectionError,
+)
 from utils.database import DatabaseConnection, db_operation
 
 POLICY_COLUMNS = (
@@ -85,6 +91,14 @@ _ADMIN_COMPETITION_SELECT = """
         incentive_reward_half_life_hours::float8 AS incentive_reward_half_life_hours,
         incentive_time_multiplier_scale_hours::float8 AS incentive_time_multiplier_scale_hours
     FROM competitions
+"""
+
+_ACCEPTING_UPLOAD_PREDICATE = f"""
+    start_date IS NOT NULL
+    AND submissions_closed_at IS NULL
+    AND is_paused IS FALSE
+    AND end_date IS NULL
+    AND num_nonnulls({", ".join(POLICY_COLUMNS)}) = {len(POLICY_COLUMNS)}
 """
 
 
@@ -202,6 +216,75 @@ async def get_current_competition_context(conn: DatabaseConnection) -> Competiti
 @db_operation
 async def lock_current_competition_context(conn: DatabaseConnection) -> CompetitionContext | None:
     return await _get_current_competition_context(conn, for_update=True)
+
+
+@db_operation
+async def get_accepting_upload_competitions(conn: DatabaseConnection) -> list[UploadCompetition]:
+    rows = await conn.fetch(
+        f"""
+        SELECT set_id, name
+        FROM competitions
+        WHERE {_ACCEPTING_UPLOAD_PREDICATE}
+        ORDER BY set_id ASC
+        """
+    )
+    return [UploadCompetition(**row) for row in rows]
+
+
+@db_operation
+async def resolve_upload_competition(conn: DatabaseConnection, set_id: int | None) -> int:
+    """Resolve an explicit accepting competition or the sole accepting choice."""
+    if set_id is not None:
+        resolved = await conn.fetchval(
+            f"""
+            SELECT set_id
+            FROM competitions
+            WHERE set_id = $1
+              AND {_ACCEPTING_UPLOAD_PREDICATE}
+            """,
+            set_id,
+        )
+        if resolved is None:
+            row = await conn.fetchrow(
+                f"""
+                {_COMPETITION_CONTEXT_SELECT}
+                WHERE set_id = $1
+                """,
+                set_id,
+            )
+            if row is None:
+                raise CompetitionNotAcceptingSubmissionsError(set_id=set_id, state=None)
+            context = _context_from_row(row)
+            raise CompetitionNotAcceptingSubmissionsError(set_id=set_id, state=context.state.value)
+        return int(resolved)
+
+    rows = await conn.fetch(
+        f"""
+        SELECT set_id
+        FROM competitions
+        WHERE {_ACCEPTING_UPLOAD_PREDICATE}
+        ORDER BY set_id ASC
+        LIMIT 2
+        """
+    )
+    if len(rows) != 1:
+        raise UploadCompetitionSelectionError(len(rows))
+    return int(rows[0]["set_id"])
+
+
+async def lock_competition_for_admission(
+    conn: DatabaseConnection,
+    set_id: int,
+) -> CompetitionContext | None:
+    row = await conn.fetchrow(
+        f"""
+        {_COMPETITION_CONTEXT_SELECT}
+        WHERE set_id = $1
+        FOR SHARE
+        """,
+        set_id,
+    )
+    return None if row is None else _context_from_row(row)
 
 
 async def _get_competition_policy(conn: DatabaseConnection, set_id: int) -> CompetitionPolicy | None:
