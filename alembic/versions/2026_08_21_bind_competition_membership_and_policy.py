@@ -59,7 +59,7 @@ BEGIN
                 a.agent_id,
                 a.miner_hotkey,
                 a.name,
-                a.version_num
+                a.version_num,
                 a.created_at,
                 a.status,
                 e.set_id,
