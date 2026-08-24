@@ -18,7 +18,7 @@ from models.competition import (
     CompetitionStateUpdateRequest,
 )
 from models.evaluation_set import EvaluationSetGroup
-from queries.agent import create_agent, get_next_agent_id_awaiting_evaluation_for_validator_hotkey
+from queries.agent import EvaluationCandidate, create_agent, get_evaluation_candidates_for_validator_hotkey
 from queries.competition import (
     replace_competition_allocations,
     replace_competition_policy,
@@ -167,8 +167,9 @@ async def _insert_agent(
     status: AgentStatus,
     created_at: datetime | None = None,
     hotkey: str | None = None,
+    agent_id: UUID | None = None,
 ) -> UUID:
-    agent_id = uuid4()
+    agent_id = agent_id or uuid4()
     await conn.execute(
         """
         INSERT INTO agents (
@@ -262,6 +263,13 @@ async def clean_tables(postgres_db):
             RESTART IDENTITY CASCADE
             """
         )
+        await conn.execute(
+            """
+            UPDATE competition_work_cursors
+            SET last_served_set_id = NULL
+            WHERE family IN ('screener_1', 'screener_2', 'validator')
+            """
+        )
     yield
 
 
@@ -293,10 +301,296 @@ async def test_discovery_skips_unprocessable_competitions_without_head_of_line_b
                 created_at=now + timedelta(seconds=index),
             )
 
-    candidate = await get_next_agent_id_awaiting_evaluation_for_validator_hotkey(validator_hotkey)
+    batch = await get_evaluation_candidates_for_validator_hotkey(validator_hotkey)
+    assert [candidate.set_id for candidate in batch.candidates] == [5, 6]
+
+
+@pytest.mark.parametrize(
+    ("validator_hotkey", "status"),
+    [
+        ("screener-1-1", AgentStatus.screening_1),
+        ("screener-2-1", AgentStatus.screening_2),
+        ("validator-a", AgentStatus.evaluating),
+    ],
+)
+async def test_successful_issuance_rotates_competitions_cyclically(
+    validator_hotkey: str,
+    status: AgentStatus,
+) -> None:
     async with _db.pool.acquire() as conn:
-        selected_set = await conn.fetchval("SELECT set_id FROM agents WHERE agent_id = $1", candidate)
-    assert selected_set == 5
+        for set_id in (40, 50, 60):
+            await _seed_competition(conn, set_id=set_id)
+            await _insert_agent(conn, set_id=set_id, status=status)
+            await _insert_agent(conn, set_id=set_id, status=status)
+
+    for expected_set_id in (40, 50, 60, 40):
+        batch = await get_evaluation_candidates_for_validator_hotkey(validator_hotkey)
+        assert batch.candidates[0].set_id == expected_set_id
+        issued = await create_new_evaluation_and_evaluation_runs(
+            batch.candidates[0],
+            validator_hotkey,
+            batch.observed_last_served_set_id,
+        )
+        assert issued is not None
+
+    family = EvaluationSetGroup.from_validator_hotkey(validator_hotkey).value
+    async with _db.pool.acquire() as conn:
+        cursors = {
+            row["family"]: row["last_served_set_id"]
+            for row in await conn.fetch(
+                "SELECT family, last_served_set_id FROM competition_work_cursors "
+                "WHERE family IN ('screener_1', 'screener_2', 'validator')"
+            )
+        }
+    assert cursors[family] == 40
+    assert all(value is None for key, value in cursors.items() if key != family)
+
+
+@pytest.mark.parametrize(
+    ("validator_hotkey", "status"),
+    [
+        ("screener-1-1", AgentStatus.screening_1),
+        ("screener-2-1", AgentStatus.screening_2),
+        ("validator-a", AgentStatus.evaluating),
+    ],
+)
+async def test_locked_competition_is_skipped_without_consuming_the_batch_observation(
+    validator_hotkey: str,
+    status: AgentStatus,
+) -> None:
+    async with _db.pool.acquire() as conn:
+        await _seed_competition(conn, set_id=70)
+        await _seed_competition(conn, set_id=80)
+        await _insert_agent(conn, set_id=70, status=status)
+        await _insert_agent(conn, set_id=80, status=status)
+
+    batch = await get_evaluation_candidates_for_validator_hotkey(validator_hotkey)
+    assert [candidate.set_id for candidate in batch.candidates] == [70, 80]
+
+    async with _db.pool.acquire() as raw_conn:
+        async with raw_conn.transaction():
+            await raw_conn.execute("SELECT 1 FROM competitions WHERE set_id = 70 FOR UPDATE")
+            assert (
+                await asyncio.wait_for(
+                    create_new_evaluation_and_evaluation_runs(
+                        batch.candidates[0],
+                        validator_hotkey,
+                        batch.observed_last_served_set_id,
+                    ),
+                    timeout=2,
+                )
+                is None
+            )
+            issued = await create_new_evaluation_and_evaluation_runs(
+                batch.candidates[1],
+                validator_hotkey,
+                batch.observed_last_served_set_id,
+            )
+            assert issued is not None
+
+    family = EvaluationSetGroup.from_validator_hotkey(validator_hotkey).value
+    async with _db.pool.acquire() as conn:
+        assert (
+            await conn.fetchval(
+                "SELECT last_served_set_id FROM competition_work_cursors WHERE family = $1",
+                family,
+            )
+            == 80
+        )
+
+
+async def test_locked_agent_is_skipped_and_next_competition_can_issue() -> None:
+    async with _db.pool.acquire() as conn:
+        await _seed_competition(conn, set_id=85)
+        await _seed_competition(conn, set_id=86)
+        locked_agent_id = await _insert_agent(conn, set_id=85, status=AgentStatus.screening_1)
+        await _insert_agent(conn, set_id=86, status=AgentStatus.screening_1)
+
+    batch = await get_evaluation_candidates_for_validator_hotkey("screener-1-1")
+    assert [candidate.set_id for candidate in batch.candidates] == [85, 86]
+
+    async with _db.pool.acquire() as raw_conn:
+        async with raw_conn.transaction():
+            await raw_conn.execute("SELECT 1 FROM agents WHERE agent_id = $1 FOR UPDATE", locked_agent_id)
+            assert (
+                await asyncio.wait_for(
+                    create_new_evaluation_and_evaluation_runs(
+                        batch.candidates[0],
+                        "screener-1-1",
+                        batch.observed_last_served_set_id,
+                    ),
+                    timeout=2,
+                )
+                is None
+            )
+            assert (
+                await create_new_evaluation_and_evaluation_runs(
+                    batch.candidates[1],
+                    "screener-1-1",
+                    batch.observed_last_served_set_id,
+                )
+                is not None
+            )
+
+    async with _db.pool.acquire() as conn:
+        assert (
+            await conn.fetchval("SELECT last_served_set_id FROM competition_work_cursors WHERE family = 'screener_1'")
+            == 86
+        )
+
+
+async def test_concurrent_stale_observation_allows_exactly_one_issuance() -> None:
+    async with _db.pool.acquire() as conn:
+        await _seed_competition(conn, set_id=90)
+        await _seed_competition(conn, set_id=100)
+        await _insert_agent(conn, set_id=90, status=AgentStatus.screening_1)
+        await _insert_agent(conn, set_id=100, status=AgentStatus.screening_1)
+
+    batch = await get_evaluation_candidates_for_validator_hotkey("screener-1-1")
+    results = await asyncio.gather(
+        *(
+            create_new_evaluation_and_evaluation_runs(
+                candidate,
+                "screener-1-1",
+                batch.observed_last_served_set_id,
+            )
+            for candidate in batch.candidates
+        )
+    )
+
+    successful = [result for result in results if result is not None]
+    assert len(successful) == 1
+    issued_set_id = successful[0][0].set_id
+    async with _db.pool.acquire() as conn:
+        assert await conn.fetchval("SELECT count(*) FROM evaluations") == 1
+        assert (
+            await conn.fetchval("SELECT last_served_set_id FROM competition_work_cursors WHERE family = 'screener_1'")
+            == issued_set_id
+        )
+
+
+async def test_failed_issuance_rolls_back_work_and_cursor(monkeypatch) -> None:
+    async with _db.pool.acquire() as conn:
+        await _seed_competition(conn, set_id=110)
+        await _insert_agent(conn, set_id=110, status=AgentStatus.screening_1)
+
+    batch = await get_evaluation_candidates_for_validator_hotkey("screener-1-1")
+    monkeypatch.setattr(
+        "queries.evaluation.create_evaluation_runs",
+        AsyncMock(side_effect=RuntimeError("run insertion failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="run insertion failed"):
+        await create_new_evaluation_and_evaluation_runs(
+            batch.candidates[0],
+            "screener-1-1",
+            batch.observed_last_served_set_id,
+        )
+
+    async with _db.pool.acquire() as conn:
+        assert await conn.fetchval("SELECT count(*) FROM evaluations") == 0
+        assert (
+            await conn.fetchval("SELECT last_served_set_id FROM competition_work_cursors WHERE family = 'screener_1'")
+            is None
+        )
+
+
+@pytest.mark.parametrize(
+    ("validator_hotkey", "status", "set_group"),
+    [
+        ("screener-1-1", AgentStatus.screening_1, "screener_1"),
+        ("screener-2-1", AgentStatus.screening_2, "screener_2"),
+        ("validator-a", AgentStatus.evaluating, "validator"),
+    ],
+)
+async def test_competition_without_family_tasks_does_not_advance_cursor(
+    validator_hotkey: str,
+    status: AgentStatus,
+    set_group: str,
+) -> None:
+    async with _db.pool.acquire() as conn:
+        await _seed_competition(conn, set_id=115)
+        await _insert_agent(conn, set_id=115, status=status)
+        await conn.execute(
+            "DELETE FROM evaluation_sets WHERE set_id = 115 AND set_group = $1::evaluationsetgroup",
+            set_group,
+        )
+
+    batch = await get_evaluation_candidates_for_validator_hotkey(validator_hotkey)
+    assert batch.candidates[0].set_id == 115
+    assert (
+        await create_new_evaluation_and_evaluation_runs(
+            batch.candidates[0],
+            validator_hotkey,
+            batch.observed_last_served_set_id,
+        )
+        is None
+    )
+
+    async with _db.pool.acquire() as conn:
+        assert (
+            await conn.fetchval(
+                "SELECT last_served_set_id FROM competition_work_cursors WHERE family = $1",
+                set_group,
+            )
+            is None
+        )
+
+
+@pytest.mark.parametrize(
+    ("validator_hotkey", "status"),
+    [
+        ("screener-1-1", AgentStatus.screening_1),
+        ("screener-2-1", AgentStatus.screening_2),
+        ("validator-a", AgentStatus.evaluating),
+    ],
+)
+async def test_within_competition_order_is_created_at_then_agent_id(
+    validator_hotkey: str,
+    status: AgentStatus,
+) -> None:
+    now = datetime.now(timezone.utc)
+    smaller_id = UUID(int=1)
+    larger_id = UUID(int=2)
+    async with _db.pool.acquire() as conn:
+        await _seed_competition(conn, set_id=120)
+        await _insert_agent(
+            conn,
+            set_id=120,
+            status=status,
+            created_at=now + timedelta(seconds=1),
+            agent_id=smaller_id,
+        )
+        await _insert_agent(
+            conn,
+            set_id=120,
+            status=status,
+            created_at=now,
+            agent_id=larger_id,
+        )
+
+    batch = await get_evaluation_candidates_for_validator_hotkey(validator_hotkey)
+    assert batch.candidates[0].agent_id == larger_id
+
+    async with _db.pool.acquire() as conn:
+        await conn.execute("DELETE FROM agents WHERE set_id = 120")
+        await _insert_agent(
+            conn,
+            set_id=120,
+            status=status,
+            created_at=now,
+            agent_id=larger_id,
+        )
+        await _insert_agent(
+            conn,
+            set_id=120,
+            status=status,
+            created_at=now,
+            agent_id=smaller_id,
+        )
+
+    batch = await get_evaluation_candidates_for_validator_hotkey(validator_hotkey)
+    assert batch.candidates[0].agent_id == smaller_id
 
 
 @pytest.mark.parametrize(
@@ -315,16 +609,23 @@ async def test_admin_first_pause_prevents_evaluation_issuance(
     async with _db.pool.acquire() as conn:
         await _seed_competition(conn, set_id=10)
         agent_id = await _insert_agent(conn, set_id=10, status=status)
+    batch = await get_evaluation_candidates_for_validator_hotkey(validator_hotkey)
+    candidate = next(candidate for candidate in batch.candidates if candidate.agent_id == agent_id)
 
     async with _db.pool.acquire() as raw_conn:
         async with raw_conn.transaction():
             await raw_conn.execute("SELECT 1 FROM competitions WHERE set_id = 10 FOR UPDATE")
-            issuance = asyncio.create_task(create_new_evaluation_and_evaluation_runs(agent_id, validator_hotkey))
-            await asyncio.sleep(0.05)
-            assert not issuance.done()
+            issuance = await asyncio.wait_for(
+                create_new_evaluation_and_evaluation_runs(
+                    candidate,
+                    validator_hotkey,
+                    batch.observed_last_served_set_id,
+                ),
+                timeout=2,
+            )
+            assert issuance is None
             await raw_conn.execute("UPDATE competitions SET is_paused = true WHERE set_id = 10")
 
-    assert await asyncio.wait_for(issuance, timeout=2) is None
     async with _db.pool.acquire() as conn:
         assert (
             await conn.fetchval(
@@ -351,6 +652,8 @@ async def test_issuance_first_completes_then_pause_waits(
     async with _db.pool.acquire() as conn:
         await _seed_competition(conn, set_id=11)
         agent_id = await _insert_agent(conn, set_id=11, status=status)
+    batch = await get_evaluation_candidates_for_validator_hotkey(validator_hotkey)
+    candidate = next(candidate for candidate in batch.candidates if candidate.agent_id == agent_id)
 
     async with _db.pool.acquire() as raw_conn:
         db_conn = DatabaseConnection(raw_conn, "issuance_first_test")
@@ -359,8 +662,9 @@ async def test_issuance_first_completes_then_pause_waits(
             try:
                 issued = await create_new_evaluation_and_evaluation_runs.__wrapped__(
                     db_conn,
-                    agent_id,
+                    candidate,
                     validator_hotkey,
+                    batch.observed_last_served_set_id,
                 )
             finally:
                 _db._per_context_conn.reset(token)
@@ -386,6 +690,8 @@ async def test_end_waits_for_issuance_then_rechecks_readiness() -> None:
     async with _db.pool.acquire() as conn:
         await _seed_competition(conn, set_id=14)
         agent_id = await _insert_agent(conn, set_id=14, status=AgentStatus.screening_1)
+    batch = await get_evaluation_candidates_for_validator_hotkey("screener-1-1")
+    candidate = next(candidate for candidate in batch.candidates if candidate.agent_id == agent_id)
 
     async with _db.pool.acquire() as raw_conn:
         db_conn = DatabaseConnection(raw_conn, "issuance_before_end_test")
@@ -394,8 +700,9 @@ async def test_end_waits_for_issuance_then_rechecks_readiness() -> None:
             try:
                 issued = await create_new_evaluation_and_evaluation_runs.__wrapped__(
                     db_conn,
-                    agent_id,
+                    candidate,
                     "screener-1-1",
+                    batch.observed_last_served_set_id,
                 )
             finally:
                 _db._per_context_conn.reset(token)
@@ -599,7 +906,14 @@ async def test_final_candidate_recheck_rejects_existing_running_or_successful_wo
             existing_error,
         )
 
-    assert await create_new_evaluation_and_evaluation_runs(agent_id, validator_hotkey) is None
+    assert (
+        await create_new_evaluation_and_evaluation_runs(
+            EvaluationCandidate(agent_id=agent_id, set_id=12),
+            validator_hotkey,
+            None,
+        )
+        is None
+    )
     async with _db.pool.acquire() as conn:
         assert await conn.fetchval("SELECT count(*) FROM evaluations WHERE agent_id = $1", agent_id) == 1
 
@@ -630,8 +944,9 @@ async def test_validator_final_recheck_enforces_per_validator_and_required_count
                 evaluation_id,
             )
 
-    assert await create_new_evaluation_and_evaluation_runs(agent_id, "validator-a") is None
-    assert await create_new_evaluation_and_evaluation_runs(agent_id, "validator-c") is None
+    candidate = EvaluationCandidate(agent_id=agent_id, set_id=13)
+    assert await create_new_evaluation_and_evaluation_runs(candidate, "validator-a", None) is None
+    assert await create_new_evaluation_and_evaluation_runs(candidate, "validator-c", None) is None
 
 
 @pytest.mark.parametrize(

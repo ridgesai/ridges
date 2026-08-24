@@ -11,7 +11,7 @@ import pytest
 import utils.database as _db
 from queries.agent import (
     get_agent_score_and_set_id,
-    get_next_agent_id_awaiting_evaluation_for_validator_hotkey,
+    get_evaluation_candidates_for_validator_hotkey,
 )
 
 HOTKEY = "validator-hotkey-1"
@@ -30,10 +30,19 @@ _CLEAN_TABLES_SQL = (
 async def clean_tables(postgres_db):
     async with _db.pool.acquire() as conn:
         await conn.execute(_CLEAN_TABLES_SQL)
+        await conn.execute(
+            "UPDATE competition_work_cursors SET last_served_set_id = NULL "
+            "WHERE family IN ('screener_1', 'screener_2', 'validator')"
+        )
         await _insert_competition(conn, set_id=1, required_validator_count=1)
     yield
     async with _db.pool.acquire() as conn:
         await conn.execute(_CLEAN_TABLES_SQL)
+
+
+async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(validator_hotkey: str):
+    batch = await get_evaluation_candidates_for_validator_hotkey(validator_hotkey)
+    return batch.candidates[0].agent_id if batch.candidates else None
 
 
 async def _insert_agent(
@@ -185,8 +194,23 @@ async def _insert_run(
 @pytest.mark.anyio
 async def test_returns_none_when_no_candidates():
     """No evaluating agents → None."""
-    result = await get_next_agent_id_awaiting_evaluation_for_validator_hotkey(HOTKEY)
-    assert result is None
+    batch = await get_evaluation_candidates_for_validator_hotkey(HOTKEY)
+    assert batch.observed_last_served_set_id is None
+    assert batch.candidates == ()
+
+
+@pytest.mark.anyio
+async def test_missing_work_cursor_fails_closed():
+    async with _db.pool.acquire() as conn:
+        await conn.execute("DELETE FROM competition_work_cursors WHERE family = 'validator'")
+    try:
+        with pytest.raises(RuntimeError, match="Missing competition work cursor for validator"):
+            await get_evaluation_candidates_for_validator_hotkey(HOTKEY)
+    finally:
+        async with _db.pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO competition_work_cursors (family, last_served_set_id) VALUES ('validator', NULL)"
+            )
 
 
 @pytest.mark.anyio
