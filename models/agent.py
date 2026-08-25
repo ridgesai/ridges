@@ -219,6 +219,7 @@ class PublicAgent(BaseModel):
     version_num: int
     status: AgentStatus
     created_at: datetime
+    legacy_membership: bool = False
     emission: float | None = None
     reward_weight: float | None = None
     competition_state: AgentCompetitionState | None = None
