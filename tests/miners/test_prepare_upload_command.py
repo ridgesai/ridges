@@ -359,4 +359,5 @@ def test_prepare_upload_remains_competition_free() -> None:
     )
 
     assert result.exit_code != 0
-    assert "No such option: --competition" in result.output
+    assert "No such option" in result.output
+    assert "--competition" in result.output

@@ -11,6 +11,7 @@ from models.competition import (
     CompetitionAllocationUpdateRequest,
     CompetitionPolicy,
     CompetitionState,
+    derive_competition_capabilities,
     derive_competition_state,
     exact_decimal_sum,
 )
@@ -59,6 +60,49 @@ def test_derive_competition_state_and_precedence(
             end_date=end_date,
         )
         is expected
+    )
+
+
+@pytest.mark.parametrize(
+    (
+        "state",
+        "policy_complete",
+        "weight",
+        "cutoff",
+        "expected",
+    ),
+    [
+        (CompetitionState.open, True, Decimal("0.5"), None, (True, True, True)),
+        (CompetitionState.open, True, Decimal("0"), None, (True, True, False)),
+        (CompetitionState.draining, True, Decimal("0.5"), NOW, (False, True, False)),
+        (
+            CompetitionState.draining,
+            True,
+            Decimal("0.5"),
+            datetime(2026, 8, 20, 0, 0, 1, tzinfo=timezone.utc),
+            (False, True, True),
+        ),
+        (CompetitionState.paused, True, Decimal("0.5"), None, (False, False, False)),
+        (CompetitionState.ended, True, Decimal("0.5"), None, (False, False, False)),
+        (CompetitionState.open, False, Decimal("0.5"), None, (False, False, False)),
+    ],
+)
+def test_competition_capabilities_are_row_local_and_cutoff_is_strict(
+    state: CompetitionState,
+    policy_complete: bool,
+    weight: Decimal,
+    cutoff: datetime | None,
+    expected: tuple[bool, bool, bool],
+) -> None:
+    assert (
+        derive_competition_capabilities(
+            state=state,
+            policy_complete=policy_complete,
+            raw_emission_weight=weight,
+            emissions_end_at=cutoff,
+            observed_at=NOW,
+        )
+        == expected
     )
 
 
