@@ -247,6 +247,7 @@ def test_public_agent_populates_complete_competition_state():
     assert agent.competition_state.final_score == 0.5
     assert agent.emission == 0.25
     assert agent.reward_weight == 0.75
+    assert agent.legacy_membership is False
     assert agent.status is AgentStatus.finished
     serialized = agent.model_dump()
     assert serialized["id"] == agent.agent_id
@@ -276,6 +277,7 @@ def test_public_agent_populates_complete_competition_state():
         "version_num",
         "status",
         "created_at",
+        "legacy_membership",
         "emission",
         "reward_weight",
         "competition_state",
