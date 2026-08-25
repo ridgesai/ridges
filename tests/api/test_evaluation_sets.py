@@ -235,7 +235,17 @@ async def _insert_agent_score(conn, *, agent_id, miner_hotkey: str, set_id: int,
     await conn.execute(
         """INSERT INTO agent_scores
                (agent_id, miner_hotkey, name, version_num, created_at, status, set_id, approved, validator_count, final_score)
-           VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, $8, $9)""",
+           VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, $8, $9)
+           ON CONFLICT (agent_id) DO UPDATE SET
+               miner_hotkey = EXCLUDED.miner_hotkey,
+               name = EXCLUDED.name,
+               version_num = EXCLUDED.version_num,
+               created_at = EXCLUDED.created_at,
+               status = EXCLUDED.status,
+               set_id = EXCLUDED.set_id,
+               approved = EXCLUDED.approved,
+               validator_count = EXCLUDED.validator_count,
+               final_score = EXCLUDED.final_score""",
         agent_id,
         miner_hotkey,
         miner_hotkey,

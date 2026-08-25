@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 import pytest
 
 import utils.database as _db
+from queries.evaluation import get_validator_agent_score_for_set
 
 
 @pytest.fixture(autouse=True)
@@ -16,7 +17,13 @@ async def clean_tables(postgres_db):
         await conn.execute("TRUNCATE evaluation_sets, competitions, agents RESTART IDENTITY CASCADE")
 
 
-async def _insert_competition(conn, set_id: int, scoring_mode: str | None) -> None:
+async def _insert_competition(
+    conn,
+    set_id: int,
+    scoring_mode: str | None,
+    *,
+    required_validator_count: int = 3,
+) -> None:
     await conn.execute(
         """
         INSERT INTO evaluation_sets (set_id, set_group, problem_name)
@@ -35,7 +42,7 @@ async def _insert_competition(conn, set_id: int, scoring_mode: str | None) -> No
                 screener_1_threshold = 0.4,
                 screener_2_threshold = 0.4,
                 prune_threshold = 0.4,
-                required_validator_count = 3,
+                required_validator_count = $3,
                 pre_screening_enabled = true,
                 auto_approval_enabled = true,
                 hardcoding_policy_version = 'hardcoding-v1',
@@ -48,6 +55,7 @@ async def _insert_competition(conn, set_id: int, scoring_mode: str | None) -> No
             """,
             set_id,
             scoring_mode,
+            required_validator_count,
         )
 
 
@@ -136,6 +144,68 @@ async def test_score_refresh_uses_policy_mode_not_numeric_set_order() -> None:
                 "validator_count": 2,
                 "final_score": pytest.approx(expected_score),
             }
+
+
+@pytest.mark.anyio
+async def test_score_refresh_uses_policy_count_while_preserving_two_validator_tentative_scores() -> None:
+    async with _db.pool.acquire() as conn:
+        expected_final_counts: dict[int, int] = {}
+        for mode_index, scoring_mode in enumerate(("legacy", "consensus")):
+            for required_validator_count in (1, 2, 3, 4):
+                set_id = 500 + mode_index * 10 + required_validator_count
+                expected_final_counts[set_id] = required_validator_count
+                await _insert_competition(
+                    conn,
+                    set_id,
+                    scoring_mode,
+                    required_validator_count=required_validator_count,
+                )
+                agent_id = await _insert_agent(
+                    conn,
+                    set_id,
+                    f"{scoring_mode}-{required_validator_count}-hotkey",
+                )
+
+                score_threshold = min(required_validator_count, 2)
+                for completed_count in range(1, required_validator_count + 1):
+                    await _insert_validator_evaluation(
+                        conn,
+                        agent_id=agent_id,
+                        set_id=set_id,
+                        validator_hotkey=f"validator-{completed_count}",
+                        solved_a=True,
+                        solved_b=True,
+                    )
+                    await conn.execute("SELECT refresh_agent_scores_for_agent($1)", agent_id)
+
+                    score = await conn.fetchrow(
+                        "SELECT validator_count, final_score FROM agent_scores WHERE agent_id = $1",
+                        agent_id,
+                    )
+                    if completed_count < score_threshold:
+                        assert score is None
+                    else:
+                        assert dict(score) == {
+                            "validator_count": completed_count,
+                            "final_score": pytest.approx(1.0),
+                        }
+
+                    complete_score = await get_validator_agent_score_for_set(
+                        agent_id,
+                        set_id,
+                        required_validator_count,
+                    )
+                    assert (complete_score is not None) is (completed_count == required_validator_count)
+
+        await conn.execute("TRUNCATE agent_scores")
+        await conn.execute("SELECT populate_agent_scores()")
+        rebuilt_scores = await conn.fetch(
+            "SELECT set_id, validator_count, final_score FROM agent_scores ORDER BY set_id"
+        )
+
+    assert {row["set_id"]: (row["validator_count"], row["final_score"]) for row in rebuilt_scores} == {
+        set_id: (validator_count, pytest.approx(1.0)) for set_id, validator_count in expected_final_counts.items()
+    }
 
 
 @pytest.mark.anyio

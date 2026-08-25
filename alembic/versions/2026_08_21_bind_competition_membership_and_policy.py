@@ -29,19 +29,25 @@ RETURNS VOID AS $$
 DECLARE
     target_set_id INTEGER;
     target_scoring_mode TEXT;
+    target_required_validator_count INTEGER;
+    target_score_materialization_count INTEGER;
 BEGIN
-    SELECT a.set_id, c.scoring_mode
-    INTO target_set_id, target_scoring_mode
+    SELECT a.set_id, c.scoring_mode, c.required_validator_count
+    INTO target_set_id, target_scoring_mode, target_required_validator_count
     FROM agents a
     INNER JOIN competitions c ON c.set_id = a.set_id
     WHERE a.agent_id = target_agent_id
       AND a.set_id IS NOT NULL
-      AND c.scoring_mode IS NOT NULL;
+      AND c.scoring_mode IS NOT NULL
+      AND c.required_validator_count IS NOT NULL;
 
     -- Preserve legacy or uninitialized rows until they have explicit membership and policy.
-    IF target_set_id IS NULL OR target_scoring_mode IS NULL THEN
+    IF target_set_id IS NULL OR target_scoring_mode IS NULL OR target_required_validator_count IS NULL THEN
         RETURN;
     END IF;
+
+    -- Preserve two-validator tentative scores while supporting competitions that require only one.
+    target_score_materialization_count := LEAST(target_required_validator_count, 2);
 
     DELETE FROM agent_scores WHERE agent_id = target_agent_id;
 
@@ -104,7 +110,7 @@ BEGIN
             ae.set_id,
             ae.approved,
             ae.approved_at
-        HAVING COUNT(DISTINCT ae.validator_hotkey) >= 2;
+        HAVING COUNT(DISTINCT ae.validator_hotkey) >= target_score_materialization_count;
     ELSIF target_scoring_mode = 'consensus' THEN
         INSERT INTO agent_scores (
             agent_id, miner_hotkey, name, version_num, created_at, status,
@@ -205,7 +211,7 @@ BEGIN
             vc.validator_count,
             spc.problem_count
         HAVING
-            vc.validator_count >= 2
+            vc.validator_count >= target_score_materialization_count
             AND COUNT(*) FILTER (WHERE cbp.solved_validator_count = vc.validator_count) > 0;
     END IF;
 END;
