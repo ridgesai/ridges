@@ -26,6 +26,21 @@ class CompetitionState(str, Enum):
     open = "open"
 
 
+class PublicCompetition(BaseModel):
+    set_id: int
+    name: str | None
+    state: CompetitionState
+    accepting: bool
+    processable: bool
+    emission_active: bool
+    created_at: datetime
+    start_date: datetime
+    submissions_closed_at: datetime | None
+    emissions_end_at: datetime | None
+    end_date: datetime | None
+    raw_emission_weight: float
+
+
 def exact_decimal_sum(values: Iterable[Decimal]) -> Decimal:
     items = list(values)
     if not items:
@@ -58,6 +73,22 @@ def derive_competition_state(
         return CompetitionState.draining
 
     return CompetitionState.open
+
+
+def derive_competition_capabilities(
+    *,
+    state: CompetitionState,
+    policy_complete: bool,
+    raw_emission_weight: Decimal,
+    emissions_end_at: datetime | None,
+    observed_at: datetime,
+) -> tuple[bool, bool, bool]:
+    accepting = policy_complete and state is CompetitionState.open
+    processable = policy_complete and state in {CompetitionState.open, CompetitionState.draining}
+    emission_active = (
+        processable and raw_emission_weight > 0 and (emissions_end_at is None or observed_at < emissions_end_at)
+    )
+    return accepting, processable, emission_active
 
 
 UnitInterval = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
