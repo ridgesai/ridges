@@ -18,6 +18,8 @@ from models.competition import (
     CompetitionPolicyUpdateRequest,
     CompetitionState,
     CompetitionStateUpdateRequest,
+    PublicCompetition,
+    derive_competition_capabilities,
     derive_competition_state,
     exact_decimal_sum,
 )
@@ -94,12 +96,25 @@ _ADMIN_COMPETITION_SELECT = """
     FROM competitions
 """
 
-_ACCEPTING_UPLOAD_PREDICATE = f"""
-    start_date IS NOT NULL
-    AND submissions_closed_at IS NULL
-    AND is_paused IS FALSE
-    AND end_date IS NULL
-    AND num_nonnulls({", ".join(POLICY_COLUMNS)}) = {len(POLICY_COLUMNS)}
+_PUBLIC_COMPETITION_SELECT = f"""
+    WITH observation AS MATERIALIZED (
+        SELECT clock_timestamp() AS observed_at
+    )
+    SELECT
+        competition.set_id,
+        competition.name,
+        competition.created_at,
+        competition.start_date,
+        competition.submissions_closed_at,
+        competition.is_paused,
+        competition.emissions_end_at,
+        competition.end_date,
+        competition.raw_emission_weight,
+        num_nonnulls({", ".join(f"competition.{column}" for column in POLICY_COLUMNS)})
+            = {len(POLICY_COLUMNS)} AS policy_complete,
+        observation.observed_at
+    FROM competitions competition
+    CROSS JOIN observation
 """
 
 
@@ -120,6 +135,18 @@ class CompetitionContext:
             is_paused=self.is_paused,
             end_date=self.end_date,
         )
+
+
+@dataclass(slots=True, frozen=True)
+class PublicEvaluationSetContext:
+    set_id: int
+    state: CompetitionState | None
+    required_validator_count: int | None
+    grandfathered_history: bool
+
+    @property
+    def use_historical_cache(self) -> bool:
+        return self.grandfathered_history or self.state is CompetitionState.ended
 
 
 def _policy_from_row(row: Mapping[str, object]) -> CompetitionPolicy | None:
@@ -163,6 +190,146 @@ def _admin_snapshot_from_row(row: Mapping[str, object]) -> CompetitionAdminSnaps
         raw_emission_weight=row["raw_emission_weight"],
         policy=_policy_from_row(row),
     )
+
+
+def _public_competition_from_row(row: Mapping[str, object]) -> PublicCompetition:
+    start_date = row["start_date"]
+    if not isinstance(start_date, datetime):
+        raise ValueError("A public competition must have opened")
+
+    state = derive_competition_state(
+        start_date=start_date,
+        submissions_closed_at=row["submissions_closed_at"],
+        is_paused=bool(row["is_paused"]),
+        end_date=row["end_date"],
+    )
+    raw_emission_weight = row["raw_emission_weight"]
+    accepting, processable, emission_active = derive_competition_capabilities(
+        state=state,
+        policy_complete=bool(row["policy_complete"]),
+        raw_emission_weight=raw_emission_weight,
+        emissions_end_at=row["emissions_end_at"],
+        observed_at=row["observed_at"],
+    )
+    return PublicCompetition(
+        set_id=int(row["set_id"]),
+        name=row["name"],
+        state=state,
+        accepting=accepting,
+        processable=processable,
+        emission_active=emission_active,
+        created_at=row["created_at"],
+        start_date=start_date,
+        submissions_closed_at=row["submissions_closed_at"],
+        emissions_end_at=row["emissions_end_at"],
+        end_date=row["end_date"],
+        raw_emission_weight=float(raw_emission_weight),
+    )
+
+
+async def _get_public_competitions(
+    conn: DatabaseConnection,
+    *,
+    set_id: int | None = None,
+) -> list[PublicCompetition]:
+    rows = await conn.fetch(
+        f"""
+        {_PUBLIC_COMPETITION_SELECT}
+        WHERE competition.start_date IS NOT NULL
+          AND ($1::integer IS NULL OR competition.set_id = $1)
+        ORDER BY competition.set_id DESC
+        """,
+        set_id,
+    )
+    return [_public_competition_from_row(row) for row in rows]
+
+
+@db_operation
+async def get_public_competitions(conn: DatabaseConnection) -> list[PublicCompetition]:
+    return await _get_public_competitions(conn)
+
+
+@db_operation
+async def get_public_competition(conn: DatabaseConnection, set_id: int) -> PublicCompetition | None:
+    competitions = await _get_public_competitions(conn, set_id=set_id)
+    return competitions[0] if competitions else None
+
+
+@db_operation
+async def resolve_compatibility_competition_set_id(conn: DatabaseConnection) -> int | None:
+    """Resolve the legacy public default without using numeric latest-set order."""
+    return await conn.fetchval(
+        f"""
+        SELECT set_id
+        FROM competitions
+        WHERE start_date IS NOT NULL
+          AND is_paused IS FALSE
+          AND end_date IS NULL
+          AND num_nonnulls({", ".join(POLICY_COLUMNS)}) = {len(POLICY_COLUMNS)}
+        ORDER BY
+            CASE WHEN submissions_closed_at IS NULL THEN 0 ELSE 1 END,
+            set_id DESC
+        LIMIT 1
+        """
+    )
+
+
+@db_operation
+async def get_public_evaluation_set_context(
+    conn: DatabaseConnection,
+    set_id: int,
+) -> PublicEvaluationSetContext | None:
+    """Classify one public evaluation-set route without publishing private drafts."""
+    row = await conn.fetchrow(
+        """
+        SELECT
+            competition.set_id AS competition_set_id,
+            competition.start_date,
+            competition.submissions_closed_at,
+            competition.is_paused,
+            competition.end_date,
+            competition.required_validator_count,
+            EXISTS (
+                SELECT 1
+                FROM evaluation_sets evaluation_set
+                WHERE evaluation_set.set_id = $1
+            ) AS has_evaluation_set,
+            EXISTS (
+                SELECT 1
+                FROM evaluations evaluation
+                WHERE evaluation.set_id = $1
+                  AND evaluation.created_at < competition.created_at
+            ) AS has_pre_competition_evaluation
+        FROM (SELECT $1::integer AS set_id) target
+        LEFT JOIN competitions competition ON competition.set_id = target.set_id
+        """,
+        set_id,
+    )
+
+    if row["start_date"] is not None:
+        return PublicEvaluationSetContext(
+            set_id=set_id,
+            state=derive_competition_state(
+                start_date=row["start_date"],
+                submissions_closed_at=row["submissions_closed_at"],
+                is_paused=bool(row["is_paused"]),
+                end_date=row["end_date"],
+            ),
+            required_validator_count=row["required_validator_count"],
+            grandfathered_history=False,
+        )
+
+    supported_legacy_set = set_id >= config.EARLIEST_SET_ID_WITH_GOOD_DATA and row["has_evaluation_set"]
+    missing_competition = row["competition_set_id"] is None
+    persisted_legacy_work = bool(row["has_pre_competition_evaluation"])
+    if supported_legacy_set and (missing_competition or persisted_legacy_work):
+        return PublicEvaluationSetContext(
+            set_id=set_id,
+            state=None,
+            required_validator_count=config.NUM_EVALS_PER_AGENT,
+            grandfathered_history=True,
+        )
+    return None
 
 
 def current_competition_policy_defaults(
@@ -221,31 +388,21 @@ async def lock_current_competition_context(conn: DatabaseConnection) -> Competit
 
 @db_operation
 async def get_accepting_upload_competitions(conn: DatabaseConnection) -> list[UploadCompetition]:
-    rows = await conn.fetch(
-        f"""
-        SELECT set_id, name
-        FROM competitions
-        WHERE {_ACCEPTING_UPLOAD_PREDICATE}
-        ORDER BY set_id ASC
-        """
-    )
-    return [UploadCompetition(**row) for row in rows]
+    competitions = await _get_public_competitions(conn)
+    return [
+        UploadCompetition(set_id=competition.set_id, name=competition.name)
+        for competition in reversed(competitions)
+        if competition.accepting
+    ]
 
 
 @db_operation
 async def resolve_upload_competition(conn: DatabaseConnection, set_id: int | None) -> int:
     """Resolve an explicit accepting competition or the sole accepting choice."""
     if set_id is not None:
-        resolved = await conn.fetchval(
-            f"""
-            SELECT set_id
-            FROM competitions
-            WHERE set_id = $1
-              AND {_ACCEPTING_UPLOAD_PREDICATE}
-            """,
-            set_id,
-        )
-        if resolved is None:
+        competitions = await _get_public_competitions(conn, set_id=set_id)
+        competition = competitions[0] if competitions else None
+        if competition is None or not competition.accepting:
             row = await conn.fetchrow(
                 f"""
                 {_COMPETITION_CONTEXT_SELECT}
@@ -257,20 +414,12 @@ async def resolve_upload_competition(conn: DatabaseConnection, set_id: int | Non
                 raise CompetitionNotAcceptingSubmissionsError(set_id=set_id, state=None)
             context = _context_from_row(row)
             raise CompetitionNotAcceptingSubmissionsError(set_id=set_id, state=context.state.value)
-        return int(resolved)
+        return competition.set_id
 
-    rows = await conn.fetch(
-        f"""
-        SELECT set_id
-        FROM competitions
-        WHERE {_ACCEPTING_UPLOAD_PREDICATE}
-        ORDER BY set_id ASC
-        LIMIT 2
-        """
-    )
-    if len(rows) != 1:
-        raise UploadCompetitionSelectionError(len(rows))
-    return int(rows[0]["set_id"])
+    accepting = [competition for competition in await _get_public_competitions(conn) if competition.accepting]
+    if len(accepting) != 1:
+        raise UploadCompetitionSelectionError(len(accepting))
+    return accepting[0].set_id
 
 
 async def lock_competition_for_admission(
