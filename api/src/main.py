@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import api.config as config
 from api.endpoints.admin import router as admin_router
 from api.endpoints.agent import router as agent_router
+from api.endpoints.competitions import router as competitions_router
 from api.endpoints.debug import router as debug_router
 from api.endpoints.evaluation_run import router as evaluation_run_router
 from api.endpoints.evaluation_sets import router as evaluation_sets_router
@@ -128,6 +129,7 @@ app.add_middleware(CorrelationIdMiddleware)
 
 app.include_router(upload_router, prefix="/upload")
 app.include_router(admin_router, prefix="/admin")
+app.include_router(competitions_router, prefix="/competitions")
 app.include_router(retrieval_router, prefix="/retrieval")
 app.include_router(scoring_router, prefix="/scoring")
 app.include_router(validator_router, prefix="/validator")

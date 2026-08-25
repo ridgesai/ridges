@@ -1,5 +1,5 @@
 import secrets
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 from bittensor_wallet.keypair import Keypair
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -79,7 +79,7 @@ def validate_hotkey(miner_hotkey: str) -> None:
         raise HTTPException(status_code=400, detail="Invalid hotkey SS58 address") from None
 
 
-def _raise_competition_admin_error(error: Exception) -> None:
+def _raise_competition_admin_error(error: Exception) -> NoReturn:
     if isinstance(error, CompetitionNotFoundError):
         raise HTTPException(status_code=404, detail=str(error)) from error
 
@@ -96,9 +96,11 @@ async def put_competition_state(
     actor: Annotated[str, Depends(require_coldkey_ban_admin)],
 ) -> CompetitionAdminSnapshot:
     try:
-        return await update_competition_state(set_id=set_id, target=request, actor=actor)
+        snapshot = await update_competition_state(set_id=set_id, target=request, actor=actor)
     except (CompetitionNotFoundError, CompetitionAdminConflictError) as error:
         _raise_competition_admin_error(error)
+    clear_all_ttl_caches()
+    return snapshot
 
 
 @router.put("/competitions/{set_id}/policy", response_model=CompetitionAdminSnapshot)
@@ -108,9 +110,11 @@ async def put_competition_policy(
     actor: Annotated[str, Depends(require_coldkey_ban_admin)],
 ) -> CompetitionAdminSnapshot:
     try:
-        return await replace_competition_policy(set_id=set_id, target=request, actor=actor)
+        snapshot = await replace_competition_policy(set_id=set_id, target=request, actor=actor)
     except (CompetitionNotFoundError, CompetitionAdminConflictError) as error:
         _raise_competition_admin_error(error)
+    clear_all_ttl_caches()
+    return snapshot
 
 
 @router.put("/competition-allocations", response_model=CompetitionAllocationSnapshot)
@@ -119,9 +123,11 @@ async def put_competition_allocations(
     actor: Annotated[str, Depends(require_coldkey_ban_admin)],
 ) -> CompetitionAllocationSnapshot:
     try:
-        return await replace_competition_allocations(target=request, actor=actor)
+        snapshot = await replace_competition_allocations(target=request, actor=actor)
     except CompetitionAdminConflictError as error:
         _raise_competition_admin_error(error)
+    clear_all_ttl_caches()
+    return snapshot
 
 
 @router.post(
