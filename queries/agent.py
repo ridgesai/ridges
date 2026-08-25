@@ -143,6 +143,31 @@ LEFT JOIN approved_agents competition_approval
    AND competition_approval.set_id = competition_context.set_id
 LEFT JOIN agents competition_baseline
     ON competition_baseline.agent_id = competition_approval.baseline_agent_id
+   AND (
+       competition_baseline.set_id IS NULL
+       OR competition_baseline.set_id = competition_context.set_id
+   )
+"""
+
+AGENT_PUBLIC_EXPLICIT_JOINS = """
+LEFT JOIN LATERAL (
+    SELECT $2::integer AS set_id
+) competition_context ON TRUE
+LEFT JOIN agent_final_review_statuses competition_review
+    ON competition_review.agent_id = a.agent_id
+   AND competition_review.set_id = competition_context.set_id
+LEFT JOIN agent_scores competition_score
+    ON competition_score.agent_id = a.agent_id
+   AND competition_score.set_id = competition_context.set_id
+LEFT JOIN approved_agents competition_approval
+    ON competition_approval.agent_id = a.agent_id
+   AND competition_approval.set_id = competition_context.set_id
+LEFT JOIN agents competition_baseline
+    ON competition_baseline.agent_id = competition_approval.baseline_agent_id
+   AND (
+       competition_baseline.set_id IS NULL
+       OR competition_baseline.set_id = competition_context.set_id
+   )
 """
 
 AGENT_PUBLIC_SELECT_COLUMNS = """
@@ -152,6 +177,7 @@ AGENT_PUBLIC_SELECT_COLUMNS = """
     a.version_num,
     a.status,
     a.created_at,
+    (a.set_id IS NULL) AS legacy_membership,
     competition_context.set_id,
     competition_score.validator_count,
     competition_score.final_score,
@@ -163,7 +189,7 @@ AGENT_PUBLIC_SELECT_COLUMNS = """
     competition_approval.time_multiplier,
     competition_approval.initial_reward_score,
     competition_approval.approved_at,
-    competition_approval.baseline_agent_id,
+    competition_baseline.agent_id AS baseline_agent_id,
     competition_baseline.name AS baseline_agent_name,
     competition_baseline.version_num AS baseline_agent_version_num
 """
@@ -223,18 +249,60 @@ async def get_agent_by_evaluation_run_id(conn: DatabaseConnection, evaluation_ru
 
 
 @db_operation
-async def get_all_public_agents_by_miner_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> list[PublicAgent]:
-    result = await conn.fetch(
-        f"""
-        SELECT
-            {AGENT_PUBLIC_SELECT_COLUMNS}
-        FROM agents a
-        {AGENT_PUBLIC_JOINS}
-        WHERE a.miner_hotkey = $1
-        ORDER BY a.created_at DESC
-        """,
-        miner_hotkey,
-    )
+async def get_all_public_agents_by_miner_hotkey(
+    conn: DatabaseConnection,
+    miner_hotkey: str,
+    set_id: int | None = None,
+) -> list[PublicAgent]:
+    if set_id is None:
+        result = await conn.fetch(
+            f"""
+            SELECT
+                {AGENT_PUBLIC_SELECT_COLUMNS}
+            FROM agents a
+            {AGENT_PUBLIC_JOINS}
+            WHERE a.miner_hotkey = $1
+            ORDER BY a.created_at DESC
+            """,
+            miner_hotkey,
+        )
+    else:
+        result = await conn.fetch(
+            f"""
+            SELECT
+                {AGENT_PUBLIC_SELECT_COLUMNS}
+            FROM agents a
+            {AGENT_PUBLIC_EXPLICIT_JOINS}
+            WHERE a.miner_hotkey = $1
+              AND (
+                  a.set_id = $2
+                  OR (
+                      a.set_id IS NULL
+                      AND (
+                          EXISTS (
+                              SELECT 1 FROM evaluations evidence
+                              WHERE evidence.agent_id = a.agent_id AND evidence.set_id = $2
+                          )
+                          OR EXISTS (
+                              SELECT 1 FROM agent_scores evidence
+                              WHERE evidence.agent_id = a.agent_id AND evidence.set_id = $2
+                          )
+                          OR EXISTS (
+                              SELECT 1 FROM approved_agents evidence
+                              WHERE evidence.agent_id = a.agent_id AND evidence.set_id = $2
+                          )
+                          OR EXISTS (
+                              SELECT 1 FROM agent_final_review_statuses evidence
+                              WHERE evidence.agent_id = a.agent_id AND evidence.set_id = $2
+                          )
+                      )
+                  )
+              )
+            ORDER BY a.created_at DESC
+            """,
+            miner_hotkey,
+            set_id,
+        )
 
     return [PublicAgent(**agent) for agent in result]
 
@@ -842,7 +910,12 @@ async def record_upload_attempt(conn: DatabaseConnection, upload_type: str, succ
 
 
 @db_operation
-async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, page: int = 1) -> list[PublicAgent]:
+async def get_top_agents(
+    conn: DatabaseConnection,
+    set_id: int,
+    number_of_agents: int = 10,
+    page: int = 1,
+) -> list[PublicAgent]:
     """Retrieve the top agents.
 
     Agents are ordered by validator score, then average validator-evaluation cost, then creation time.
@@ -876,6 +949,7 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
             ass.version_num,
             ass.status,
             ass.created_at,
+            (a.set_id IS NULL) as legacy_membership,
             ass.set_id,
             (approval.agent_id is not null) as approved,
             ass.validator_count,
@@ -887,7 +961,7 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
             approval.time_multiplier,
             approval.initial_reward_score,
             approval.approved_at,
-            approval.baseline_agent_id,
+            baseline.agent_id as baseline_agent_id,
             baseline.name as baseline_agent_name,
             baseline.version_num as baseline_agent_version_num
         from agent_scores ass
@@ -898,7 +972,9 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
         left join approved_agents approval
             on approval.agent_id = ass.agent_id
            and approval.set_id = ass.set_id
-        left join agents baseline on baseline.agent_id = approval.baseline_agent_id
+        left join agents baseline
+            on baseline.agent_id = approval.baseline_agent_id
+           and (baseline.set_id is null or baseline.set_id = ass.set_id)
         left join lateral (
             select avg(eh.avg_cost_usd) as avg_cost_usd
             from evaluations_hydrated eh
@@ -907,7 +983,8 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
               and eh.evaluation_set_group = 'validator'::EvaluationSetGroup
               and eh.status               = 'success'::EvaluationStatus
         ) rt on true
-        where ass.set_id = (select max(set_id) from evaluation_sets)
+        where ass.set_id = $3
+        and (a.set_id is null or a.set_id = ass.set_id)
         and ass.agent_id not in (select agent_id from benchmark_agent_ids)
         and not exists (
             select 1
@@ -924,6 +1001,7 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
         """,
         number_of_agents,
         offset,
+        set_id,
     )
 
     return [PublicAgent(**agent) for agent in results]
@@ -949,6 +1027,7 @@ async def get_code_hiding_score_cutoff(
                 ON review.agent_id = ass.agent_id
                AND review.set_id = ass.set_id
             WHERE ass.set_id = $3
+              AND (a.set_id IS NULL OR a.set_id = ass.set_id)
               AND ass.status = 'finished'
               AND ass.final_score IS NOT NULL
               AND ass.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
@@ -971,44 +1050,59 @@ async def get_code_hiding_score_cutoff(
 
 
 @db_operation
-async def get_agent_score_and_set_id(conn: DatabaseConnection, agent_id: UUID) -> Optional[tuple[int, float]]:
-    """Return the agent's own (set_id, rounded final score), or None if unscored or a benchmark agent."""
+async def get_agent_score_and_set_id(
+    conn: DatabaseConnection,
+    agent_id: UUID,
+) -> Optional[tuple[int, float, int | None]]:
+    """Atomically return score set, score, and raw agent membership for code hiding."""
     row = await conn.fetchrow(
         """
-        SELECT set_id, ROUND(final_score::numeric, 6)::float AS final_score
-        FROM agent_scores
-        WHERE agent_id = $1
-          AND final_score IS NOT NULL
-          AND agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+        SELECT
+            score.set_id,
+            ROUND(score.final_score::numeric, 6)::float AS final_score,
+            agent.set_id AS membership_set_id
+        FROM agent_scores score
+        JOIN agents agent ON agent.agent_id = score.agent_id
+        WHERE score.agent_id = $1
+          AND score.final_score IS NOT NULL
+          AND score.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
         """,
         agent_id,
     )
     if row is None:
         return None
-    return row["set_id"], row["final_score"]
+    return row["set_id"], row["final_score"], row["membership_set_id"]
 
 
 @db_operation
-async def get_agents_in_queue(conn: DatabaseConnection, queue_stage: QueueStage) -> list[Agent]:
+async def get_agents_in_queue(conn: DatabaseConnection, queue_stage: QueueStage, set_id: int) -> list[Agent]:
     # TODO ALEX from ADAM: Modify this in the view itself rather than branching explicitly here.
     # The view apparently does not sort by created_at.
     queue_to_query = f"{queue_stage.value}_queue"
 
     if queue_stage in (QueueStage.pre_screening, QueueStage.screener_1):
-        queue = await conn.fetch(f"""
+        queue = await conn.fetch(
+            f"""
             SELECT a.*
             from agents a
             join {queue_to_query} q on q.agent_id = a.agent_id
+            where a.set_id = $1
             order by a.created_at asc
-        """)
+        """,
+            set_id,
+        )
 
         return [Agent(**agent) for agent in queue]
 
-    queue = await conn.fetch(f"""
+    queue = await conn.fetch(
+        f"""
         SELECT a.*
         from agents a
         join {queue_to_query} q on q.agent_id = a.agent_id
-    """)
+        where a.set_id = $1
+    """,
+        set_id,
+    )
 
     return [Agent(**agent) for agent in queue]
 
