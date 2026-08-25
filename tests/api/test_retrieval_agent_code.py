@@ -6,7 +6,6 @@ from fastapi import HTTPException
 
 import api.endpoints.retrieval as retrieval_endpoint
 import utils.database as _db
-from queries.evaluation_set import get_latest_set_id
 
 AGENT_CODE = "print('agent')"
 SET_CREATED = datetime(2026, 5, 1, tzinfo=timezone.utc)
@@ -24,7 +23,6 @@ async def clean_tables(postgres_db):
 
 @pytest.fixture(autouse=True)
 def bypass_cache_and_s3(monkeypatch):
-    monkeypatch.setattr(retrieval_endpoint, "_get_latest_set_id", get_latest_set_id)
     monkeypatch.setattr(
         retrieval_endpoint, "_cached_code_hiding_score_cutoff", retrieval_endpoint._code_hiding_score_cutoff
     )
@@ -44,6 +42,11 @@ async def _insert_eval_set(conn, set_id: int = 1) -> None:
         set_id,
         "validator",
         "problem-a",
+        SET_CREATED,
+    )
+    await conn.execute(
+        "UPDATE competitions SET start_date = $2 WHERE set_id = $1",
+        set_id,
         SET_CREATED,
     )
 
@@ -96,11 +99,13 @@ def _spread_scores(count: int = 11) -> list[float]:
 
 
 async def _insert_second_eval_set(conn, set_id: int = 2) -> None:
+    await _insert_eval_set(conn, set_id)
+
+
+async def _end_competition(conn, set_id: int) -> None:
     await conn.execute(
-        "INSERT INTO evaluation_sets (set_id, set_group, problem_name, created_at) VALUES ($1, $2, $3, $4)",
+        "UPDATE competitions SET end_date = $2 WHERE set_id = $1",
         set_id,
-        "validator",
-        "problem-a",
         SET_CREATED,
     )
 
@@ -130,6 +135,37 @@ async def test_agent_below_cutoff_code_is_served():
 
     # 11th agent (0.80) is below the 10th agent's score (0.81)
     assert await retrieval_endpoint.agent_code(agent_ids[10]) == AGENT_CODE
+
+
+@pytest.mark.anyio
+async def test_cross_set_score_is_excluded_from_cutoff_and_denied_before_s3(monkeypatch):
+    downloads: list[str] = []
+
+    async def track_download(key: str) -> str:
+        downloads.append(key)
+        return AGENT_CODE
+
+    monkeypatch.setattr(retrieval_endpoint, "download_text_file_from_s3", track_download)
+
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1)
+        await _insert_second_eval_set(conn, set_id=2)
+        protected_ids = await _seed_scored_agents(conn, _spread_scores(10), set_id=1)
+
+        mismatched_id = uuid4()
+        await _insert_agent(conn, agent_id=mismatched_id, set_id=2)
+        async with conn.transaction():
+            await conn.execute("ALTER TABLE agent_scores DISABLE TRIGGER ALL")
+            try:
+                await _insert_agent_score(conn, agent_id=mismatched_id, set_id=1, final_score=0.99)
+            finally:
+                await conn.execute("ALTER TABLE agent_scores ENABLE TRIGGER ALL")
+
+    cutoff = await retrieval_endpoint._code_hiding_score_cutoff(1)
+    assert cutoff == pytest.approx(0.81)
+    await _expect_hidden(protected_ids[-1])
+    await _expect_hidden(mismatched_id)
+    assert downloads == []
 
 
 @pytest.mark.anyio
@@ -255,7 +291,8 @@ async def test_top_ranked_agent_in_past_set_is_hidden():
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1)
         await _insert_second_eval_set(conn, set_id=2)
-        # Agents are scored in set 1 (the PAST set); set 2 is the latest and has no scores yet.
+        await _end_competition(conn, set_id=1)
+        # Agents are scored in ended set 1; open set 2 has no scores yet.
         agent_ids = await _seed_scored_agents(conn, _spread_scores())
 
     error = await _expect_hidden(agent_ids[0])
@@ -267,6 +304,7 @@ async def test_agent_below_cutoff_in_past_set_is_served():
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1)
         await _insert_second_eval_set(conn, set_id=2)
+        await _end_competition(conn, set_id=1)
         agent_ids = await _seed_scored_agents(conn, _spread_scores())
 
     # 11th agent (0.80) is below the 10th agent's score (0.81), same as the latest-set case.
@@ -274,12 +312,52 @@ async def test_agent_below_cutoff_in_past_set_is_served():
 
 
 @pytest.mark.anyio
-async def test_past_set_cutoff_uses_long_ttl_cache():
+async def test_ended_competition_cutoff_uses_long_ttl_cache(monkeypatch):
+    past_calls: list[int] = []
+
+    async def past_cutoff(set_id: int) -> float:
+        past_calls.append(set_id)
+        return 0.81
+
+    async def unexpected_live_cutoff(set_id: int) -> float:
+        pytest.fail(f"live cutoff used for ended competition {set_id}")
+
+    monkeypatch.setattr(retrieval_endpoint, "_cached_past_code_hiding_score_cutoff", past_cutoff)
+    monkeypatch.setattr(retrieval_endpoint, "_cached_code_hiding_score_cutoff", unexpected_live_cutoff)
+
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1)
         await _insert_second_eval_set(conn, set_id=2)
+        await _end_competition(conn, set_id=1)
         agent_ids = await _seed_scored_agents(conn, _spread_scores())
 
-    assert retrieval_endpoint._cached_past_code_hiding_score_cutoff is not None
     error = await _expect_hidden(agent_ids[0])
     assert "hidden" in error.detail.lower()
+    assert past_calls == [1]
+
+
+@pytest.mark.anyio
+async def test_higher_draft_does_not_make_open_agent_use_past_cache(monkeypatch):
+    live_calls: list[int] = []
+
+    async def live_cutoff(set_id: int) -> float:
+        live_calls.append(set_id)
+        return 0.81
+
+    async def unexpected_past_cutoff(set_id: int) -> float:
+        pytest.fail(f"past cutoff used for open competition {set_id}")
+
+    monkeypatch.setattr(retrieval_endpoint, "_cached_code_hiding_score_cutoff", live_cutoff)
+    monkeypatch.setattr(retrieval_endpoint, "_cached_past_code_hiding_score_cutoff", unexpected_past_cutoff)
+
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1)
+        await conn.execute(
+            "INSERT INTO evaluation_sets (set_id, set_group, problem_name, created_at) VALUES (2, 'validator', 'draft', $1)",
+            SET_CREATED,
+        )
+        agent_ids = await _seed_scored_agents(conn, _spread_scores())
+
+    error = await _expect_hidden(agent_ids[0])
+    assert "hidden" in error.detail.lower()
+    assert live_calls == [1]
