@@ -197,12 +197,18 @@ async def project_next_approval_job_state(conn: DatabaseConnection) -> bool:
     async with conn.conn.transaction():
         job = await conn.fetchrow(
             """
-            SELECT *
-            FROM approval_jobs
-            WHERE status IN ('needs_review', 'completed')
-              AND projected_at IS NULL
-            ORDER BY created_at ASC
-            FOR UPDATE SKIP LOCKED
+            SELECT job.*
+            FROM approval_jobs job
+            INNER JOIN agents agent
+                ON agent.agent_id = job.agent_id
+               AND agent.set_id = job.set_id
+            INNER JOIN competitions competition
+                ON competition.set_id = job.set_id
+               AND competition.scoring_mode IS NOT NULL
+            WHERE job.status IN ('needs_review', 'completed')
+              AND job.projected_at IS NULL
+            ORDER BY job.created_at ASC
+            FOR UPDATE OF job SKIP LOCKED
             LIMIT 1
             """
         )
