@@ -1,13 +1,19 @@
+import asyncio
 from datetime import datetime
 from typing import Dict, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-import api.config as config
 from api.incentives import get_current_allocations
+from models.competition import CompetitionState, PublicCompetition
 from models.evaluation_set import EvaluationSetGroup
-from queries.evaluation_set import get_latest_set_id, get_set_created_at
+from queries.competition import (
+    get_competition_policy,
+    get_public_competition,
+    resolve_compatibility_competition_set_id,
+)
+from queries.evaluation_set import get_set_created_at
 from queries.statistics import (
     get_average_score_per_evaluation_set_group,
     get_average_wait_time_per_evaluation_set_group,
@@ -15,6 +21,25 @@ from queries.statistics import (
 from utils.ttl import ttl_cache
 
 router = APIRouter()
+CACHE_PAST_COMPETITION_TTL_SECONDS = 24 * 60 * 60
+
+
+async def _resolve_optional_public_set_id(set_id: int | None) -> int:
+    if set_id is None or set_id == -1:
+        resolved_set_id = await resolve_compatibility_competition_set_id()
+    else:
+        competition = await get_public_competition(set_id)
+        resolved_set_id = None if competition is None else competition.set_id
+    if resolved_set_id is None:
+        raise HTTPException(status_code=404, detail="No live competition found")
+    return resolved_set_id
+
+
+async def _public_competition_or_404(set_id: int) -> PublicCompetition:
+    competition = await get_public_competition(set_id)
+    if competition is None:
+        raise HTTPException(status_code=404, detail=f"Competition {set_id} not found")
+    return competition
 
 
 # /scoring/weights
@@ -26,11 +51,12 @@ async def weights() -> Dict[str, float]:
 
 # /scoring/screener-info
 class ScoringScreenerInfoResponse(BaseModel):
-    screener_1_threshold: float
-    screener_2_threshold: float
-    prune_threshold: float
-    incentive_performance_threshold: float
-    incentive_cost_threshold: float
+    set_id: int
+    screener_1_threshold: float | None
+    screener_2_threshold: float | None
+    prune_threshold: float | None
+    incentive_performance_threshold: float | None
+    incentive_cost_threshold: float | None
 
     screener_1_average_score: Optional[float] = None
     screener_2_average_score: Optional[float] = None
@@ -41,18 +67,23 @@ class ScoringScreenerInfoResponse(BaseModel):
     validator_average_wait_time: Optional[float] = None
 
 
-@router.get("/screener-info")
-@ttl_cache(ttl_seconds=60)  # 1 minute
-async def screener_info() -> ScoringScreenerInfoResponse:
-    average_score_per_evaluation_set_group = await get_average_score_per_evaluation_set_group()
-    average_wait_time_per_evaluation_set_group = await get_average_wait_time_per_evaluation_set_group()
+async def _build_screener_info(set_id: int) -> ScoringScreenerInfoResponse:
+    policy = await get_competition_policy(set_id)
+    average_score_per_evaluation_set_group, average_wait_time_per_evaluation_set_group = await asyncio.gather(
+        get_average_score_per_evaluation_set_group(set_id),
+        get_average_wait_time_per_evaluation_set_group(
+            set_id,
+            None if policy is None else policy.required_validator_count,
+        ),
+    )
 
     return ScoringScreenerInfoResponse(
-        screener_1_threshold=config.SCREENER_1_THRESHOLD,
-        screener_2_threshold=config.SCREENER_2_THRESHOLD,
-        prune_threshold=config.PRUNE_THRESHOLD,
-        incentive_performance_threshold=config.INCENTIVE_PERFORMANCE_THRESHOLD,
-        incentive_cost_threshold=config.INCENTIVE_COST_THRESHOLD,
+        set_id=set_id,
+        screener_1_threshold=None if policy is None else policy.screener_1_threshold,
+        screener_2_threshold=None if policy is None else policy.screener_2_threshold,
+        prune_threshold=None if policy is None else policy.prune_threshold,
+        incentive_performance_threshold=None if policy is None else policy.incentive_performance_threshold,
+        incentive_cost_threshold=None if policy is None else policy.incentive_cost_threshold,
         screener_1_average_score=average_score_per_evaluation_set_group[EvaluationSetGroup.screener_1],
         screener_2_average_score=average_score_per_evaluation_set_group[EvaluationSetGroup.screener_2],
         validator_average_score=average_score_per_evaluation_set_group[EvaluationSetGroup.validator],
@@ -60,6 +91,18 @@ async def screener_info() -> ScoringScreenerInfoResponse:
         screener_2_average_wait_time=average_wait_time_per_evaluation_set_group[EvaluationSetGroup.screener_2],
         validator_average_wait_time=average_wait_time_per_evaluation_set_group[EvaluationSetGroup.validator],
     )
+
+
+_cached_live_screener_info = ttl_cache(ttl_seconds=60)(_build_screener_info)
+_cached_past_screener_info = ttl_cache(ttl_seconds=CACHE_PAST_COMPETITION_TTL_SECONDS)(_build_screener_info)
+
+
+@router.get("/screener-info")
+async def screener_info(set_id: int | None = None) -> ScoringScreenerInfoResponse:
+    resolved_set_id = await _resolve_optional_public_set_id(set_id)
+    competition = await _public_competition_or_404(resolved_set_id)
+    builder = _cached_past_screener_info if competition.state is CompetitionState.ended else _cached_live_screener_info
+    return await builder(resolved_set_id)
 
 
 # /scoring/latest-set-info
@@ -70,8 +113,6 @@ class ScoringLatestSetInfo(BaseModel):
 
 @router.get("/latest-set-info")
 async def latest_set_info() -> ScoringLatestSetInfo:
-    latest_set_id = await get_latest_set_id()
-    if latest_set_id is None:
-        raise HTTPException(status_code=404, detail="No evaluation sets have been promoted yet.")
-    latest_set_created_at = await get_set_created_at(latest_set_id)
-    return ScoringLatestSetInfo(latest_set_id=latest_set_id, latest_set_created_at=latest_set_created_at)
+    set_id = await _resolve_optional_public_set_id(None)
+    created_at = await get_set_created_at(set_id)
+    return ScoringLatestSetInfo(latest_set_id=set_id, latest_set_created_at=created_at)
