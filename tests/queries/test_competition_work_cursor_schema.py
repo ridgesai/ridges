@@ -22,6 +22,12 @@ CURSOR_FAMILIES = (
     "pre_screening_judge",
     "approval_judge",
 )
+QUEUE_VIEWS = (
+    "pre_screening_queue",
+    "screener_1_queue",
+    "screener_2_queue",
+    "validator_queue",
+)
 
 
 async def _upgrade(revision: str) -> None:
@@ -32,12 +38,20 @@ async def _downgrade(revision: str) -> None:
     await asyncio.to_thread(command.downgrade, Config(REPO_ROOT / "alembic.ini"), revision)
 
 
+async def _queue_view_definitions(conn) -> dict[str, str]:
+    return {
+        view_name: await conn.fetchval("SELECT pg_get_viewdef($1::regclass, true)", view_name)
+        for view_name in QUEUE_VIEWS
+    }
+
+
 @pytest.mark.anyio
 async def test_competition_work_cursor_migration_round_trip(postgres_db) -> None:
     try:
         await _downgrade(BASE_REVISION)
         async with _db.pool.acquire() as conn:
             assert await conn.fetchval("SELECT to_regclass('competition_work_cursors')") is None
+            previous_queue_views = await _queue_view_definitions(conn)
 
         await _upgrade(HEAD_REVISION)
         async with _db.pool.acquire() as conn:
@@ -93,9 +107,23 @@ async def test_competition_work_cursor_migration_round_trip(postgres_db) -> None
             with pytest.raises(asyncpg.CheckViolationError):
                 await conn.execute("INSERT INTO competition_work_cursors (family) VALUES ('unknown')")
 
+            queue_views = await _queue_view_definitions(conn)
+            for definition in queue_views.values():
+                assert "JOIN competitions" in definition
+                assert "competitions.start_date IS NOT NULL" in definition
+                assert "competitions.end_date IS NULL" in definition
+                assert "competitions.is_paused" in definition
+                assert "competitions.scoring_mode IS NOT NULL" in definition
+            for view_name in ("screener_1_queue", "screener_2_queue"):
+                assert "e.set_id = agents.set_id" in queue_views[view_name]
+            assert "evaluations_hydrated.set_id" in queue_views["validator_queue"]
+            assert "competitions.required_validator_count" in queue_views["validator_queue"]
+            assert "< 3" not in queue_views["validator_queue"]
+
         await _downgrade(BASE_REVISION)
         async with _db.pool.acquire() as conn:
             assert await conn.fetchval("SELECT to_regclass('competition_work_cursors')") is None
+            assert await _queue_view_definitions(conn) == previous_queue_views
     finally:
         await _upgrade(HEAD_REVISION)
 
