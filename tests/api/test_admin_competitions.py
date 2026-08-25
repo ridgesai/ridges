@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -30,6 +30,7 @@ from queries.competition import (
     update_competition_state,
 )
 from queries.errors import CompetitionAdminConflictError
+from utils.ttl import clear_all_ttl_caches, ttl_cache
 
 pytestmark = pytest.mark.anyio
 
@@ -503,3 +504,84 @@ def test_competition_routes_accept_strict_complete_bodies_and_fixed_actor(monkey
         ).status_code
         == 422
     )
+
+
+def test_successful_competition_admin_calls_clear_process_local_ttl_caches(monkeypatch) -> None:
+    clear_caches = Mock()
+    monkeypatch.setattr(admin_endpoint, "clear_all_ttl_caches", clear_caches)
+    client = _make_client(monkeypatch)
+    auth = {"Authorization": f"Bearer {config.COLDKEY_BAN_ADMIN_API_KEY}"}
+
+    assert (
+        client.put(
+            "/admin/competitions/1/state",
+            json=_state_request().model_dump(mode="json"),
+            headers=auth,
+        ).status_code
+        == 200
+    )
+    assert (
+        client.put(
+            "/admin/competitions/1/policy",
+            json=_policy_request().model_dump(mode="json"),
+            headers=auth,
+        ).status_code
+        == 200
+    )
+    assert (
+        client.put(
+            "/admin/competition-allocations",
+            json={"allocations": [], "reason": "set vector"},
+            headers=auth,
+        ).status_code
+        == 200
+    )
+
+    assert clear_caches.call_count == 3
+
+
+async def test_competition_admin_success_refreshes_cached_values_but_failure_keeps_them(monkeypatch) -> None:
+    clear_all_ttl_caches()
+    source = {"value": "before"}
+    reads = 0
+
+    @ttl_cache(ttl_seconds=60)
+    async def cached_value() -> str:
+        nonlocal reads
+        reads += 1
+        return source["value"]
+
+    try:
+        assert await cached_value() == "before"
+        source["value"] = "after"
+        monkeypatch.setattr(
+            admin_endpoint,
+            "replace_competition_policy",
+            AsyncMock(return_value=_sample_snapshot()),
+        )
+
+        await admin_endpoint.put_competition_policy(
+            set_id=1,
+            request=_policy_request(),
+            actor=ADMIN_ACTOR,
+        )
+        assert await cached_value() == "after"
+        assert reads == 2
+
+        source["value"] = "must-stay-cached"
+        monkeypatch.setattr(
+            admin_endpoint,
+            "replace_competition_policy",
+            AsyncMock(side_effect=CompetitionAdminConflictError("rejected")),
+        )
+        with pytest.raises(HTTPException) as error:
+            await admin_endpoint.put_competition_policy(
+                set_id=1,
+                request=_policy_request(),
+                actor=ADMIN_ACTOR,
+            )
+        assert error.value.status_code == 409
+        assert await cached_value() == "after"
+        assert reads == 2
+    finally:
+        clear_all_ttl_caches()

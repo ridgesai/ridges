@@ -492,7 +492,7 @@ async def test_top_agents_uses_coldkey_bans_at_read_time():
             await conn.execute("ALTER TABLE agent_approval_states ENABLE TRIGGER ALL")
 
     await ban_coldkey("banned-leader-coldkey", "test ban")
-    agents = await get_top_agents()
+    agents = await get_top_agents(SET_ID)
     assert [agent.agent_id for agent in agents] == [eligible_id]
     assert agents[0].competition_state is not None
     assert agents[0].competition_state.relative_improvement_units == 1
@@ -517,7 +517,7 @@ async def test_top_agents_uses_coldkey_bans_at_read_time():
     assert "approved" not in core_agent.model_dump()
 
     await unban_coldkey("banned-leader-coldkey")
-    assert [agent.miner_hotkey for agent in await get_top_agents()] == [
+    assert [agent.miner_hotkey for agent in await get_top_agents(SET_ID)] == [
         "banned-leader-hotkey",
         "eligible-second-hotkey",
     ]
@@ -555,9 +555,39 @@ async def test_top_agents_excludes_review_rejected_agent_with_approval_snapshot(
             SET_ID,
         )
 
-    agents = await get_top_agents()
+    agents = await get_top_agents(SET_ID)
 
     assert [agent.agent_id for agent in agents] == [eligible_id]
+
+
+@pytest.mark.anyio
+async def test_top_agents_isolates_the_requested_competition():
+    second_set_id = SET_ID + 1
+    now = datetime.now(timezone.utc)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn)
+        await _insert_eval_set(conn, set_id=second_set_id, problem_name="problem-b")
+        first_agent_id = await _insert_scored_agent(
+            conn,
+            miner_hotkey="first-competition-hotkey",
+            final_score=0.40,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=1),
+            set_id=SET_ID,
+        )
+        second_agent_id = await _insert_scored_agent(
+            conn,
+            miner_hotkey="second-competition-hotkey",
+            final_score=0.90,
+            cost_usd=0.01,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=2),
+            set_id=second_set_id,
+        )
+
+    assert [agent.agent_id for agent in await get_top_agents(SET_ID)] == [first_agent_id]
+    assert [agent.agent_id for agent in await get_top_agents(second_set_id)] == [second_agent_id]
 
 
 @pytest.mark.anyio
@@ -578,7 +608,7 @@ async def test_legacy_hotkey_ban_does_not_remove_top_agent_or_delete_score():
             "INSERT INTO banned_hotkeys (miner_hotkey, banned_reason) VALUES ('legacy-banned-hotkey', 'legacy ban')"
         )
 
-    assert [agent.agent_id for agent in await get_top_agents()] == [leader_id]
+    assert [agent.agent_id for agent in await get_top_agents(SET_ID)] == [leader_id]
 
 
 @pytest.mark.anyio

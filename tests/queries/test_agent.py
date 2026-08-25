@@ -11,6 +11,7 @@ import pytest
 import utils.database as _db
 from queries.agent import (
     get_agent_score_and_set_id,
+    get_all_public_agents_by_miner_hotkey,
     get_evaluation_candidates_for_validator_hotkey,
 )
 
@@ -197,6 +198,55 @@ async def test_returns_none_when_no_candidates():
     batch = await get_evaluation_candidates_for_validator_hotkey(HOTKEY)
     assert batch.observed_last_served_set_id is None
     assert batch.candidates == ()
+
+
+@pytest.mark.anyio
+async def test_all_agents_by_hotkey_optionally_filters_one_exact_competition():
+    async with _db.pool.acquire() as conn:
+        await _insert_competition(conn, set_id=2, required_validator_count=1)
+
+    first_agent = await _insert_agent(miner_hotkey="shared-miner", set_id=1)
+    second_agent = await _insert_agent(miner_hotkey="shared-miner", set_id=2)
+    legacy_agent = uuid.uuid4()
+    async with _db.pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("ALTER TABLE agents DISABLE TRIGGER ALL")
+            await conn.execute("ALTER TABLE evaluations DISABLE TRIGGER ALL")
+            try:
+                await conn.execute(
+                    """
+                    INSERT INTO agents (
+                        agent_id, miner_hotkey, name, version_num, status,
+                        created_at, ip_address, set_id
+                    ) VALUES ($1, 'shared-miner', 'legacy-agent', 1, 'finished', NOW(), '127.0.0.1', NULL)
+                    """,
+                    legacy_agent,
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO evaluations (
+                        evaluation_id, agent_id, validator_hotkey, set_id, evaluation_set_group
+                    ) VALUES ($1, $2, 'legacy-validator', 1, 'validator')
+                    """,
+                    uuid.uuid4(),
+                    legacy_agent,
+                )
+            finally:
+                await conn.execute("ALTER TABLE evaluations ENABLE TRIGGER ALL")
+                await conn.execute("ALTER TABLE agents ENABLE TRIGGER ALL")
+
+    compatible = await get_all_public_agents_by_miner_hotkey("shared-miner")
+    exact = await get_all_public_agents_by_miner_hotkey("shared-miner", set_id=1)
+    second_exact = await get_all_public_agents_by_miner_hotkey("shared-miner", set_id=2)
+
+    assert {agent.agent_id for agent in compatible} == {first_agent, second_agent, legacy_agent}
+    assert {agent.agent_id for agent in exact} == {first_agent, legacy_agent}
+    assert [agent.agent_id for agent in second_exact] == [second_agent]
+    legacy = next(agent for agent in exact if agent.agent_id == legacy_agent)
+    assert legacy.legacy_membership is True
+    assert legacy.competition_state is not None
+    assert legacy.competition_state.set_id == 1
+    assert all(agent.legacy_membership is False for agent in exact if agent.agent_id != legacy_agent)
 
 
 @pytest.mark.anyio
@@ -427,7 +477,7 @@ async def test_get_agent_score_and_set_id_returns_agents_own_set():
     await _insert_agent_score(agent_id=agent_id, set_id=1, final_score=0.842123456)
 
     result = await get_agent_score_and_set_id(agent_id)
-    assert result == (1, 0.842123)
+    assert result == (1, 0.842123, 1)
 
 
 @pytest.mark.anyio
