@@ -181,7 +181,7 @@ async def test_catalog_derives_every_state_and_capability_without_global_flags(m
     assert [choice.model_dump() for choice in accepting] == [{"set_id": 3, "name": "Open"}]
 
 
-async def test_compatibility_resolver_prefers_newest_open_then_newest_draining() -> None:
+async def test_compatibility_resolver_prefers_newest_open_then_draining_then_paused() -> None:
     async with _db.pool.acquire() as conn:
         await _insert_competition(
             conn,
@@ -205,6 +205,14 @@ async def test_compatibility_resolver_prefers_newest_open_then_newest_draining()
 
     async with _db.pool.acquire() as conn:
         await conn.execute("UPDATE competitions SET end_date = clock_timestamp() WHERE set_id = 10")
+    assert await resolve_compatibility_competition_set_id() == 11
+
+    async with _db.pool.acquire() as conn:
+        await conn.execute("UPDATE competitions SET end_date = clock_timestamp() WHERE set_id = 11")
+    assert await resolve_compatibility_competition_set_id() == 2
+
+    async with _db.pool.acquire() as conn:
+        await conn.execute("UPDATE competitions SET end_date = clock_timestamp() WHERE set_id = 2")
     assert await resolve_compatibility_competition_set_id() is None
 
 

@@ -124,6 +124,31 @@ async def test_screener_info_uses_each_exact_stored_policy_and_keeps_missing_pol
     assert wait_calls == [(1, 2), (2, 4), (3, None)]
 
 
+async def test_unscoped_screener_info_remains_readable_while_only_competition_is_paused(monkeypatch):
+    empty_values = {group: None for group in EvaluationSetGroup}
+
+    async def average_scores(set_id: int):
+        assert set_id == 1
+        return empty_values
+
+    async def average_waits(set_id: int, validator_count: int | None):
+        assert (set_id, validator_count) == (1, 2)
+        return empty_values
+
+    monkeypatch.setattr(scoring_endpoint, "get_average_score_per_evaluation_set_group", average_scores)
+    monkeypatch.setattr(scoring_endpoint, "get_average_wait_time_per_evaluation_set_group", average_waits)
+
+    async with _db.pool.acquire() as conn:
+        await _insert_competition(conn, set_id=1, policy=_policy(threshold=0.11, validator_count=2, scale_hours=5))
+        await conn.execute("UPDATE competitions SET is_paused = TRUE WHERE set_id = 1")
+
+    result = await scoring_endpoint.screener_info()
+
+    assert result.set_id == 1
+    assert result.screener_1_threshold == pytest.approx(0.11)
+    assert result.prune_threshold == pytest.approx(0.13)
+
+
 async def test_network_statistics_uses_exact_policy_count_and_scale_without_global_fallback(monkeypatch):
     leader_calls: list[tuple[int, int]] = []
     approved_at = OBSERVED_AT - timedelta(hours=2)
