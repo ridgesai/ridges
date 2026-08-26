@@ -257,17 +257,20 @@ async def get_public_competition(conn: DatabaseConnection, set_id: int) -> Publi
 
 @db_operation
 async def resolve_compatibility_competition_set_id(conn: DatabaseConnection) -> int | None:
-    """Resolve the legacy public default without using numeric latest-set order."""
+    """Resolve the legacy read-only default without using numeric latest-set order."""
     return await conn.fetchval(
         f"""
         SELECT set_id
         FROM competitions
         WHERE start_date IS NOT NULL
-          AND is_paused IS FALSE
           AND end_date IS NULL
           AND num_nonnulls({", ".join(POLICY_COLUMNS)}) = {len(POLICY_COLUMNS)}
         ORDER BY
-            CASE WHEN submissions_closed_at IS NULL THEN 0 ELSE 1 END,
+            CASE
+                WHEN submissions_closed_at IS NULL AND is_paused IS FALSE THEN 0
+                WHEN is_paused IS FALSE THEN 1
+                ELSE 2
+            END,
             set_id DESC
         LIMIT 1
         """

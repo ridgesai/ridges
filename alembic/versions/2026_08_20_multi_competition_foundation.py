@@ -87,10 +87,6 @@ def upgrade() -> None:
         "competitions",
         sa.Column("incentive_time_multiplier_scale_hours", sa.Numeric(), nullable=True),
     )
-
-    # Before this column existed, scoring implicitly allocated the whole network
-    # to the latest unfinished competition. Preserve that singleton behavior for
-    # existing data without assigning policy values or activating old sets.
     op.execute("""
         UPDATE competitions
         SET raw_emission_weight = 1
