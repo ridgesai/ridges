@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from kubernetes.client.rest import ApiException
@@ -162,6 +163,59 @@ async def test_statusful_api_error_still_returns_exec_result(monkeypatch) -> Non
 
     assert result.return_code == 1
     assert "API error (500)" in result.stderr
+
+
+def test_read_exec_output_pings_after_idle_interval(monkeypatch) -> None:
+    clock = {"t": 0.0}
+
+    class SilentResp(FakeResp):
+        def __init__(self):
+            super().__init__(returncode=0)
+            self._open = True
+            self._updates = 0
+            self.sock = MagicMock()
+
+        def is_open(self):
+            return self._open
+
+        def peek_stdout(self):
+            return False
+
+        def update(self, timeout):
+            self._updates += 1
+            clock["t"] += 31.0
+            if self._updates >= 2:
+                self._open = False
+
+    monkeypatch.setattr(k8s_environment.time, "monotonic", lambda: clock["t"])
+    resp = SilentResp()
+
+    make_env()._read_exec_output(resp)
+
+    resp.sock.ping.assert_called()
+
+
+def test_keepalive_ping_failure_is_ignored_when_command_already_finished() -> None:
+    class FinishedResp(FakeResp):
+        def __init__(self):
+            super().__init__(returncode=0)
+            self.sock = MagicMock()
+            self.sock.ping.side_effect = OSError("closed")
+
+    env = make_env()
+    env._ping_exec_stream(FinishedResp())
+
+
+def test_keepalive_ping_failure_raises_when_stream_has_no_status() -> None:
+    class DeadResp(FakeResp):
+        def __init__(self):
+            super().__init__(returncode=None)
+            self.sock = MagicMock()
+            self.sock.ping.side_effect = OSError("closed")
+
+    env = make_env()
+    with pytest.raises(ExecTransportError, match="keepalive ping failed"):
+        env._ping_exec_stream(DeadResp())
 
 
 def make_agent(tmp_path: Path) -> RidgesMinerAgent:
