@@ -109,22 +109,103 @@ def test_kubernetes_allows_only_the_materialized_proxy_scaffold(tmp_path: Path) 
     _validate_kubernetes_task_services(task_dir)
 
 
+def test_kubernetes_allows_shared_leftover_only_tests_compose(tmp_path: Path) -> None:
+    task_dir = _write_task(tmp_path / "task")
+    (task_dir / "tests" / "docker-compose.yaml").write_text("services:\n  main: {}\n")
+
+    _validate_kubernetes_task_services(task_dir)
+
+
+def test_kubernetes_rejects_shared_tests_sidecars(tmp_path: Path) -> None:
+    task_dir = _write_task(tmp_path / "task")
+    (task_dir / "environment" / "docker-compose.yaml").write_text(
+        "services:\n"
+        "  postgres:\n"
+        "    build:\n"
+        "      context: .\n"
+        "      dockerfile: postgres.Dockerfile\n"
+        "    volumes:\n"
+        "      - type: tmpfs\n"
+        "        target: /var/lib/postgresql/data\n"
+        "        tmpfs:\n"
+        "          size: 4294967296\n"
+        "    environment:\n"
+        "      POSTGRES_PASSWORD: secret\n"
+        "    healthcheck:\n"
+        '      test: ["CMD-SHELL", "pg_isready"]\n'
+        "      interval: 2s\n"
+        "      timeout: 2s\n"
+        "      retries: 300\n"
+        "  redis:\n"
+        "    build:\n"
+        "      context: .\n"
+        "      dockerfile: redis.Dockerfile\n"
+        "    healthcheck:\n"
+        '      test: ["CMD-SHELL", "redis-cli ping"]\n'
+        "      interval: 2s\n"
+        "      timeout: 2s\n"
+        "      retries: 60\n"
+    )
+    (task_dir / "tests" / "docker-compose.yaml").write_text(
+        "services:\n"
+        "  clickhouse:\n"
+        "    image: clickhouse/clickhouse-server@sha256:deadbeef\n"
+        "    healthcheck:\n"
+        '      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping"]\n'
+        "      interval: 2s\n"
+        "      timeout: 2s\n"
+        "      retries: 60\n"
+    )
+
+    with pytest.raises(RuntimeError, match="shared mode"):
+        _validate_kubernetes_task_services(task_dir)
+
+
+def test_kubernetes_allows_separate_tests_sidecars(tmp_path: Path) -> None:
+    task_dir = _write_task(tmp_path / "task", SEPARATE_TOML)
+    (task_dir / "tests" / "Dockerfile").write_text("FROM alpine:3.20\nCOPY . /tests\n")
+    (task_dir / "environment" / "docker-compose.yaml").write_text(
+        "services:\n"
+        "  postgres:\n"
+        "    build:\n"
+        "      context: .\n"
+        "      dockerfile: postgres.Dockerfile\n"
+        "    healthcheck:\n"
+        '      test: ["CMD-SHELL", "pg_isready"]\n'
+        "      interval: 2s\n"
+        "      timeout: 2s\n"
+        "      retries: 300\n"
+    )
+    (task_dir / "tests" / "docker-compose.yaml").write_text(
+        "services:\n"
+        "  clickhouse:\n"
+        "    image: clickhouse/clickhouse-server@sha256:deadbeef\n"
+        "    healthcheck:\n"
+        '      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping"]\n'
+        "      interval: 2s\n"
+        "      timeout: 2s\n"
+        "      retries: 60\n"
+    )
+
+    _validate_kubernetes_task_services(task_dir, separate_verifier=True)
+
+
 @pytest.mark.parametrize(
     ("relative_path", "compose", "expected"),
     [
         (
             "environment/docker-compose.yaml",
-            "services:\n  main: {}\n  sandbox-proxy: {}\n  postgres: {}\n",
-            r"agent services \['postgres'\]",
+            "services:\n  postgres:\n    image: postgres:16\n    ports:\n      - '5432:5432'\n",
+            "unsupported keys",
         ),
         (
             "tests/docker-compose.yaml",
-            "services:\n  postgres: {}\n",
-            r"verifier services \['postgres'\]",
+            "networks:\n  default: {}\nservices:\n  postgres:\n    image: postgres:16\n",
+            "unsupported top-level keys",
         ),
     ],
 )
-def test_kubernetes_rejects_task_authored_compose_sidecars(
+def test_kubernetes_rejects_unsupported_compose(
     tmp_path: Path,
     relative_path: str,
     compose: str,

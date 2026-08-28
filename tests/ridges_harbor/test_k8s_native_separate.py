@@ -1,3 +1,5 @@
+import io
+import tarfile
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +15,64 @@ from ridges_harbor.k8s_environment import (
     _build_job_body,
     _build_job_name,
     _environment_image_role,
+    pre_build_images,
 )
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+def _write_pg_compose(directory: Path) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "docker-compose.yaml").write_text(
+        "services:\n"
+        "  postgres:\n"
+        "    build:\n"
+        "      context: .\n"
+        "      dockerfile: postgres.Dockerfile\n"
+        "    volumes:\n"
+        "      - type: tmpfs\n"
+        "        target: /var/lib/postgresql/data\n"
+        "        tmpfs:\n"
+        "          size: 4294967296\n"
+        "    environment:\n"
+        "      POSTGRES_PASSWORD: secret\n"
+        "    healthcheck:\n"
+        '      test: ["CMD-SHELL", "pg_isready"]\n'
+        "      interval: 2s\n"
+        "      timeout: 2s\n"
+        "      retries: 300\n"
+        "  redis:\n"
+        "    build:\n"
+        "      context: .\n"
+        "      dockerfile: redis.Dockerfile\n"
+        "    healthcheck:\n"
+        '      test: ["CMD-SHELL", "redis-cli ping"]\n'
+        "      interval: 2s\n"
+        "      timeout: 2s\n"
+        "      retries: 60\n"
+    )
+
+
+def _write_clickhouse_compose(directory: Path) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "docker-compose.yaml").write_text(
+        "services:\n"
+        "  clickhouse:\n"
+        "    image: clickhouse/clickhouse-server@sha256:35b419db86eed71ab1c41c03b4fd1f39be26f41eb38b0866268e2ca162445105\n"
+        "    healthcheck:\n"
+        '      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping"]\n'
+        "      interval: 2s\n"
+        "      timeout: 2s\n"
+        "      retries: 60\n"
+        "    volumes:\n"
+        "      - type: tmpfs\n"
+        "        target: /var/lib/clickhouse\n"
+        "        tmpfs:\n"
+        "          size: 1073741824\n"
+    )
 
 
 def _make_environment(
@@ -41,6 +100,7 @@ def _make_environment(
         evaluation_run_id="evaluation-1",
         proxy_data_dir=tmp_path / "proxy-data",
         verifier_image_required=verifier_image_required,
+        task_dir=tmp_path,
         build_registry="build-registry.example.test:5000",
     )
 
@@ -93,6 +153,58 @@ def test_agent_and_verifier_use_distinct_images_and_pod_shapes(tmp_path: Path) -
     assert verifier._build_pod_spec().init_containers is None
 
 
+def test_agent_and_verifier_pods_include_compose_sidecars(tmp_path: Path) -> None:
+    _write_pg_compose(tmp_path / "environment")
+    _write_pg_compose(tmp_path / "tests")
+    agent = _make_environment(
+        tmp_path,
+        session_id="native-separate-task__env",
+        verifier_image_required=True,
+    )
+    verifier = _make_environment(
+        tmp_path,
+        session_id="native-separate-task__verifier__trial",
+    )
+
+    assert [container.name for container in agent._build_containers()] == [
+        "main",
+        "proxy",
+        "postgres",
+        "redis",
+    ]
+    assert [container.name for container in verifier._build_containers()] == ["main", "postgres", "redis"]
+    postgres = next(container for container in agent._build_containers() if container.name == "postgres")
+    assert postgres.image.endswith(":abc123def456-agent-postgres")
+    assert postgres.startup_probe.failure_threshold == 300
+    assert postgres.startup_probe._exec.command == ["sh", "-c", "pg_isready"]
+    assert postgres.security_context is None
+    tmpfs = next(volume for volume in agent._build_volumes() if volume.name == "tmpfs-postgres-0")
+    assert not tmpfs.empty_dir.medium
+    assert tmpfs.empty_dir.size_limit == "4294967296"
+    assert postgres.resources.requests["cpu"] == "250m"
+    assert postgres.resources.requests["memory"] == "512Mi"
+    assert postgres.resources.limits["memory"] == "2Gi"
+    assert postgres.resources.requests["ephemeral-storage"] == "4294967296"
+    assert postgres.resources.limits["ephemeral-storage"] == "4294967296"
+    redis = next(container for container in agent._build_containers() if container.name == "redis")
+    assert "ephemeral-storage" not in redis.resources.requests
+    assert redis.resources.requests["memory"] == "512Mi"
+    aliases = agent._build_pod_spec().host_aliases
+    assert aliases is not None
+    assert aliases[0].ip == "127.0.0.1"
+    assert aliases[0].hostnames == ["postgres", "redis"]
+    assert verifier._build_pod_spec().init_containers is None
+    assert agent._pod_ready_timeout_sec() == 1200
+
+
+def test_clickhouse_sidecar_uses_registry_tag_not_hub_ref(tmp_path: Path) -> None:
+    _write_clickhouse_compose(tmp_path / "environment")
+    agent = _make_environment(tmp_path, session_id="native-separate-task__env")
+    clickhouse = next(container for container in agent._build_containers() if container.name == "clickhouse")
+    assert clickhouse.image.endswith(":abc123def456-agent-clickhouse")
+    assert "clickhouse/clickhouse-server@" not in clickhouse.image
+
+
 @pytest.mark.anyio
 async def test_agent_start_builds_both_images_before_pod(
     tmp_path: Path,
@@ -125,6 +237,60 @@ async def test_agent_start_builds_both_images_before_pod(
     assert sorted(events[1:-1]) == [
         ("image", AGENT_IMAGE_ROLE, True, True),
         ("image", VERIFIER_IMAGE_ROLE, True, True),
+    ]
+
+
+@pytest.mark.anyio
+async def test_agent_start_gathers_sidecar_images(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _write_pg_compose(tmp_path / "environment")
+    _write_clickhouse_compose(tmp_path / "tests")
+    environment = _make_environment(
+        tmp_path,
+        session_id="native-separate-task__env",
+        verifier_image_required=True,
+    )
+    events: list[tuple[object, ...]] = []
+
+    async def ensure_client() -> None:
+        events.append(("client",))
+
+    async def ensure_image(
+        *,
+        image_role: str,
+        force_build: bool,
+        allow_build: bool,
+        dockerfile_name: str = "Dockerfile",
+        from_image: str | None = None,
+    ) -> None:
+        events.append(("image", image_role, force_build, allow_build, dockerfile_name, from_image))
+
+    async def start_pod(self, force_build: bool) -> None:
+        events.append(("pod", force_build))
+
+    monkeypatch.setattr(environment, "_ensure_client", ensure_client)
+    monkeypatch.setattr(environment, "_ensure_image", ensure_image)
+    monkeypatch.setattr(KubernetesEnvironment, "start", start_pod)
+
+    await environment.start(force_build=True)
+
+    assert events[0] == ("client",)
+    assert events[-1] == ("pod", False)
+    assert sorted(events[1:-1]) == [
+        ("image", AGENT_IMAGE_ROLE, True, True, "Dockerfile", None),
+        ("image", "agent-postgres", True, True, "postgres.Dockerfile", None),
+        ("image", "agent-redis", True, True, "redis.Dockerfile", None),
+        ("image", VERIFIER_IMAGE_ROLE, True, True, "Dockerfile", None),
+        (
+            "image",
+            "verifier-clickhouse",
+            True,
+            True,
+            "ridges-from-clickhouse.Dockerfile",
+            "clickhouse/clickhouse-server@sha256:35b419db86eed71ab1c41c03b4fd1f39be26f41eb38b0866268e2ca162445105",
+        ),
     ]
 
 
@@ -224,6 +390,35 @@ async def test_verifier_start_requires_prebuilt_image_and_never_builds(
         )
 
 
+def test_declared_mem_limit_reaches_sidecar_resources(tmp_path: Path) -> None:
+    (tmp_path / "environment").mkdir()
+    (tmp_path / "environment" / "docker-compose.yaml").write_text(
+        "services:\n  redis:\n    image: redis:7\n    mem_limit: 1g\n"
+    )
+    agent = _make_environment(tmp_path, session_id="native-separate-task__env")
+    redis = next(container for container in agent._build_containers() if container.name == "redis")
+    assert redis.resources.requests["memory"] == "1Gi"
+    assert redis.resources.limits["memory"] == "1Gi"
+
+
+@pytest.mark.anyio
+async def test_agent_start_requires_task_dir_for_verifier_sidecars(tmp_path: Path, monkeypatch) -> None:
+    environment = _make_environment(
+        tmp_path,
+        session_id="native-separate-task__env",
+        verifier_image_required=True,
+    )
+    environment.task_dir = None
+
+    async def ensure_client() -> None:
+        return None
+
+    monkeypatch.setattr(environment, "_ensure_client", ensure_client)
+
+    with pytest.raises(RuntimeError, match="task_dir is required"):
+        await environment.start(force_build=True)
+
+
 def test_agent_build_job_uses_environment_context() -> None:
     job = _build_job_body(
         "build-task-agent",
@@ -237,11 +432,62 @@ def test_agent_build_job_uses_environment_context() -> None:
         context_name="environment",
     )
 
-    init_args = job.spec.template.spec.init_containers[0].args
+    init = job.spec.template.spec.init_containers[0]
+    init_env = {env.name: env.value for env in init.env if env.value is not None}
     build_args = job.spec.template.spec.containers[0].args
-    assert "/workspace/environment/Dockerfile" in init_args[0]
+    assert init_env["CONTEXT_NAME"] == "environment"
+    assert init_env["DOCKERFILE_NAME"] == "Dockerfile"
+    assert "$CONTEXT_NAME" in init.args[0]
+    assert "$DOCKERFILE_NAME" in init.args[0]
     assert "--local=context=/workspace/environment" in build_args
     assert "--local=dockerfile=/workspace/environment" in build_args
+    assert "--opt=filename=Dockerfile" in build_args
+
+
+def test_sidecar_build_job_uses_named_dockerfile() -> None:
+    job = _build_job_body(
+        "build-task-agent-postgres",
+        "build-task-agent-postgres-url",
+        "registry.example.test/task:abc-agent-postgres",
+        0,
+        "default",
+        "registry.example.test",
+        False,
+        None,
+        context_name="environment",
+        dockerfile_name="postgres.Dockerfile",
+    )
+
+    init = job.spec.template.spec.init_containers[0]
+    init_env = {env.name: env.value for env in init.env if env.value is not None}
+    build_args = job.spec.template.spec.containers[0].args
+    assert init_env["CONTEXT_NAME"] == "environment"
+    assert init_env["DOCKERFILE_NAME"] == "postgres.Dockerfile"
+    assert "$DOCKERFILE_NAME" in init.args[0]
+    assert "--opt=filename=postgres.Dockerfile" in build_args
+
+
+def test_from_copy_build_job_writes_generated_dockerfile() -> None:
+    job = _build_job_body(
+        "build-task-agent-clickhouse",
+        "build-task-agent-clickhouse-url",
+        "registry.example.test/task:abc-agent-clickhouse",
+        0,
+        "default",
+        "registry.example.test",
+        False,
+        None,
+        context_name="environment",
+        dockerfile_name="ridges-from-clickhouse.Dockerfile",
+        from_image="clickhouse/clickhouse-server@sha256:abc",
+    )
+
+    init = job.spec.template.spec.init_containers[0]
+    init_env = {env.name: env.value for env in init.env if env.value is not None}
+    assert init_env["FROM_IMAGE"].endswith("@sha256:abc")
+    assert init_env["DOCKERFILE_NAME"] == "ridges-from-clickhouse.Dockerfile"
+    assert "$DOCKERFILE_NAME" in init.args[0]
+    assert "--opt=filename=ridges-from-clickhouse.Dockerfile" in job.spec.template.spec.containers[0].args
 
 
 def test_verifier_build_job_uses_tests_context() -> None:
@@ -257,11 +503,14 @@ def test_verifier_build_job_uses_tests_context() -> None:
         context_name="tests",
     )
 
-    init_args = job.spec.template.spec.init_containers[0].args
+    init = job.spec.template.spec.init_containers[0]
+    init_env = {env.name: env.value for env in init.env if env.value is not None}
     build_args = job.spec.template.spec.containers[0].args
-    assert "/workspace/tests/Dockerfile" in init_args[0]
+    assert init_env["CONTEXT_NAME"] == "tests"
+    assert init_env["DOCKERFILE_NAME"] == "Dockerfile"
     assert "--local=context=/workspace/tests" in build_args
     assert "--local=dockerfile=/workspace/tests" in build_args
+    assert "--opt=filename=Dockerfile" in build_args
 
 
 @pytest.mark.parametrize("image_role", [AGENT_IMAGE_ROLE, VERIFIER_IMAGE_ROLE])
@@ -280,3 +529,209 @@ def test_truncated_build_job_names_retain_full_task_identity() -> None:
     second = _build_job_name(shared_prefix + "two", "abc123def456", AGENT_IMAGE_ROLE)
 
     assert first != second
+
+
+def _tar_gz_with_compose(
+    *,
+    environment: str | None = None,
+    tests: str | None = None,
+    tests_dockerfile: str | None = None,
+    prefix: str = "task",
+) -> bytes:
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+
+        def add(path: str, text: str) -> None:
+            data = text.encode()
+            info = tarfile.TarInfo(name=path)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+
+        if environment is not None:
+            add(
+                f"{prefix}/environment/docker-compose.yaml" if prefix else "environment/docker-compose.yaml",
+                environment,
+            )
+        if tests is not None:
+            add(f"{prefix}/tests/docker-compose.yaml" if prefix else "tests/docker-compose.yaml", tests)
+        if tests_dockerfile is not None:
+            add(f"{prefix}/tests/Dockerfile" if prefix else "tests/Dockerfile", tests_dockerfile)
+    return buffer.getvalue()
+
+
+@pytest.mark.anyio
+async def test_pre_build_peeks_compose_when_agent_tag_exists(monkeypatch) -> None:
+    from ridges_harbor import k8s_environment as k8s_environment_module
+
+    jobs: list[str] = []
+    existing = {"abc123def456-agent"}
+
+    class CoreApi:
+        def create_namespaced_secret(self, **_kwargs: Any) -> None:
+            return None
+
+        def delete_namespaced_secret(self, **_kwargs: Any) -> None:
+            return None
+
+    class BatchApi:
+        def create_namespaced_job(self, **kwargs: Any) -> None:
+            jobs.append(kwargs["body"].metadata.name)
+
+    async def registry_exists(_registry: str, _task_name: str, tag: str, **_kwargs: Any) -> bool:
+        return tag in existing
+
+    monkeypatch.setattr(k8s_environment_module, "_init_standalone_k8s_clients", lambda _ctx: (CoreApi(), BatchApi()))
+    monkeypatch.setattr(k8s_environment_module, "_registry_image_exists", registry_exists)
+    monkeypatch.setattr(
+        k8s_environment_module,
+        "_download_task_archive",
+        lambda _url: _tar_gz_with_compose(
+            environment=(
+                "services:\n  postgres:\n    build:\n      context: .\n      dockerfile: postgres.Dockerfile\n"
+            ),
+            tests=("services:\n  clickhouse:\n    image: clickhouse/clickhouse-server@sha256:deadbeef\n"),
+        ),
+    )
+
+    await pre_build_images(
+        [("native-task", "abc123def456", "https://tasks.example.test/task.tar.gz")],
+        namespace="default",
+        registry="registry.example.test",
+        build_registry="build-registry.example.test:5000",
+    )
+
+    assert any(name.endswith("-abc123def456-agent-postgres") for name in jobs)
+    assert any(name.endswith("-abc123def456-verifier-clickhouse") for name in jobs)
+    assert not any(name.endswith("-abc123def456-agent") and "postgres" not in name for name in jobs)
+    assert not any(name.endswith("-abc123def456-verifier") and "clickhouse" not in name for name in jobs)
+
+
+@pytest.mark.anyio
+async def test_pre_build_skips_existing_sidecar_tags(monkeypatch) -> None:
+    from ridges_harbor import k8s_environment as k8s_environment_module
+
+    jobs: list[str] = []
+    existing = {"abc123def456-agent", "abc123def456-agent-postgres"}
+
+    class CoreApi:
+        def create_namespaced_secret(self, **_kwargs: Any) -> None:
+            return None
+
+        def delete_namespaced_secret(self, **_kwargs: Any) -> None:
+            return None
+
+    class BatchApi:
+        def create_namespaced_job(self, **kwargs: Any) -> None:
+            jobs.append(kwargs["body"].metadata.name)
+
+    async def registry_exists(_registry: str, _task_name: str, tag: str, **_kwargs: Any) -> bool:
+        return tag in existing
+
+    monkeypatch.setattr(k8s_environment_module, "_init_standalone_k8s_clients", lambda _ctx: (CoreApi(), BatchApi()))
+    monkeypatch.setattr(k8s_environment_module, "_registry_image_exists", registry_exists)
+    monkeypatch.setattr(
+        k8s_environment_module,
+        "_download_task_archive",
+        lambda _url: _tar_gz_with_compose(
+            environment=(
+                "services:\n  postgres:\n    build:\n      context: .\n      dockerfile: postgres.Dockerfile\n"
+            ),
+        ),
+    )
+
+    await pre_build_images(
+        [("native-task", "abc123def456", "https://tasks.example.test/task.tar.gz")],
+        namespace="default",
+        registry="registry.example.test",
+        build_registry="build-registry.example.test:5000",
+    )
+
+    assert jobs == []
+
+
+def _install_pre_build_mocks(monkeypatch, *, archive: bytes, existing: set[str]) -> list[str]:
+    from ridges_harbor import k8s_environment as k8s_environment_module
+
+    jobs: list[str] = []
+
+    class CoreApi:
+        def create_namespaced_secret(self, **_kwargs: Any) -> None:
+            return None
+
+        def delete_namespaced_secret(self, **_kwargs: Any) -> None:
+            return None
+
+    class BatchApi:
+        def create_namespaced_job(self, **kwargs: Any) -> None:
+            jobs.append(kwargs["body"].metadata.name)
+
+    async def registry_exists(_registry: str, _task_name: str, tag: str, **_kwargs: Any) -> bool:
+        return tag in existing
+
+    monkeypatch.setattr(k8s_environment_module, "_init_standalone_k8s_clients", lambda _ctx: (CoreApi(), BatchApi()))
+    monkeypatch.setattr(k8s_environment_module, "_registry_image_exists", registry_exists)
+    monkeypatch.setattr(k8s_environment_module, "_download_task_archive", lambda _url: archive)
+    return jobs
+
+
+@pytest.mark.anyio
+async def test_pre_build_queues_verifier_main_when_tests_dockerfile_present(monkeypatch) -> None:
+    jobs = _install_pre_build_mocks(
+        monkeypatch,
+        archive=_tar_gz_with_compose(
+            environment="services:\n  main: {}\n",
+            tests_dockerfile="FROM alpine:3.20\nCOPY . /tests\n",
+        ),
+        existing={"abc123def456-agent"},
+    )
+
+    await pre_build_images(
+        [("native-task", "abc123def456", "https://tasks.example.test/task.tar.gz")],
+        namespace="default",
+        registry="registry.example.test",
+        build_registry="build-registry.example.test:5000",
+    )
+
+    assert any(name.endswith("-abc123def456-verifier") and "clickhouse" not in name for name in jobs)
+
+
+@pytest.mark.anyio
+async def test_pre_build_skips_existing_verifier_main(monkeypatch) -> None:
+    jobs = _install_pre_build_mocks(
+        monkeypatch,
+        archive=_tar_gz_with_compose(
+            environment="services:\n  main: {}\n",
+            tests_dockerfile="FROM alpine:3.20\nCOPY . /tests\n",
+        ),
+        existing={"abc123def456-agent", "abc123def456-verifier"},
+    )
+
+    await pre_build_images(
+        [("native-task", "abc123def456", "https://tasks.example.test/task.tar.gz")],
+        namespace="default",
+        registry="registry.example.test",
+        build_registry="build-registry.example.test:5000",
+    )
+
+    assert not any(name.endswith("-abc123def456-verifier") for name in jobs)
+
+
+@pytest.mark.anyio
+async def test_pre_build_does_not_queue_verifier_main_from_tests_compose_alone(monkeypatch) -> None:
+    jobs = _install_pre_build_mocks(
+        monkeypatch,
+        archive=_tar_gz_with_compose(
+            tests="services:\n  clickhouse:\n    image: clickhouse/clickhouse-server@sha256:deadbeef\n",
+        ),
+        existing={"abc123def456-agent"},
+    )
+
+    await pre_build_images(
+        [("native-task", "abc123def456", "https://tasks.example.test/task.tar.gz")],
+        namespace="default",
+        registry="registry.example.test",
+        build_registry="build-registry.example.test:5000",
+    )
+
+    assert any(name.endswith("-abc123def456-verifier-clickhouse") for name in jobs)
+    assert not any(name.endswith("-abc123def456-verifier") and "clickhouse" not in name for name in jobs)

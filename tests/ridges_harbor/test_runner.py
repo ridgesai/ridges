@@ -320,6 +320,7 @@ async def test_run_task_dir_uses_loopback_proxy_in_kubernetes(tmp_path: Path, mo
     assert config.environment.import_path == "ridges_harbor.k8s_environment:RidgesKubernetesEnvironment"
     assert config.environment.kwargs["inference_seed"] == 123
     assert config.environment.kwargs["verifier_image_required"] is False
+    assert config.environment.kwargs["task_dir"] == str(task_dir)
     assert runner_module.DEFAULT_AGENT_SANDBOX_PROXY_URL == "http://sandbox-proxy:80"
 
 
@@ -367,6 +368,7 @@ async def test_run_task_dir_prebuilds_kubernetes_verifier_image_for_separate_mod
     config = FakeJob.created_configs[0]
     assert config.agents[0].kwargs["separate_verifier"] is True
     assert config.environment.kwargs["verifier_image_required"] is True
+    assert config.environment.kwargs["task_dir"] == str(task_dir)
     assert config.artifacts == ["/logs/agent/patch.diff"]
     assert config.verifier.import_path is None
     assert FakeJob.last_instance.verification_started_hooks == []

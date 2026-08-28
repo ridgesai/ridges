@@ -260,6 +260,11 @@ K8S_REGISTRY_PASSWORD: str | None = None
 K8S_REGISTRY_INSECURE: bool = True
 K8S_BUILD_REGISTRY: str = "registry.ridges:5000"
 K8S_BUILD_REGISTRY_INSECURE: bool = True
+K8S_MEMORY_REQUEST_FRACTION: float = 0.25
+K8S_CPU_REQUEST_FRACTION: float = 0.25
+K8S_MEMORY_LIMIT_MULTIPLIER: float = 1.0
+K8S_SIDECAR_MEMORY_REQUEST_MI: int = 512
+K8S_SIDECAR_MEMORY_LIMIT_MI: int = 2048
 
 PROXY_IMAGE: str = os.getenv("PROXY_IMAGE", "ghcr.io/ridgesai/sandbox-proxy:latest")
 
@@ -278,6 +283,8 @@ if RIDGES_ENVIRONMENT_TYPE == "kubernetes":
     K8S_MEMORY_REQUEST_FRACTION: float = float(os.getenv("K8S_MEMORY_REQUEST_FRACTION", "0.25"))
     K8S_CPU_REQUEST_FRACTION: float = float(os.getenv("K8S_CPU_REQUEST_FRACTION", "0.25"))
     K8S_MEMORY_LIMIT_MULTIPLIER: float = float(os.getenv("K8S_MEMORY_LIMIT_MULTIPLIER", "1.0"))
+    K8S_SIDECAR_MEMORY_REQUEST_MI: int = int(os.getenv("K8S_SIDECAR_MEMORY_REQUEST_MI", "512"))
+    K8S_SIDECAR_MEMORY_LIMIT_MI: int = int(os.getenv("K8S_SIDECAR_MEMORY_LIMIT_MI", "2048"))
 
 logger.info(f"Execution Backend: {RIDGES_ENVIRONMENT_TYPE}")
 

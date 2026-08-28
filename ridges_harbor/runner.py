@@ -10,8 +10,6 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-import yaml
-
 from models.openrouter import OpenRouterRuntimeConfig
 from ridges_harbor._stdlib_contract import HARBOR_RUNNER_ERROR_FILENAME
 from ridges_harbor.digest import compute_task_digest
@@ -20,6 +18,7 @@ from ridges_harbor.docker_runtime import (
     build_enable_verifier_egress_hook,
     docker_environment_env,
 )
+from ridges_harbor.k8s_compose import parse_kubernetes_compose
 from ridges_harbor.progress_logging import install_logging_harbor_progress
 from ridges_harbor.shared import DEFAULT_RESULTS_DIR, HarborRunSummary, resolve_inference_gateway
 
@@ -78,33 +77,23 @@ def _resolve_separate_verifier(task_dir: Path) -> bool:
     return True
 
 
-def _compose_service_names(compose_path: Path) -> set[str]:
-    """Read service names from a Compose file or return an empty set."""
+def _validate_kubernetes_compose_file(compose_path: Path) -> None:
+    """Parse one Compose file; leftover names may skip sidecar validation."""
     if not compose_path.exists():
-        return set()
-
-    raw = yaml.safe_load(compose_path.read_text()) or {}
-    services = raw.get("services", {}) if isinstance(raw, dict) else None
-    if not isinstance(services, dict):
-        raise RuntimeError(f"Invalid Compose services table in {compose_path}")
-    return {str(name) for name in services}
+        return
+    parse_kubernetes_compose(compose_path)
 
 
-def _validate_kubernetes_task_services(task_dir: Path) -> None:
-    """Reject task sidecars that the current Kubernetes adapter cannot run."""
-    agent_services = _compose_service_names(task_dir / "environment" / "docker-compose.yaml")
-    unsupported_agent = agent_services - {"main", "sandbox-proxy"}
-    verifier_services = _compose_service_names(task_dir / "tests" / "docker-compose.yaml")
-    if unsupported_agent or verifier_services:
-        details: list[str] = []
-        if unsupported_agent:
-            details.append(f"agent services {sorted(unsupported_agent)}")
-        if verifier_services:
-            details.append(f"verifier services {sorted(verifier_services)}")
+def _validate_kubernetes_task_services(task_dir: Path, *, separate_verifier: bool = False) -> None:
+    """Reject Compose features the Kubernetes adapter cannot translate."""
+    _validate_kubernetes_compose_file(task_dir / "environment" / "docker-compose.yaml")
+    tests_compose = task_dir / "tests" / "docker-compose.yaml"
+    _validate_kubernetes_compose_file(tests_compose)
+    if not separate_verifier and parse_kubernetes_compose(tests_compose):
         raise RuntimeError(
-            "Ridges Kubernetes does not yet run task-authored Compose sidecars; "
-            + ", ".join(details)
-            + ". Run this task with the Docker environment"
+            "Kubernetes shared mode only runs environment/ sidecars; "
+            "tests/docker-compose.yaml defines extra services. "
+            'Set environment_mode = "separate" or use Docker.'
         )
 
 
@@ -241,7 +230,7 @@ async def _run_task_dir(
     ridges_environment_type = os.getenv("RIDGES_ENVIRONMENT_TYPE", "docker")
     separate_verifier = _resolve_separate_verifier(task_dir)
     if ridges_environment_type == "kubernetes":
-        _validate_kubernetes_task_services(task_dir)
+        _validate_kubernetes_task_services(task_dir, separate_verifier=separate_verifier)
 
     resolved_job_name = job_name or f"{task_name}__{uuid4().hex[:8]}"
     job_dir = results_dir / resolved_job_name
@@ -285,6 +274,8 @@ async def _run_task_dir(
             K8S_REGISTRY_INSECURE,
             K8S_REGISTRY_PASSWORD,
             K8S_REGISTRY_SECRET,
+            K8S_SIDECAR_MEMORY_LIMIT_MI,
+            K8S_SIDECAR_MEMORY_REQUEST_MI,
             PROXY_IMAGE,
         )
 
@@ -315,7 +306,10 @@ async def _run_task_dir(
                 "inference_seed": inference_seed,
                 "openrouter_sidecar_env": openrouter_config.sidecar_env_vars() if openrouter_config else {},
                 "proxy_data_dir": str(proxy_data_dir),
+                "task_dir": str(task_dir),
                 "verifier_image_required": separate_verifier,
+                "sidecar_memory_request_mi": K8S_SIDECAR_MEMORY_REQUEST_MI,
+                "sidecar_memory_limit_mi": K8S_SIDECAR_MEMORY_LIMIT_MI,
                 "kubeconfig_context": K8S_CONTEXT,
                 "node_selector": K8S_NODE_SELECTOR,
                 "labels": {"ridges.ai/trial-id": ridges_trial_id},

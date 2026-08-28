@@ -31,6 +31,7 @@ import re
 import shlex
 import ssl
 import tarfile
+import urllib.request
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -46,6 +47,16 @@ from kubernetes.stream import stream
 from tenacity import retry, stop_after_attempt, wait_exponential
 from websocket import WebSocketException
 
+from ridges_harbor.k8s_compose import (
+    ComposeHealthcheck,
+    ComposeSidecar,
+    compose_service_names,
+    k8s_memory_quantity,
+    parse_duration_seconds,
+    parse_kubernetes_compose,
+    parse_kubernetes_compose_text,
+    sidecar_image_role,
+)
 from ridges_harbor.runtime_contract import ExecTransportError
 
 logger = logging.getLogger(__name__)
@@ -60,6 +71,9 @@ BUILD_MEMORY_TIER_ANNOTATION = "ridges.ai/build-memory-tier"
 AGENT_IMAGE_ROLE = "agent"
 VERIFIER_IMAGE_ROLE = "verifier"
 MAX_BUILD_JOB_NAME_LENGTH = 59
+DEFAULT_SIDECAR_MEMORY_REQUEST_MI = 512
+DEFAULT_SIDECAR_MEMORY_LIMIT_MI = 2048
+DEFAULT_SIDECAR_CPU_REQUEST = "250m"
 
 
 def _environment_image_role(session_id: str) -> str:
@@ -85,6 +99,17 @@ def _build_job_name(task_name: str, digest_tag: str, image_role: str) -> str:
             raise ValueError("Task identity suffix leaves no room for a build Job name")
         slug = f"{slug[:prefix_length].rstrip('-') or 'task'}-{identity}"
     return f"build-{slug}{suffix}"
+
+
+def _build_context_name(image_role: str) -> str:
+    """Select the task-archive directory BuildKit should use as context."""
+    if image_role == AGENT_IMAGE_ROLE or image_role.startswith(f"{AGENT_IMAGE_ROLE}-"):
+        return "environment"
+    return "tests"
+
+
+def _from_copy_dockerfile_name(service_name: str) -> str:
+    return f"ridges-from-{service_name}.Dockerfile"
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +316,9 @@ class KubernetesEnvironment(BaseEnvironment):
             spec=self._build_pod_spec(),
         )
 
+    def _pod_ready_timeout_sec(self) -> int:
+        return 600
+
     # ------------------------------------------------------------------
     # BaseEnvironment lifecycle
     # ------------------------------------------------------------------
@@ -319,7 +347,7 @@ class KubernetesEnvironment(BaseEnvironment):
             else:
                 raise RuntimeError(f"Failed to create Pod {self.pod_name}: {exc}") from exc
 
-        await self._wait_for_pod_ready()
+        await self._wait_for_pod_ready(timeout_sec=self._pod_ready_timeout_sec())
 
         log_dirs = f"{EnvironmentPaths.agent_dir} {EnvironmentPaths.verifier_dir} {EnvironmentPaths.artifacts_dir}"
         mkdir_result = await self.exec(
@@ -782,7 +810,10 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         inference_seed: int | None = None,
         openrouter_sidecar_env: dict[str, str] | None = None,
         proxy_data_dir: str | Path | None = None,
+        task_dir: str | Path | None = None,
         verifier_image_required: bool = False,
+        sidecar_memory_request_mi: int = DEFAULT_SIDECAR_MEMORY_REQUEST_MI,
+        sidecar_memory_limit_mi: int = DEFAULT_SIDECAR_MEMORY_LIMIT_MI,
         registry_credentials_secret: str | None = None,
         registry_password: str | None = None,
         registry_insecure: bool = True,
@@ -797,6 +828,9 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         self.image_tag = f"{digest_tag}-{self.image_role}"
         self.build_context_name = "environment" if self.image_role == AGENT_IMAGE_ROLE else "tests"
         self.verifier_image_required = verifier_image_required
+        self.task_dir = Path(task_dir) if task_dir is not None else None
+        self.sidecar_memory_request_mi = sidecar_memory_request_mi
+        self.sidecar_memory_limit_mi = sidecar_memory_limit_mi
         self.task_archive_presigned_url = task_archive_presigned_url
         self.proxy_image = proxy_image
         self.evaluation_run_id = evaluation_run_id
@@ -843,32 +877,64 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
     async def start(self, force_build: bool) -> None:
         """Ensure the task image exists in the registry, then start the Pod."""
         await self._ensure_client()
+        if self.image_role == AGENT_IMAGE_ROLE and self.verifier_image_required and self.task_dir is None:
+            raise RuntimeError("task_dir is required to gather verifier sidecar images")
         if self.image_role == AGENT_IMAGE_ROLE:
-            if self.verifier_image_required:
-                await asyncio.gather(
-                    self._ensure_image(
-                        image_role=AGENT_IMAGE_ROLE,
-                        force_build=force_build,
-                        allow_build=True,
-                    ),
-                    self._ensure_image(
-                        image_role=VERIFIER_IMAGE_ROLE,
-                        force_build=force_build,
-                        allow_build=True,
-                    ),
-                )
-            else:
-                await self._ensure_image(
+            ensures = [
+                self._ensure_image(
                     image_role=AGENT_IMAGE_ROLE,
                     force_build=force_build,
                     allow_build=True,
                 )
+            ]
+            if self.verifier_image_required:
+                ensures.append(
+                    self._ensure_image(
+                        image_role=VERIFIER_IMAGE_ROLE,
+                        force_build=force_build,
+                        allow_build=True,
+                    )
+                )
+            for sidecar in self._compose_sidecars():
+                ensures.append(
+                    self._ensure_sidecar_image(
+                        AGENT_IMAGE_ROLE,
+                        sidecar,
+                        force_build=force_build,
+                        allow_build=True,
+                    )
+                )
+            if self.verifier_image_required:
+                if self.task_dir is None:
+                    raise RuntimeError("task_dir is required to gather verifier sidecar images")
+                for sidecar in parse_kubernetes_compose(self.task_dir / "tests" / "docker-compose.yaml"):
+                    ensures.append(
+                        self._ensure_sidecar_image(
+                            VERIFIER_IMAGE_ROLE,
+                            sidecar,
+                            force_build=force_build,
+                            allow_build=True,
+                        )
+                    )
+            await asyncio.gather(*ensures)
         else:
-            await self._ensure_image(
-                image_role=VERIFIER_IMAGE_ROLE,
-                force_build=False,
-                allow_build=False,
-            )
+            ensures = [
+                self._ensure_image(
+                    image_role=VERIFIER_IMAGE_ROLE,
+                    force_build=False,
+                    allow_build=False,
+                )
+            ]
+            for sidecar in self._compose_sidecars():
+                ensures.append(
+                    self._ensure_sidecar_image(
+                        VERIFIER_IMAGE_ROLE,
+                        sidecar,
+                        force_build=False,
+                        allow_build=False,
+                    )
+                )
+            await asyncio.gather(*ensures)
         await super().start(force_build=False)
 
     async def stop(self, delete: bool = True) -> None:
@@ -889,6 +955,97 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
             return
         await super().stop(delete=delete)
 
+    def _pod_ready_timeout_sec(self) -> int:
+        return 1200 if self._compose_sidecars() else super()._pod_ready_timeout_sec()
+
+    def _compose_sidecars(self) -> list[ComposeSidecar]:
+        environment_dir = getattr(self, "environment_dir", None)
+        if environment_dir is None:
+            return []
+        return parse_kubernetes_compose(Path(environment_dir) / "docker-compose.yaml")
+
+    def _compose_hostnames(self) -> list[str]:
+        environment_dir = getattr(self, "environment_dir", None)
+        if environment_dir is None:
+            return []
+        return sorted(compose_service_names(Path(environment_dir) / "docker-compose.yaml"))
+
+    def _sidecar_image_ref(self, service_name: str) -> str:
+        tag = f"{self.digest_tag}-{sidecar_image_role(self.image_role, service_name)}"
+        return f"{self.registry}/{self.task_name.lower()}:{tag}"
+
+    def _ensure_sidecar_image(
+        self,
+        environment_role: str,
+        sidecar: ComposeSidecar,
+        *,
+        force_build: bool,
+        allow_build: bool,
+    ):
+        return self._ensure_image(
+            image_role=sidecar_image_role(environment_role, sidecar.name),
+            force_build=force_build,
+            allow_build=allow_build,
+            dockerfile_name=sidecar.dockerfile or _from_copy_dockerfile_name(sidecar.name),
+            from_image=sidecar.image,
+        )
+
+    def _tmpfs_volume_name(self, service_name: str, index: int) -> str:
+        return f"tmpfs-{service_name}-{index}"
+
+    def _healthcheck_startup_probe(self, healthcheck: ComposeHealthcheck | None) -> k8s_client.V1Probe | None:
+        if healthcheck is None:
+            return None
+        return k8s_client.V1Probe(
+            _exec=k8s_client.V1ExecAction(command=["sh", "-c", healthcheck.test_script]),
+            period_seconds=parse_duration_seconds(healthcheck.interval, default=10),
+            timeout_seconds=parse_duration_seconds(healthcheck.timeout, default=5),
+            failure_threshold=healthcheck.retries or 3,
+        )
+
+    def _sidecar_container(self, sidecar: ComposeSidecar) -> k8s_client.V1Container:
+        mounts = [
+            k8s_client.V1VolumeMount(
+                name=self._tmpfs_volume_name(sidecar.name, index),
+                mount_path=mount.target,
+            )
+            for index, mount in enumerate(sidecar.tmpfs_mounts)
+        ]
+        default_request = self.sidecar_memory_request_mi * 1024 * 1024
+        default_limit = self.sidecar_memory_limit_mi * 1024 * 1024
+        memory_request_bytes = sidecar.memory_request_bytes or default_request
+        memory_limit_bytes = sidecar.memory_limit_bytes or default_limit
+        if memory_request_bytes > memory_limit_bytes:
+            raise RuntimeError(f"sidecar {sidecar.name}: memory request exceeds memory limit")
+        if sidecar.memory_request_bytes is None and sidecar.memory_limit_bytes is None:
+            self.logger.debug(
+                f"Sidecar {sidecar.name}: using default memory "
+                f"{self.sidecar_memory_request_mi}Mi/{self.sidecar_memory_limit_mi}Mi "
+                "(ClickHouse 2Gi floor; not measured RSS)"
+            )
+        # Sidecar ephemeral-storage is additive with main's storage_mb request.
+        ephemeral_bytes = sum(mount.size_bytes or 0 for mount in sidecar.tmpfs_mounts)
+        requests: dict[str, str] = {
+            "cpu": sidecar.cpu_request or DEFAULT_SIDECAR_CPU_REQUEST,
+            "memory": k8s_memory_quantity(memory_request_bytes),
+        }
+        limits: dict[str, str] = {"memory": k8s_memory_quantity(memory_limit_bytes)}
+        if ephemeral_bytes:
+            ephemeral = str(ephemeral_bytes)
+            requests["ephemeral-storage"] = ephemeral
+            limits["ephemeral-storage"] = ephemeral
+        return k8s_client.V1Container(
+            name=sidecar.name,
+            image=self._sidecar_image_ref(sidecar.name),
+            env=[k8s_client.V1EnvVar(name=key, value=value) for key, value in sidecar.env.items()],
+            volume_mounts=mounts or [],
+            startup_probe=self._healthcheck_startup_probe(sidecar.healthcheck),
+            resources=k8s_client.V1ResourceRequirements(
+                requests=requests,
+                limits=limits,
+            ),
+        )
+
     # ------------------------------------------------------------------
     # Pod spec overrides
     # ------------------------------------------------------------------
@@ -902,6 +1059,17 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
 
     def _build_volumes(self) -> list[k8s_client.V1Volume]:
         volumes = super()._build_volumes()
+        for sidecar in self._compose_sidecars():
+            for index, mount in enumerate(sidecar.tmpfs_mounts):
+                empty_dir = k8s_client.V1EmptyDirVolumeSource()
+                if mount.size_bytes is not None:
+                    empty_dir.size_limit = str(mount.size_bytes)
+                volumes.append(
+                    k8s_client.V1Volume(
+                        name=self._tmpfs_volume_name(sidecar.name, index),
+                        empty_dir=empty_dir,
+                    )
+                )
         if self.image_role != AGENT_IMAGE_ROLE:
             return volumes
         volumes.append(k8s_client.V1Volume(name="proxy-certs", empty_dir=k8s_client.V1EmptyDirVolumeSource()))
@@ -947,6 +1115,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
 
         if self.image_role == AGENT_IMAGE_ROLE:
             containers.append(self._proxy_container())
+        containers.extend(self._sidecar_container(sidecar) for sidecar in self._compose_sidecars())
         return containers
 
     def _build_pod_spec(self) -> k8s_client.V1PodSpec:
@@ -955,6 +1124,10 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         # Prevent untrusted agent code from querying or mutating the K8s API
         # via the auto-mounted ServiceAccount token.
         spec.automount_service_account_token = False
+
+        hostnames = self._compose_hostnames()
+        if hostnames:
+            spec.host_aliases = [k8s_client.V1HostAlias(ip="127.0.0.1", hostnames=hostnames)]
 
         # iptables init container: redirect all outbound TCP 443 traffic to the
         # proxy sidecar (localhost:15443), except traffic from UID 1337 (the proxy
@@ -1045,6 +1218,8 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         image_role: str,
         force_build: bool,
         allow_build: bool,
+        dockerfile_name: str = "Dockerfile",
+        from_image: str | None = None,
     ) -> None:
         """Require one role image, building it only during the agent setup phase."""
         image_tag = f"{self.digest_tag}-{image_role}"
@@ -1081,6 +1256,8 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                 image_ref,
                 image_role,
                 0,
+                dockerfile_name,
+                from_image,
             )
         except ApiException as exc:
             if exc.status == 409:
@@ -1101,6 +1278,8 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                         image_ref,
                         image_role,
                         retry_tier,
+                        dockerfile_name,
+                        from_image,
                     )
                 else:
                     self.logger.debug(f"Build job {job_name} already exists — another screener is building")
@@ -1113,6 +1292,8 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
             image_ref,
             image_role,
             timeout_sec=2000,
+            dockerfile_name=dockerfile_name,
+            from_image=from_image,
         )
 
     async def _image_exists_in_registry(self, image_tag: str) -> bool:
@@ -1145,6 +1326,8 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         image_ref: str,
         image_role: str,
         tier: int,
+        dockerfile_name: str = "Dockerfile",
+        from_image: str | None = None,
     ) -> None:
         """Create the BuildKit (rootless) build Job at the given memory tier.
 
@@ -1161,7 +1344,9 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
             self.build_registry,
             self._build_registry_insecure,
             self.registry_credentials_secret,
-            context_name="environment" if image_role == AGENT_IMAGE_ROLE else "tests",
+            context_name=_build_context_name(image_role),
+            dockerfile_name=dockerfile_name,
+            from_image=from_image,
         )
         self._batch.create_namespaced_job(namespace=self.namespace, body=job)
 
@@ -1172,6 +1357,8 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         image_ref: str,
         image_role: str,
         timeout_sec: int = 600,
+        dockerfile_name: str = "Dockerfile",
+        from_image: str | None = None,
     ) -> None:
         """Poll until the build Job succeeds or fails.
 
@@ -1230,6 +1417,8 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                         image_ref,
                         image_role,
                         next_tier,
+                        dockerfile_name,
+                        from_image,
                     )
                 except ApiException as exc:
                     if exc.status != 409:
@@ -1425,6 +1614,8 @@ def _build_job_body(
     registry_credentials_secret: str | None,
     *,
     context_name: str = "environment",
+    dockerfile_name: str = "Dockerfile",
+    from_image: str | None = None,
 ) -> "k8s_client.V1Job":
     """Build the BuildKit (rootless) build Job spec at the given memory tier.
 
@@ -1435,27 +1626,40 @@ def _build_job_body(
     tier = max(0, min(tier, len(BUILD_MEMORY_TIERS) - 1))
     memory_request, memory_limit = BUILD_MEMORY_TIERS[tier]
 
+    fetch_script = (
+        'curl -sSfL "$PRESIGNED_URL" -o /tmp/task.tar.gz && '
+        "mkdir -p /workspace && "
+        "tar -xzf /tmp/task.tar.gz -C /workspace --strip-components=1 && "
+    )
+    if from_image:
+        fetch_script += (
+            'mkdir -p "/workspace/$CONTEXT_NAME" && '
+            'printf "FROM %s\\n" "$FROM_IMAGE" > "/workspace/$CONTEXT_NAME/$DOCKERFILE_NAME" && '
+        )
+    fetch_script += 'test -f "/workspace/$CONTEXT_NAME/$DOCKERFILE_NAME"'
+
+    init_env = [
+        k8s_client.V1EnvVar(
+            name="PRESIGNED_URL",
+            value_from=k8s_client.V1EnvVarSource(
+                secret_key_ref=k8s_client.V1SecretKeySelector(
+                    name=secret_name,
+                    key="url",
+                )
+            ),
+        ),
+        k8s_client.V1EnvVar(name="CONTEXT_NAME", value=context_name),
+        k8s_client.V1EnvVar(name="DOCKERFILE_NAME", value=dockerfile_name),
+    ]
+    if from_image:
+        init_env.append(k8s_client.V1EnvVar(name="FROM_IMAGE", value=from_image))
+
     init_container = k8s_client.V1Container(
         name="fetch-context",
         image="curlimages/curl:latest",
         command=["/bin/sh", "-c"],
-        args=[
-            'curl -sSfL "$PRESIGNED_URL" -o /tmp/task.tar.gz && '
-            "mkdir -p /workspace && "
-            "tar -xzf /tmp/task.tar.gz -C /workspace --strip-components=1 && "
-            f"test -f /workspace/{context_name}/Dockerfile"
-        ],
-        env=[
-            k8s_client.V1EnvVar(
-                name="PRESIGNED_URL",
-                value_from=k8s_client.V1EnvVarSource(
-                    secret_key_ref=k8s_client.V1SecretKeySelector(
-                        name=secret_name,
-                        key="url",
-                    )
-                ),
-            )
-        ],
+        args=[fetch_script],
+        env=init_env,
         volume_mounts=[k8s_client.V1VolumeMount(name="context", mount_path="/workspace")],
         resources=k8s_client.V1ResourceRequirements(
             requests={"cpu": "100m", "memory": "256Mi"},
@@ -1476,7 +1680,7 @@ def _build_job_body(
         "--frontend=dockerfile.v0",
         f"--local=context=/workspace/{context_name}",
         f"--local=dockerfile=/workspace/{context_name}",
-        "--opt=filename=Dockerfile",
+        f"--opt=filename={dockerfile_name}",
         f"--output={output_opt}",
         f"--export-cache={export_cache_opt}",
         f"--import-cache={import_cache_opt}",
@@ -1608,6 +1812,139 @@ def _init_standalone_k8s_clients(
     return k8s_client.CoreV1Api(), k8s_client.BatchV1Api()
 
 
+def _archive_file(archive_bytes: bytes, relative_path: str) -> bytes | None:
+    """Read one file from a task archive, with or without a top-level directory."""
+    suffix_parts = relative_path.split("/")
+    matches: list[tuple[int, tarfile.TarInfo]] = []
+    with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:*") as archive:
+        for member in archive.getmembers():
+            if not member.isfile():
+                continue
+            parts = member.name.lstrip("./").split("/")
+            if parts[-len(suffix_parts) :] == suffix_parts:
+                matches.append((len(parts), member))
+        if not matches:
+            return None
+        member = min(matches, key=lambda item: item[0])[1]
+        extracted = archive.extractfile(member)
+        if extracted is None:
+            return None
+        return extracted.read()
+
+
+def _compose_text_from_tar(archive_bytes: bytes, relative_path: str) -> str | None:
+    """Read a compose file from a task archive, with or without a top-level directory."""
+    data = _archive_file(archive_bytes, relative_path)
+    return None if data is None else data.decode()
+
+
+def _archive_has_file(archive_bytes: bytes, relative_path: str) -> bool:
+    return _archive_file(archive_bytes, relative_path) is not None
+
+
+def _peek_sidecars_from_archive(archive_bytes: bytes) -> tuple[list[ComposeSidecar], list[ComposeSidecar]]:
+    environment_text = _compose_text_from_tar(archive_bytes, "environment/docker-compose.yaml")
+    tests_text = _compose_text_from_tar(archive_bytes, "tests/docker-compose.yaml")
+    environment_sidecars = (
+        parse_kubernetes_compose_text(environment_text, source="environment/docker-compose.yaml")
+        if environment_text is not None
+        else []
+    )
+    tests_sidecars = (
+        parse_kubernetes_compose_text(tests_text, source="tests/docker-compose.yaml") if tests_text is not None else []
+    )
+    return environment_sidecars, tests_sidecars
+
+
+def _download_task_archive(presigned_url: str) -> bytes:
+    with urllib.request.urlopen(presigned_url, timeout=60) as response:
+        return response.read()
+
+
+def _sidecar_build_args(environment_role: str, sidecar: ComposeSidecar) -> tuple[str, str, str | None]:
+    return (
+        sidecar_image_role(environment_role, sidecar.name),
+        sidecar.dockerfile or _from_copy_dockerfile_name(sidecar.name),
+        sidecar.image,
+    )
+
+
+async def _create_pre_build_job(
+    *,
+    core_api: "k8s_client.CoreV1Api",
+    batch_api: "k8s_client.BatchV1Api",
+    namespace: str,
+    task_name: str,
+    digest_tag: str,
+    image_role: str,
+    presigned_url: str,
+    build_registry: str,
+    build_registry_insecure: bool,
+    registry_credentials_secret: str | None,
+    dockerfile_name: str = "Dockerfile",
+    from_image: str | None = None,
+) -> None:
+    image_tag = f"{digest_tag}-{image_role}"
+    image_ref = f"{build_registry}/{task_name.lower()}:{image_tag}"
+    job_name = _build_job_name(task_name, digest_tag, image_role)
+    secret_name = f"{job_name}-url"
+    try:
+        await asyncio.to_thread(
+            lambda: core_api.create_namespaced_secret(
+                namespace=namespace,
+                body=_build_secret_body(
+                    secret_name,
+                    namespace,
+                    presigned_url,
+                    build_registry,
+                    build_registry_insecure,
+                ),
+            )
+        )
+    except ApiException as exc:
+        if exc.status != 409:
+            raise
+        await asyncio.to_thread(core_api.delete_namespaced_secret, name=secret_name, namespace=namespace)
+        await asyncio.to_thread(
+            lambda: core_api.create_namespaced_secret(
+                namespace=namespace,
+                body=_build_secret_body(
+                    secret_name,
+                    namespace,
+                    presigned_url,
+                    build_registry,
+                    build_registry_insecure,
+                ),
+            )
+        )
+
+    try:
+        await asyncio.to_thread(
+            lambda: batch_api.create_namespaced_job(
+                namespace=namespace,
+                body=_build_job_body(
+                    job_name,
+                    secret_name,
+                    image_ref,
+                    0,
+                    namespace,
+                    build_registry,
+                    build_registry_insecure,
+                    registry_credentials_secret,
+                    context_name=_build_context_name(image_role),
+                    dockerfile_name=dockerfile_name,
+                    from_image=from_image,
+                ),
+            )
+        )
+        logger.info(f"Pre-build: started BuildKit job {job_name} for {image_ref}")
+    except ApiException as exc:
+        if exc.status == 409:
+            logger.debug(f"Pre-build: build job {job_name} already exists — another screener is building")
+        else:
+            raise
+
+
 async def pre_build_images(
     tasks: Sequence[tuple[str, str, str]],
     *,
@@ -1643,6 +1980,13 @@ async def pre_build_images(
     normal lazy path) will find the Job already running — a 409 on create —
     and just poll it to completion, or find the image already pushed.
 
+    The archive is always downloaded so compose sidecar names and
+    ``tests/Dockerfile`` can be discovered. ``{digest}-agent`` already in the
+    registry is not a reason to skip that peek: sidecar and verifier tags can
+    still be missing. Each discovered tag is HEAD-checked; Jobs are created
+    only for misses. Peek or download failure is logged and skipped — lazy
+    ``_ensure_image`` in ``start()`` remains the fallback.
+
     Best-effort: each task is handled independently, so one failure (bad
     task data, registry hiccup, etc.) never blocks the others.
 
@@ -1663,74 +2007,47 @@ async def pre_build_images(
         image_tag = f"{digest_tag}-{AGENT_IMAGE_ROLE}"
         image_ref = f"{effective_build_registry}/{task_name.lower()}:{image_tag}"
         try:
-            if await _registry_image_exists(
-                effective_build_registry,
-                task_name,
-                image_tag,
-                registry_insecure=effective_build_registry_insecure,
-                registry_credentials_secret=registry_credentials_secret,
-                registry_password=registry_password,
-            ):
-                logger.debug(f"Pre-build: {image_ref} already in registry — skipping")
-                return
-
-            job_name = _build_job_name(task_name, digest_tag, AGENT_IMAGE_ROLE)
-            secret_name = f"{job_name}-url"
-
-            try:
-                await asyncio.to_thread(
-                    lambda: core_api.create_namespaced_secret(
-                        namespace=namespace,
-                        body=_build_secret_body(
-                            secret_name,
-                            namespace,
-                            presigned_url,
-                            effective_build_registry,
-                            effective_build_registry_insecure,
-                        ),
-                    )
+            archive_bytes = await asyncio.to_thread(_download_task_archive, presigned_url)
+            logger.debug(
+                f"Pre-build: fetched archive for {task_name} to discover compose sidecars "
+                "(not skipped when the agent tag already exists)"
+            )
+            environment_sidecars, tests_sidecars = _peek_sidecars_from_archive(archive_bytes)
+            builds: list[tuple[str, str, str | None]] = [(AGENT_IMAGE_ROLE, "Dockerfile", None)]
+            builds.extend(_sidecar_build_args(AGENT_IMAGE_ROLE, sidecar) for sidecar in environment_sidecars)
+            builds.extend(_sidecar_build_args(VERIFIER_IMAGE_ROLE, sidecar) for sidecar in tests_sidecars)
+            if _archive_has_file(archive_bytes, "tests/Dockerfile"):
+                builds.append((VERIFIER_IMAGE_ROLE, "Dockerfile", None))
+            for image_role, dockerfile_name, from_image in builds:
+                tag = f"{digest_tag}-{image_role}"
+                exists = await _registry_image_exists(
+                    effective_build_registry,
+                    task_name,
+                    tag,
+                    registry_insecure=effective_build_registry_insecure,
+                    registry_credentials_secret=registry_credentials_secret,
+                    registry_password=registry_password,
                 )
-            except ApiException as exc:
-                if exc.status != 409:
-                    raise
-                # Stale secret from a previous attempt — recreate with this fresh URL.
-                await asyncio.to_thread(core_api.delete_namespaced_secret, name=secret_name, namespace=namespace)
-                await asyncio.to_thread(
-                    lambda: core_api.create_namespaced_secret(
-                        namespace=namespace,
-                        body=_build_secret_body(
-                            secret_name,
-                            namespace,
-                            presigned_url,
-                            effective_build_registry,
-                            effective_build_registry_insecure,
-                        ),
+                if exists:
+                    logger.debug(
+                        f"Pre-build: {effective_build_registry}/{task_name.lower()}:{tag} "
+                        "already in registry — skipping"
                     )
+                    continue
+                await _create_pre_build_job(
+                    core_api=core_api,
+                    batch_api=batch_api,
+                    namespace=namespace,
+                    task_name=task_name,
+                    digest_tag=digest_tag,
+                    image_role=image_role,
+                    presigned_url=presigned_url,
+                    build_registry=effective_build_registry,
+                    build_registry_insecure=effective_build_registry_insecure,
+                    registry_credentials_secret=registry_credentials_secret,
+                    dockerfile_name=dockerfile_name,
+                    from_image=from_image,
                 )
-
-            try:
-                await asyncio.to_thread(
-                    lambda: batch_api.create_namespaced_job(
-                        namespace=namespace,
-                        body=_build_job_body(
-                            job_name,
-                            secret_name,
-                            image_ref,
-                            0,
-                            namespace,
-                            effective_build_registry,
-                            effective_build_registry_insecure,
-                            registry_credentials_secret,
-                            context_name="environment",
-                        ),
-                    )
-                )
-                logger.info(f"Pre-build: started BuildKit job {job_name} for {image_ref}")
-            except ApiException as exc:
-                if exc.status == 409:
-                    logger.debug(f"Pre-build: build job {job_name} already exists — another screener is building")
-                else:
-                    raise
         except Exception as exc:
             logger.warning(f"Pre-build failed for {image_ref}: {type(exc).__name__}: {exc}")
 
