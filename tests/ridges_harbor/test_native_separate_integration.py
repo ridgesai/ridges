@@ -75,7 +75,10 @@ def _write_native_separate_task(task_dir: Path) -> None:
         "#!/bin/sh\n"
         "set -eu\n"
         "mkdir -p /logs/verifier\n"
+        "cp /logs/agent/patch.diff /logs/verifier/graded.patch\n"
         "cd /app\n"
+        "git apply --check /logs/verifier/graded.patch\n"
+        "git apply /logs/verifier/graded.patch\n"
         'if [ -f /tests/hidden-canary.txt ] && [ "$(cat status.txt)" = done ]; then\n'
         "  printf '1\\n' > /logs/verifier/reward.txt\n"
         "else\n"

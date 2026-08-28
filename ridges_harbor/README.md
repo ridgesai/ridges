@@ -47,15 +47,14 @@ execution/artifacts.py  ◄── read ────       trial_dir/
 ```
 
 When the task asks for a separate verifier, the agent only runs `git apply
---check` before publishing `patch.diff`. Harbor then hands that patch to the
-verifier environment as a declared artifact, and `RidgesVerifier` applies it
-there before running `test.sh`.
+--check` before publishing `patch.diff`. Harbor hands that patch to the
+verifier environment as a declared artifact, and `test.sh` applies it before
+grading.
 
 ## File map
 
 - `runner.py` — host-side entrypoint; builds a one-task Harbor job and runs it
 - `agents.py` — Harbor `BaseInstalledAgent`; uploads files, runs the runtime, checks/applies the patch
-- `verifier.py` — separate-mode `RidgesVerifier`; applies the uploaded patch then runs Harbor tests
 - `ridges_miner_runtime.py` — runs inside the container; loads the miner and calls `agent_main`
 - `_stdlib_contract.py` — stdlib-only constants (filenames + phase names) shared host-and-container
 - `runtime_contract.py` — host-side Pydantic schema + custom exceptions for miner failures

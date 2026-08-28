@@ -109,7 +109,10 @@ def _write_database_task(task_dir: Path) -> None:
         "set -euo pipefail\n"
         "mkdir -p /logs/verifier /logs/artifacts\n"
         "rm -rf /logs/artifacts/*\n"
+        "cp /logs/agent/patch.diff /logs/verifier/graded.patch\n"
         "cd /app\n"
+        "git apply --check /logs/verifier/graded.patch\n"
+        "git apply /logs/verifier/graded.patch\n"
         'cluster_id=$(psql -Atqc "SELECT system_identifier FROM pg_control_system()")\n'
         'base_rows=$(psql -Atqc "SELECT count(*) FROM items")\n'
         "marker_before=$(psql -Atqc \"SELECT to_regclass('public.miner_marker') IS NULL\")\n"

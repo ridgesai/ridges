@@ -358,15 +358,7 @@ async def _run_task_dir(
         )
         enable_verifier_egress = build_enable_verifier_egress_hook(ridges_trial_id=ridges_trial_id)
 
-    if separate_verifier:
-        verifier_config = VerifierConfig(
-            import_path="ridges_harbor.verifier:RidgesVerifier",
-            max_timeout_sec=effective_verifier_timeout,
-        )
-        job_artifacts = ["/logs/agent/patch.diff"]
-    else:
-        verifier_config = VerifierConfig(max_timeout_sec=effective_verifier_timeout)
-        job_artifacts = []
+    job_artifacts = ["/logs/agent/patch.diff"] if separate_verifier else []
 
     job_config = JobConfig(
         job_name=resolved_job_name,
@@ -377,7 +369,7 @@ async def _run_task_dir(
         quiet=True,
         retry=RetryConfig(max_retries=0),
         environment=environment_config,
-        verifier=verifier_config,
+        verifier=VerifierConfig(max_timeout_sec=effective_verifier_timeout),
         artifacts=job_artifacts,
         environment_build_timeout_multiplier=environment_build_timeout_multiplier,
         tasks=[TaskConfig(path=task_dir)],

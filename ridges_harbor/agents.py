@@ -115,7 +115,8 @@ class RidgesMinerAgent(BaseInstalledAgent):
         # /logs/agent is writable even when /installed-agent is root-owned.
         # This raw file is not the declared grading artifact. Both modes run
         # ``git apply --check`` here; shared mode also applies it. Separate mode
-        # publishes ``patch.diff`` for Harbor to upload into the verifier env.
+        # publishes ``patch.diff`` for Harbor to upload into the verifier env,
+        # where ``test.sh`` applies it.
         return (EnvironmentPaths.agent_dir / RAW_PATCH_FILENAME).as_posix()
 
     @property

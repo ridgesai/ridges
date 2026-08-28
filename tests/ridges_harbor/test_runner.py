@@ -368,7 +368,7 @@ async def test_run_task_dir_prebuilds_kubernetes_verifier_image_for_separate_mod
     assert config.agents[0].kwargs["separate_verifier"] is True
     assert config.environment.kwargs["verifier_image_required"] is True
     assert config.artifacts == ["/logs/agent/patch.diff"]
-    assert config.verifier.import_path == "ridges_harbor.verifier:RidgesVerifier"
+    assert config.verifier.import_path is None
     assert FakeJob.last_instance.verification_started_hooks == []
 
 
@@ -475,7 +475,7 @@ async def test_run_task_dir_leaves_separate_verifier_egress_to_harbor(tmp_path: 
     assert FakeJob.last_instance.verification_started_hooks == [on_verification_started]
     config = FakeJob.created_configs[0]
     assert config.artifacts == ["/logs/agent/patch.diff"]
-    assert config.verifier.import_path == "ridges_harbor.verifier:RidgesVerifier"
+    assert config.verifier.import_path is None
 
 
 @pytest.mark.anyio
