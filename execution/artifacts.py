@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
@@ -24,8 +25,14 @@ from execution.failure_classifier import (
 )
 from execution.types import ExecutionResult, FailureContext, TrialSnapshot
 from models.problem import ProblemTestCategory, ProblemTestResult, ProblemTestResultStatus
-from ridges_harbor._stdlib_contract import AGENT_LOG_FILENAMES, HARBOR_RUNNER_ERROR_FILENAME
-from ridges_harbor.runner import HarborRunSummary
+from ridges_harbor._stdlib_contract import (
+    AGENT_LOG_FILENAMES,
+    GRADED_PATCH_FILENAME,
+    HARBOR_RUNNER_ERROR_FILENAME,
+    PATCH_FILENAME,
+    PATCH_PUBLISHED_METADATA_KEY,
+)
+from ridges_harbor.runner import HarborRunSummary, _uses_separate_verifier
 
 logger = logging.getLogger(__name__)
 
@@ -84,16 +91,25 @@ def result_from_summary(summary: HarborRunSummary) -> ExecutionResult:
 
 def _agent_timed_out_then_verifier_produced_reward(summary: HarborRunSummary, *, trial_paths: TrialPaths) -> bool:
     """True when Harbor recorded an agent timeout, then completed verification
-    with a usable numeric reward on a patch the agent managed to export.
+    with a usable numeric reward on a patch the Ridges wrapper finished
+    checking, applying, and publishing.
 
-    Without a patch artifact there is nothing to score: the timeout killed the
-    runtime before it exported patch.diff, so the timeout stays the failure.
+    The host-owned AgentContext marker prevents an agent-written artifact from
+    earning timeout partial credit before the wrapper completed publication.
     """
     exception_type = (summary.trial_result.exception_info.exception_type or "").strip()
     if exception_type not in AGENT_TIMEOUT_EXCEPTION_NAMES:
         return False
 
-    if not read_text(trial_paths.agent_dir / "patch.diff"):
+    agent_result = summary.trial_result.agent_result
+    if (
+        agent_result is None
+        or not agent_result.metadata
+        or agent_result.metadata.get(PATCH_PUBLISHED_METADATA_KEY) is not True
+    ):
+        return False
+
+    if not _read_final_patch(summary, trial_paths):
         return False
 
     verifier_result = summary.trial_result.verifier_result
@@ -133,7 +149,7 @@ def read_trial_snapshot(trial_dir: Path) -> TrialSnapshot:
     """Read the patch and surfaced agent logs from a completed agent phase."""
     trial_paths = TrialPaths(trial_dir=trial_dir)
     return TrialSnapshot(
-        patch=read_text(trial_paths.agent_dir / "patch.diff"),
+        patch=read_text(trial_paths.agent_dir / PATCH_FILENAME),
         agent_logs=collect_named_logs(_agent_log_paths(trial_paths)),
     )
 
@@ -252,15 +268,14 @@ def parse_execution_artifacts(
         context=context,
     )
 
-    patch = read_text(trial_paths.agent_dir / "patch.diff")
+    patch = _read_final_patch(summary, trial_paths)
     if not patch:
         context.fail_validator("Harbor completed without producing a patch artifact")
 
     cost_usd = _read_proxy_cost(summary.job_dir) if summary.job_dir else None
 
-    from validator.config import RIDGES_ENVIRONMENT_TYPE
-
-    backend_label = "harbor-k8s" if RIDGES_ENVIRONMENT_TYPE == "kubernetes" else "harbor"
+    environment_type = os.getenv("RIDGES_ENVIRONMENT_TYPE", "docker")
+    backend_label = "harbor-k8s" if environment_type == "kubernetes" else "harbor"
 
     return ExecutionResult(
         backend=backend_label,
@@ -272,6 +287,13 @@ def parse_execution_artifacts(
         job_dir=context.job_dir,
         cost_usd=cost_usd,
     )
+
+
+def _read_final_patch(summary: HarborRunSummary, trial_paths: TrialPaths) -> str:
+    """Read the exact patch source that is authoritative for this verifier mode."""
+    if _uses_separate_verifier(summary.task_dir):
+        return read_text(trial_paths.verifier_dir / GRADED_PATCH_FILENAME)
+    return read_text(trial_paths.agent_dir / PATCH_FILENAME)
 
 
 def extract_reward_value(summary: HarborRunSummary, *, context: FailureContext) -> float:
