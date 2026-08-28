@@ -113,8 +113,9 @@ class RidgesMinerAgent(BaseInstalledAgent):
     def _env_raw_patch_path(self) -> str:
         # The runtime executes as the task's agent user. Harbor guarantees that
         # /logs/agent is writable even when /installed-agent is root-owned.
-        # This raw file is not the declared grading artifact. Shared mode checks
-        # and applies it here; separate mode leaves those steps to the verifier.
+        # This raw file is not the declared grading artifact. Both modes run
+        # ``git apply --check`` here; shared mode also applies it. Separate mode
+        # publishes ``patch.diff`` for Harbor to upload into the verifier env.
         return (EnvironmentPaths.agent_dir / RAW_PATCH_FILENAME).as_posix()
 
     @property
@@ -326,19 +327,19 @@ class RidgesMinerAgent(BaseInstalledAgent):
                 include_output_body=False,
             )
 
-            if not self.separate_verifier:
-                patch_check_command = f"git apply --check {shlex.quote(self._env_raw_patch_path)}"
-                await self._exec_with_log(
-                    environment,
-                    executor=self.exec_as_agent,
-                    command=patch_check_command,
-                    cwd=self.workdir,
-                    log_filename=PATCH_CHECK_LOG_FILENAME,
-                    cancelled_detail="agent execution was cancelled, likely due to timeout",
-                    error_summary="Miner returned an invalid patch",
-                    error_type=MinerInvalidPatchError,
-                )
+            patch_check_command = f"git apply --check {shlex.quote(self._env_raw_patch_path)}"
+            await self._exec_with_log(
+                environment,
+                executor=self.exec_as_agent,
+                command=patch_check_command,
+                cwd=self.workdir,
+                log_filename=PATCH_CHECK_LOG_FILENAME,
+                cancelled_detail="agent execution was cancelled, likely due to timeout",
+                error_summary="Miner returned an invalid patch",
+                error_type=MinerInvalidPatchError,
+            )
 
+            if not self.separate_verifier:
                 patch_apply_command = f"git apply {shlex.quote(self._env_raw_patch_path)}"
                 await self._exec_with_log(
                     environment,

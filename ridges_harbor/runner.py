@@ -28,15 +28,54 @@ install_logging_harbor_progress()
 DEFAULT_AGENT_SANDBOX_PROXY_URL = "http://sandbox-proxy:80"
 
 
-def _uses_separate_verifier(task_dir: Path) -> bool:
-    """Resolve the task's native verifier mode using Harbor's own rules."""
+def _load_single_step_task(task_dir: Path) -> Any:
+    """Parse a materialized task archive, rejecting multi-step configs."""
     from harbor.models.task.task import Task
-    from harbor.models.task.verifier_mode import task_has_any_separate_verifier
 
     task = Task(task_dir)
     if task.config.steps:
         raise RuntimeError("Ridges Harbor 0.20 execution currently supports only single-step tasks")
-    return task_has_any_separate_verifier(task.config)
+    return task
+
+
+def _uses_separate_verifier(task_dir: Path) -> bool:
+    """Resolve the task's native verifier mode using Harbor's own rules."""
+    from harbor.models.task.verifier_mode import task_has_any_separate_verifier
+
+    return task_has_any_separate_verifier(_load_single_step_task(task_dir).config)
+
+
+def _resolve_separate_verifier(task_dir: Path) -> bool:
+    """Resolve separate mode and preflight the archive its verifier image needs.
+
+    Docker rejects a verifier environment without a build definition deep inside
+    Harbor, while Kubernetes only notices in a BuildKit init container. Checking
+    on the host makes both backends refuse the same archives.
+    """
+    from harbor.environments.definition import has_agent_environment_definition
+    from harbor.models.task.verifier_mode import (
+        resolve_effective_verifier_env_config,
+        task_has_any_separate_verifier,
+    )
+
+    task = _load_single_step_task(task_dir)
+    if not task_has_any_separate_verifier(task.config):
+        return False
+
+    verifier_env = resolve_effective_verifier_env_config(task.config, None)
+    docker_image = verifier_env.docker_image if verifier_env is not None else None
+    if not has_agent_environment_definition(task.paths.tests_dir, docker_image=docker_image):
+        raise RuntimeError(
+            f"Separate-verifier task {task_dir} has no verifier environment definition: add "
+            "tests/Dockerfile, tests/docker-compose.yaml, or set the verifier "
+            "[environment].docker_image"
+        )
+    if not task.paths.test_path.exists():
+        raise RuntimeError(
+            f"Separate-verifier task {task_dir} is missing tests/test.sh; Ridges bakes the test "
+            "scripts into the verifier image instead of uploading them at verification time"
+        )
+    return True
 
 
 def _compose_service_names(compose_path: Path) -> set[str]:
@@ -200,7 +239,7 @@ async def _run_task_dir(
     from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig, VerifierConfig
 
     ridges_environment_type = os.getenv("RIDGES_ENVIRONMENT_TYPE", "docker")
-    separate_verifier = _uses_separate_verifier(task_dir)
+    separate_verifier = _resolve_separate_verifier(task_dir)
     if ridges_environment_type == "kubernetes":
         _validate_kubernetes_task_services(task_dir)
 
@@ -319,6 +358,16 @@ async def _run_task_dir(
         )
         enable_verifier_egress = build_enable_verifier_egress_hook(ridges_trial_id=ridges_trial_id)
 
+    if separate_verifier:
+        verifier_config = VerifierConfig(
+            import_path="ridges_harbor.verifier:RidgesVerifier",
+            max_timeout_sec=effective_verifier_timeout,
+        )
+        job_artifacts = ["/logs/agent/patch.diff"]
+    else:
+        verifier_config = VerifierConfig(max_timeout_sec=effective_verifier_timeout)
+        job_artifacts = []
+
     job_config = JobConfig(
         job_name=resolved_job_name,
         jobs_dir=results_dir,
@@ -328,7 +377,8 @@ async def _run_task_dir(
         quiet=True,
         retry=RetryConfig(max_retries=0),
         environment=environment_config,
-        verifier=VerifierConfig(max_timeout_sec=effective_verifier_timeout),
+        verifier=verifier_config,
+        artifacts=job_artifacts,
         environment_build_timeout_multiplier=environment_build_timeout_multiplier,
         tasks=[TaskConfig(path=task_dir)],
         agents=[

@@ -41,6 +41,7 @@ def _make_environment(
         evaluation_run_id="evaluation-1",
         proxy_data_dir=tmp_path / "proxy-data",
         verifier_image_required=verifier_image_required,
+        build_registry="build-registry.example.test:5000",
     )
 
 
@@ -93,7 +94,7 @@ def test_agent_and_verifier_use_distinct_images_and_pod_shapes(tmp_path: Path) -
 
 
 @pytest.mark.anyio
-async def test_agent_start_prebuilds_both_images_before_pod(
+async def test_agent_start_builds_both_images_before_pod(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -120,11 +121,11 @@ async def test_agent_start_prebuilds_both_images_before_pod(
     await environment.start(force_build=True)
 
     assert events[0] == ("client",)
-    assert set(events[1:3]) == {
+    assert events[-1] == ("pod", False)
+    assert sorted(events[1:-1]) == [
         ("image", AGENT_IMAGE_ROLE, True, True),
         ("image", VERIFIER_IMAGE_ROLE, True, True),
-    }
-    assert events[3] == ("pod", False)
+    ]
 
 
 @pytest.mark.anyio
@@ -223,7 +224,27 @@ async def test_verifier_start_requires_prebuilt_image_and_never_builds(
         )
 
 
-def test_build_job_uses_requested_native_context() -> None:
+def test_agent_build_job_uses_environment_context() -> None:
+    job = _build_job_body(
+        "build-task-agent",
+        "build-task-agent-url",
+        "registry.example.test/task:abc-agent",
+        0,
+        "default",
+        "registry.example.test",
+        False,
+        None,
+        context_name="environment",
+    )
+
+    init_args = job.spec.template.spec.init_containers[0].args
+    build_args = job.spec.template.spec.containers[0].args
+    assert "/workspace/environment/Dockerfile" in init_args[0]
+    assert "--local=context=/workspace/environment" in build_args
+    assert "--local=dockerfile=/workspace/environment" in build_args
+
+
+def test_verifier_build_job_uses_tests_context() -> None:
     job = _build_job_body(
         "build-task-verifier",
         "build-task-verifier-url",

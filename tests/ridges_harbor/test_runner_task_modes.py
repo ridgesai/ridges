@@ -2,7 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from ridges_harbor.runner import _uses_separate_verifier, _validate_kubernetes_task_services
+from ridges_harbor.runner import (
+    _resolve_separate_verifier,
+    _uses_separate_verifier,
+    _validate_kubernetes_task_services,
+)
+
+SEPARATE_TOML = '\n[verifier]\nenvironment_mode = "separate"\n'
 
 
 def _write_task(path: Path, verifier_toml: str = "") -> Path:
@@ -56,6 +62,44 @@ def test_multistep_task_is_rejected(tmp_path: Path, step_verifier: str) -> None:
 
     with pytest.raises(RuntimeError, match="only single-step tasks"):
         _uses_separate_verifier(task_dir)
+
+
+def test_preflight_accepts_a_separate_task_that_ships_a_tests_dockerfile(tmp_path: Path) -> None:
+    task_dir = _write_task(tmp_path / "task", SEPARATE_TOML)
+    (task_dir / "tests" / "Dockerfile").write_text("FROM alpine:3.20\nCOPY . /tests\n")
+
+    assert _resolve_separate_verifier(task_dir) is True
+
+
+def test_preflight_accepts_a_separate_task_with_a_prebuilt_verifier_image(tmp_path: Path) -> None:
+    task_dir = _write_task(
+        tmp_path / "task",
+        '\n[verifier]\n[verifier.environment]\ndocker_image = "alpine:3.20"\n',
+    )
+
+    assert _resolve_separate_verifier(task_dir) is True
+
+
+def test_preflight_rejects_a_separate_task_without_a_verifier_environment(tmp_path: Path) -> None:
+    task_dir = _write_task(tmp_path / "task", SEPARATE_TOML)
+
+    with pytest.raises(RuntimeError, match="no verifier environment definition"):
+        _resolve_separate_verifier(task_dir)
+
+
+def test_preflight_rejects_a_separate_task_without_a_test_script(tmp_path: Path) -> None:
+    task_dir = _write_task(tmp_path / "task", SEPARATE_TOML)
+    (task_dir / "tests" / "Dockerfile").write_text("FROM alpine:3.20\nCOPY . /tests\n")
+    (task_dir / "tests" / "test.sh").unlink()
+
+    with pytest.raises(RuntimeError, match="missing tests/test.sh"):
+        _resolve_separate_verifier(task_dir)
+
+
+def test_preflight_leaves_shared_tasks_alone(tmp_path: Path) -> None:
+    task_dir = _write_task(tmp_path / "task")
+
+    assert _resolve_separate_verifier(task_dir) is False
 
 
 def test_kubernetes_allows_only_the_materialized_proxy_scaffold(tmp_path: Path) -> None:

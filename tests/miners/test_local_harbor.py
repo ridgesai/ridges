@@ -37,10 +37,29 @@ class FakeEnvironmentConfig:
         self.import_path = import_path
 
 
+class FakeVerifierConfig:
+    def __init__(
+        self,
+        *,
+        max_timeout_sec: float | None = None,
+        override_timeout_sec: float | None = None,
+        disable: bool = False,
+        import_path: str | None = None,
+        kwargs: dict | None = None,
+    ):
+        self.max_timeout_sec = max_timeout_sec
+        self.override_timeout_sec = override_timeout_sec
+        self.disable = disable
+        self.import_path = import_path
+        self.kwargs = kwargs or {}
+
+
 class FakeJobConfig:
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
         self.environment = kwargs.get("environment", FakeEnvironmentConfig())
+        self.verifier = kwargs.get("verifier", FakeVerifierConfig())
+        self.artifacts = kwargs.get("artifacts", [])
 
 
 class FakeEnvironmentFactory:
@@ -98,7 +117,7 @@ def _install_fake_harbor(monkeypatch) -> None:
     FakeJob.created_configs = []
     FakeJob.last_instance = None
     monkeypatch.setattr(local_harbor_module, "_task_agent_timeout_sec", lambda _task_dir: None)
-    monkeypatch.setattr(local_harbor_module, "_uses_separate_verifier", lambda _task_dir: False)
+    monkeypatch.setattr(local_harbor_module, "_resolve_separate_verifier", lambda _task_dir: False)
 
     harbor_module = types.ModuleType("harbor")
     environments_module = types.ModuleType("harbor.environments")
@@ -119,6 +138,7 @@ def _install_fake_harbor(monkeypatch) -> None:
     trial_config_module.AgentConfig = FakeAgentConfig
     trial_config_module.EnvironmentConfig = FakeEnvironmentConfig
     trial_config_module.TaskConfig = FakeTaskConfig
+    trial_config_module.VerifierConfig = FakeVerifierConfig
 
     monkeypatch.setitem(sys.modules, "harbor", harbor_module)
     monkeypatch.setitem(sys.modules, "harbor.environments", environments_module)
@@ -257,7 +277,7 @@ async def test_run_local_task_uses_minimum_task_and_requested_timeout(
 @pytest.mark.anyio
 async def test_run_local_task_passes_separate_mode_to_agent_wrapper(tmp_path: Path, monkeypatch) -> None:
     _install_fake_harbor(monkeypatch)
-    monkeypatch.setattr(local_harbor_module, "_uses_separate_verifier", lambda _task_dir: True)
+    monkeypatch.setattr(local_harbor_module, "_resolve_separate_verifier", lambda _task_dir: True)
 
     async def fake_prune() -> None:
         return None
@@ -277,6 +297,8 @@ async def test_run_local_task_passes_separate_mode_to_agent_wrapper(tmp_path: Pa
     )
 
     assert FakeJob.created_configs[0].agents[0].kwargs["separate_verifier"] is True
+    assert FakeJob.created_configs[0].artifacts == ["/logs/agent/patch.diff"]
+    assert FakeJob.created_configs[0].verifier.import_path == "ridges_harbor.verifier:RidgesVerifier"
 
 
 @pytest.mark.anyio

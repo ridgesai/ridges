@@ -321,9 +321,9 @@ class KubernetesEnvironment(BaseEnvironment):
 
         await self._wait_for_pod_ready()
 
+        log_dirs = f"{EnvironmentPaths.agent_dir} {EnvironmentPaths.verifier_dir} {EnvironmentPaths.artifacts_dir}"
         mkdir_result = await self.exec(
-            f"mkdir -p {EnvironmentPaths.agent_dir} {EnvironmentPaths.verifier_dir} && "
-            f"chmod 777 {EnvironmentPaths.agent_dir} {EnvironmentPaths.verifier_dir}",
+            f"mkdir -p {log_dirs} && chmod 777 {log_dirs}",
             cwd="/",
         )
         if mkdir_result.return_code != 0:

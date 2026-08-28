@@ -91,10 +91,14 @@ class FakeVerifierConfig:
         max_timeout_sec: float | None = None,
         override_timeout_sec: float | None = None,
         disable: bool = False,
+        import_path: str | None = None,
+        kwargs: dict | None = None,
     ):
         self.max_timeout_sec = max_timeout_sec
         self.override_timeout_sec = override_timeout_sec
         self.disable = disable
+        self.import_path = import_path
+        self.kwargs = kwargs or {}
 
 
 class FakeJobConfig:
@@ -205,7 +209,7 @@ def _install_fake_harbor(monkeypatch) -> None:
     monkeypatch.setitem(sys.modules, "harbor.models.job.config", job_config_module)
     monkeypatch.setitem(sys.modules, "harbor.models.trial", trial_package_module)
     monkeypatch.setitem(sys.modules, "harbor.models.trial.config", trial_config_module)
-    monkeypatch.setattr(runner_module, "_uses_separate_verifier", lambda _task_dir: False)
+    monkeypatch.setattr(runner_module, "_resolve_separate_verifier", lambda _task_dir: False)
 
 
 @pytest.mark.anyio
@@ -234,6 +238,8 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
     assert FakeEnvironmentFactory.calls == [("docker", None)]
     assert FakeJob.created_configs[0].tasks[0].path == task_dir
     assert FakeJob.created_configs[0].verifier.max_timeout_sec == 60.0
+    assert FakeJob.created_configs[0].verifier.import_path is None
+    assert FakeJob.created_configs[0].artifacts == []
     assert FakeJob.created_configs[0].agents[0].override_timeout_sec == 30.0
     assert FakeJob.created_configs[0].agents[0].kwargs == {
         "agent_path": str(tmp_path / "agent.py"),
@@ -328,7 +334,7 @@ async def test_run_task_dir_prebuilds_kubernetes_verifier_image_for_separate_mod
     from validator import config as validator_config
 
     _install_fake_harbor(monkeypatch)
-    monkeypatch.setattr(runner_module, "_uses_separate_verifier", lambda _task_dir: True)
+    monkeypatch.setattr(runner_module, "_resolve_separate_verifier", lambda _task_dir: True)
     monkeypatch.setenv("RIDGES_ENVIRONMENT_TYPE", "kubernetes")
     monkeypatch.setattr(k8s_config, "load_incluster_config", lambda: None)
     monkeypatch.setattr(k8s_client, "CoreV1Api", lambda: object())
@@ -361,6 +367,8 @@ async def test_run_task_dir_prebuilds_kubernetes_verifier_image_for_separate_mod
     config = FakeJob.created_configs[0]
     assert config.agents[0].kwargs["separate_verifier"] is True
     assert config.environment.kwargs["verifier_image_required"] is True
+    assert config.artifacts == ["/logs/agent/patch.diff"]
+    assert config.verifier.import_path == "ridges_harbor.verifier:RidgesVerifier"
     assert FakeJob.last_instance.verification_started_hooks == []
 
 
@@ -441,7 +449,7 @@ async def test_run_task_dir_registers_lifecycle_hooks_in_expected_order(tmp_path
 @pytest.mark.anyio
 async def test_run_task_dir_leaves_separate_verifier_egress_to_harbor(tmp_path: Path, monkeypatch) -> None:
     _install_fake_harbor(monkeypatch)
-    monkeypatch.setattr(runner_module, "_uses_separate_verifier", lambda _task_dir: True)
+    monkeypatch.setattr(runner_module, "_resolve_separate_verifier", lambda _task_dir: True)
 
     task_dir = tmp_path / "dataset" / "update-status-file"
     task_dir.mkdir(parents=True)
@@ -465,6 +473,9 @@ async def test_run_task_dir_leaves_separate_verifier_egress_to_harbor(tmp_path: 
     )
 
     assert FakeJob.last_instance.verification_started_hooks == [on_verification_started]
+    config = FakeJob.created_configs[0]
+    assert config.artifacts == ["/logs/agent/patch.diff"]
+    assert config.verifier.import_path == "ridges_harbor.verifier:RidgesVerifier"
 
 
 @pytest.mark.anyio
@@ -737,6 +748,7 @@ async def test_separate_run_publishes_without_applying_in_agent_worktree(tmp_pat
     assert calls == [
         GIT_BASELINE_LOG_FILENAME,
         RUN_LOG_FILENAME,
+        PATCH_CHECK_LOG_FILENAME,
         PATCH_PUBLISH_LOG_FILENAME,
     ]
     assert context.metadata == {PATCH_PUBLISHED_METADATA_KEY: True}

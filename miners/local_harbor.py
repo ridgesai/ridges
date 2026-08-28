@@ -19,7 +19,7 @@ from miners.inference_client import LocalInferenceConfig
 from ridges_harbor._stdlib_contract import HARBOR_RUNNER_ERROR_FILENAME
 from ridges_harbor.digest import compute_task_digest
 from ridges_harbor.docker_runtime import prune_dangling_images
-from ridges_harbor.runner import _uses_separate_verifier
+from ridges_harbor.runner import _resolve_separate_verifier
 from ridges_harbor.shared import DEFAULT_RESULTS_DIR, HarborRunSummary
 
 _ARCHIVE_SUFFIXES = (".tar.gz", ".tgz")
@@ -290,7 +290,7 @@ async def run_local_task(
     from harbor.environments.factory import EnvironmentFactory
     from harbor.job import Job
     from harbor.models.job.config import JobConfig, RetryConfig
-    from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig
+    from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig, VerifierConfig
 
     resolved_task_path = Path(task_path).expanduser().resolve()
     resolved_agent_path = Path(agent_path).expanduser().resolve()
@@ -313,9 +313,16 @@ async def run_local_task(
 
     effective_evaluation_run_id = evaluation_run_id or str(uuid4())
     effective_timeout = _resolve_local_agent_timeout_sec(effective_task_dir, agent_timeout_sec)
-    separate_verifier = _uses_separate_verifier(effective_task_dir)
+    separate_verifier = _resolve_separate_verifier(effective_task_dir)
     resolved_job_name = job_name or f"{effective_task_name}__{uuid4().hex[:8]}"
     job_dir = resolved_results_dir / resolved_job_name
+
+    if separate_verifier:
+        verifier_config = VerifierConfig(import_path="ridges_harbor.verifier:RidgesVerifier")
+        job_artifacts = ["/logs/agent/patch.diff"]
+    else:
+        verifier_config = VerifierConfig()
+        job_artifacts = []
 
     config = JobConfig(
         job_name=resolved_job_name,
@@ -326,6 +333,8 @@ async def run_local_task(
         quiet=True,
         retry=RetryConfig(max_retries=0),
         environment=EnvironmentConfig(env={}),
+        verifier=verifier_config,
+        artifacts=job_artifacts,
         tasks=[TaskConfig(path=effective_task_dir)],
         agents=[
             AgentConfig(
