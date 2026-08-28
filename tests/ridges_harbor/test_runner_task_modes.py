@@ -1,0 +1,95 @@
+from pathlib import Path
+
+import pytest
+
+from ridges_harbor.runner import _uses_separate_verifier, _validate_kubernetes_task_services
+
+
+def _write_task(path: Path, verifier_toml: str = "") -> Path:
+    path.mkdir(parents=True)
+    (path / "instruction.md").write_text("Fix the task.\n")
+    (path / "environment").mkdir()
+    (path / "environment" / "Dockerfile").write_text("FROM alpine:3.20\n")
+    (path / "tests").mkdir()
+    (path / "tests" / "test.sh").write_text("#!/bin/sh\nexit 0\n")
+    (path / "task.toml").write_text(f'schema_version = "1.0"\n{verifier_toml}')
+    return path
+
+
+@pytest.mark.parametrize(
+    ("verifier_toml", "expected"),
+    [
+        ("", False),
+        ('\n[verifier]\nenvironment_mode = "shared"\n', False),
+        ('\n[verifier]\nenvironment_mode = "separate"\n', True),
+        (
+            '\n[verifier]\n[verifier.environment]\ndocker_image = "alpine:3.20"\n',
+            True,
+        ),
+    ],
+)
+def test_uses_separate_verifier_follows_harbor_resolution(
+    tmp_path: Path,
+    verifier_toml: str,
+    expected: bool,
+) -> None:
+    task_dir = _write_task(tmp_path / "task", verifier_toml)
+
+    assert _uses_separate_verifier(task_dir) is expected
+
+
+@pytest.mark.parametrize(
+    "step_verifier",
+    [
+        "",
+        '[steps.verifier]\nenvironment_mode = "separate"\n',
+    ],
+)
+def test_multistep_task_is_rejected(tmp_path: Path, step_verifier: str) -> None:
+    task_dir = _write_task(
+        tmp_path / "task",
+        f'\n[[steps]]\nname = "one"\n{step_verifier}',
+    )
+    step_dir = task_dir / "steps" / "one"
+    step_dir.mkdir(parents=True)
+    (step_dir / "instruction.md").write_text("Fix step one.\n")
+
+    with pytest.raises(RuntimeError, match="only single-step tasks"):
+        _uses_separate_verifier(task_dir)
+
+
+def test_kubernetes_allows_only_the_materialized_proxy_scaffold(tmp_path: Path) -> None:
+    task_dir = _write_task(tmp_path / "task")
+    (task_dir / "environment" / "docker-compose.yaml").write_text("services:\n  main: {}\n  sandbox-proxy: {}\n")
+
+    _validate_kubernetes_task_services(task_dir)
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "compose", "expected"),
+    [
+        (
+            "environment/docker-compose.yaml",
+            "services:\n  main: {}\n  sandbox-proxy: {}\n  postgres: {}\n",
+            r"agent services \['postgres'\]",
+        ),
+        (
+            "tests/docker-compose.yaml",
+            "services:\n  postgres: {}\n",
+            r"verifier services \['postgres'\]",
+        ),
+    ],
+)
+def test_kubernetes_rejects_task_authored_compose_sidecars(
+    tmp_path: Path,
+    relative_path: str,
+    compose: str,
+    expected: str,
+) -> None:
+    task_dir = _write_task(tmp_path / "task")
+    compose_path = task_dir / relative_path
+    compose_path.parent.mkdir(parents=True, exist_ok=True)
+    compose_path.write_text(compose)
+
+    with pytest.raises(RuntimeError, match=expected):
+        _validate_kubernetes_task_services(task_dir)

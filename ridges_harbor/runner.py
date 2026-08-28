@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import yaml
+
 from models.openrouter import OpenRouterRuntimeConfig
 from ridges_harbor._stdlib_contract import HARBOR_RUNNER_ERROR_FILENAME
 from ridges_harbor.digest import compute_task_digest
@@ -24,6 +26,47 @@ from ridges_harbor.shared import DEFAULT_RESULTS_DIR, HarborRunSummary, resolve_
 install_logging_harbor_progress()
 
 DEFAULT_AGENT_SANDBOX_PROXY_URL = "http://sandbox-proxy:80"
+
+
+def _uses_separate_verifier(task_dir: Path) -> bool:
+    """Resolve the task's native verifier mode using Harbor's own rules."""
+    from harbor.models.task.task import Task
+    from harbor.models.task.verifier_mode import task_has_any_separate_verifier
+
+    task = Task(task_dir)
+    if task.config.steps:
+        raise RuntimeError("Ridges Harbor 0.20 execution currently supports only single-step tasks")
+    return task_has_any_separate_verifier(task.config)
+
+
+def _compose_service_names(compose_path: Path) -> set[str]:
+    """Read service names from a Compose file or return an empty set."""
+    if not compose_path.exists():
+        return set()
+
+    raw = yaml.safe_load(compose_path.read_text()) or {}
+    services = raw.get("services", {}) if isinstance(raw, dict) else None
+    if not isinstance(services, dict):
+        raise RuntimeError(f"Invalid Compose services table in {compose_path}")
+    return {str(name) for name in services}
+
+
+def _validate_kubernetes_task_services(task_dir: Path) -> None:
+    """Reject task sidecars that the current Kubernetes adapter cannot run."""
+    agent_services = _compose_service_names(task_dir / "environment" / "docker-compose.yaml")
+    unsupported_agent = agent_services - {"main", "sandbox-proxy"}
+    verifier_services = _compose_service_names(task_dir / "tests" / "docker-compose.yaml")
+    if unsupported_agent or verifier_services:
+        details: list[str] = []
+        if unsupported_agent:
+            details.append(f"agent services {sorted(unsupported_agent)}")
+        if verifier_services:
+            details.append(f"verifier services {sorted(verifier_services)}")
+        raise RuntimeError(
+            "Ridges Kubernetes does not yet run task-authored Compose sidecars; "
+            + ", ".join(details)
+            + ". Run this task with the Docker environment"
+        )
 
 
 def _write_runner_exception(job_dir: Path) -> Path:
@@ -157,6 +200,9 @@ async def _run_task_dir(
     from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig, VerifierConfig
 
     ridges_environment_type = os.getenv("RIDGES_ENVIRONMENT_TYPE", "docker")
+    separate_verifier = _uses_separate_verifier(task_dir)
+    if ridges_environment_type == "kubernetes":
+        _validate_kubernetes_task_services(task_dir)
 
     resolved_job_name = job_name or f"{task_name}__{uuid4().hex[:8]}"
     job_dir = results_dir / resolved_job_name
@@ -170,6 +216,7 @@ async def _run_task_dir(
 
     agent_kwargs: dict[str, Any] = {
         "agent_path": str(agent_path),
+        "separate_verifier": separate_verifier,
     }
     effective_max_cost_usd = str(max_cost_usd) if max_cost_usd is not None else "9"
     agent_env = _harbor_agent_env(
@@ -229,6 +276,7 @@ async def _run_task_dir(
                 "inference_seed": inference_seed,
                 "openrouter_sidecar_env": openrouter_config.sidecar_env_vars() if openrouter_config else {},
                 "proxy_data_dir": str(proxy_data_dir),
+                "verifier_image_required": separate_verifier,
                 "kubeconfig_context": K8S_CONTEXT,
                 "node_selector": K8S_NODE_SELECTOR,
                 "labels": {"ridges.ai/trial-id": ridges_trial_id},
@@ -303,7 +351,8 @@ async def _run_task_dir(
         if on_agent_started is not None:
             job.on_agent_started(on_agent_started)
 
-        job.on_verification_started(enable_verifier_egress)
+        if not separate_verifier:
+            job.on_verification_started(enable_verifier_egress)
 
         if on_verification_started is not None:
             job.on_verification_started(on_verification_started)
