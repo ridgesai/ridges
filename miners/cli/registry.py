@@ -88,7 +88,8 @@ class HarborRegistryAdapter:
 
     @classmethod
     def build(cls) -> "HarborRegistryAdapter":
-        from harbor.job import RegistryClientFactory, TaskClient
+        from harbor.registry.client.factory import RegistryClientFactory
+        from harbor.tasks.client import TaskClient
 
         return cls(
             registry_client=RegistryClientFactory.create(),

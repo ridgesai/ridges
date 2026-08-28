@@ -5,6 +5,21 @@ import pytest
 from miners.cli.registry import DatasetInfo, HarborRegistryAdapter, ProblemInfo
 
 
+def test_harbor_adapter_build_uses_020_factory_paths(monkeypatch) -> None:
+    from harbor.registry.client.factory import RegistryClientFactory
+    from harbor.tasks.client import TaskClient
+
+    registry_client = object()
+    task_client = object()
+    monkeypatch.setattr(RegistryClientFactory, "create", lambda: registry_client)
+    monkeypatch.setattr(TaskClient, "__new__", lambda cls: task_client)
+
+    adapter = HarborRegistryAdapter.build()
+
+    assert adapter._registry is registry_client
+    assert adapter._task_client is task_client
+
+
 def test_harbor_adapter_preserves_dataset_versions_and_problem_names(tmp_path: Path) -> None:
     from harbor.models.registry import DatasetSpec, DatasetSummary, RegistryTaskId
     from harbor.tasks.client import BatchDownloadResult, TaskDownloadResult
