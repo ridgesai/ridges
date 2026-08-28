@@ -5,6 +5,8 @@ from __future__ import annotations
 RUNTIME_FILENAME = "ridges_miner_runtime.py"
 INSTRUCTION_FILENAME = "instruction.md"
 PATCH_FILENAME = "patch.diff"
+RAW_PATCH_FILENAME = "raw-patch.diff"
+GRADED_PATCH_FILENAME = "graded.patch"
 RUNTIME_PAYLOAD_FILENAME = "ridges_runtime.json"
 RUNTIME_LOG_FILENAME = "runtime.log"
 
@@ -13,6 +15,8 @@ GIT_BASELINE_LOG_FILENAME = "git-baseline.log"
 RUN_LOG_FILENAME = "run.log"
 PATCH_CHECK_LOG_FILENAME = "git-apply-check.log"
 PATCH_APPLY_LOG_FILENAME = "git-apply.log"
+PATCH_PUBLISH_LOG_FILENAME = "patch-publish.log"
+PATCH_PUBLISHED_METADATA_KEY = "ridges_patch_published"
 HARBOR_RUNNER_ERROR_FILENAME = "harbor_runner_error.txt"
 
 AGENT_LOG_FILENAMES = (
@@ -22,6 +26,7 @@ AGENT_LOG_FILENAMES = (
     RUNTIME_LOG_FILENAME,
     PATCH_CHECK_LOG_FILENAME,
     PATCH_APPLY_LOG_FILENAME,
+    PATCH_PUBLISH_LOG_FILENAME,
     RUNTIME_PAYLOAD_FILENAME,
 )
 
