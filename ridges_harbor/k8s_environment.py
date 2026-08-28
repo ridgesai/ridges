@@ -17,12 +17,14 @@ Two classes are defined here:
   - Phase labels for NetworkPolicy-based egress isolation.
   - ``proxy-certs`` / ``proxy-data`` emptyDir volumes.
   - ``stop()`` override that downloads ``/data`` from the Pod before deletion
-    so that proxy cost data is available for reporting.
+    so that proxy cost data is available for reporting. A separate-mode agent
+    requests deletion without delaying the already-isolated verifier Pod.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
 import logging
 import re
@@ -33,6 +35,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from harbor.environments.base import BaseEnvironment, ExecResult
+from harbor.environments.capabilities import EnvironmentCapabilities
 from harbor.models.environment_type import EnvironmentType
 from harbor.models.task.config import EnvironmentConfig
 from harbor.models.trial.paths import EnvironmentPaths, TrialPaths
@@ -54,6 +57,35 @@ BUILD_MEMORY_TIERS: list[tuple[str, str]] = [
     ("16Gi", "28Gi"),  # fits ccx33 (32GB) evaluator nodes
 ]
 BUILD_MEMORY_TIER_ANNOTATION = "ridges.ai/build-memory-tier"
+AGENT_IMAGE_ROLE = "agent"
+VERIFIER_IMAGE_ROLE = "verifier"
+MAX_BUILD_JOB_NAME_LENGTH = 59
+
+
+def _environment_image_role(session_id: str) -> str:
+    """Return Harbor's semantic environment role for a runtime session."""
+    if session_id.endswith("__env"):
+        return AGENT_IMAGE_ROLE
+    if "__verifier__" in session_id:
+        return VERIFIER_IMAGE_ROLE
+    raise ValueError(f"Unsupported Harbor environment session id: {session_id!r}")
+
+
+def _build_job_name(task_name: str, digest_tag: str, image_role: str) -> str:
+    """Build a role-aware Kubernetes Job name with room for the ``-url`` Secret."""
+    slug = re.sub(r"[^a-z0-9-]", "-", task_name.lower()).strip("-") or "task"
+    suffix = f"-{digest_tag}-{image_role}"
+    available = MAX_BUILD_JOB_NAME_LENGTH - len("build-") - len(suffix)
+    if available < 1:
+        raise ValueError("Digest tag and image role leave no room for a build Job name")
+    if len(slug) > available:
+        identity = hashlib.sha256(task_name.encode()).hexdigest()[:8]
+        prefix_length = available - len(identity) - 1
+        if prefix_length < 1:
+            raise ValueError("Task identity suffix leaves no room for a build Job name")
+        slug = f"{slug[:prefix_length].rstrip('-') or 'task'}-{identity}"
+    return f"build-{slug}{suffix}"
+
 
 # ---------------------------------------------------------------------------
 # KubernetesEnvironment – generic base
@@ -110,6 +142,13 @@ class KubernetesEnvironment(BaseEnvironment):
         self._owner_pod_uid = owner_pod_uid
 
         # Resource sizing.
+        missing_resources = [
+            field for field in ("cpus", "memory_mb", "storage_mb") if getattr(task_env_config, field) is None
+        ]
+        if missing_resources:
+            raise ValueError(
+                "Ridges Kubernetes tasks must define environment resources: " + ", ".join(missing_resources)
+            )
         self.cpu_request = str(round(max(task_env_config.cpus * cpu_request_fraction, 0.1), 3))
         self.memory_request = f"{max(int(task_env_config.memory_mb * memory_request_fraction), 128)}Mi"
         self.ephemeral_storage_request = f"{task_env_config.storage_mb}Mi"
@@ -139,17 +178,8 @@ class KubernetesEnvironment(BaseEnvironment):
         return EnvironmentType.GKE
 
     @property
-    def is_mounted(self) -> bool:
-        return False
-
-    @property
-    def supports_gpus(self) -> bool:
-        return False
-
-    @property
-    def can_disable_internet(self) -> bool:
-        # Internet isolation is handled externally via NetworkPolicies.
-        return True
+    def capabilities(self) -> EnvironmentCapabilities:
+        return EnvironmentCapabilities()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -293,7 +323,8 @@ class KubernetesEnvironment(BaseEnvironment):
 
         mkdir_result = await self.exec(
             f"mkdir -p {EnvironmentPaths.agent_dir} {EnvironmentPaths.verifier_dir} && "
-            f"chmod 777 {EnvironmentPaths.agent_dir} {EnvironmentPaths.verifier_dir}"
+            f"chmod 777 {EnvironmentPaths.agent_dir} {EnvironmentPaths.verifier_dir}",
+            cwd="/",
         )
         if mkdir_result.return_code != 0:
             raise RuntimeError(
@@ -322,6 +353,7 @@ class KubernetesEnvironment(BaseEnvironment):
         """Execute *command* inside the main container of the Pod."""
         user = self._resolve_user(user)
         env = self._merge_env(env)
+        cwd = cwd or self.task_env_config.workdir
 
         await self._ensure_client()
 
@@ -661,7 +693,13 @@ class KubernetesEnvironment(BaseEnvironment):
 
         raise RuntimeError(f"Pod {self.pod_name} not ready after {timeout_sec}s")
 
-    async def _delete_pod_and_wait(self, timeout_sec: int = 60) -> None:
+    async def _delete_pod_and_wait(
+        self,
+        timeout_sec: int = 60,
+        *,
+        wait_for_absence: bool = True,
+    ) -> None:
+        """Request Pod deletion and optionally wait until its name is reusable."""
         try:
             await asyncio.to_thread(
                 self._api.delete_namespaced_pod,
@@ -673,6 +711,9 @@ class KubernetesEnvironment(BaseEnvironment):
             if exc.status == 404:
                 return
             raise
+
+        if not wait_for_absence:
+            return
 
         for _ in range(timeout_sec):
             try:
@@ -741,6 +782,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         inference_seed: int | None = None,
         openrouter_sidecar_env: dict[str, str] | None = None,
         proxy_data_dir: str | Path | None = None,
+        verifier_image_required: bool = False,
         registry_credentials_secret: str | None = None,
         registry_password: str | None = None,
         registry_insecure: bool = True,
@@ -751,13 +793,19 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         self.registry = registry
         self.task_name = task_name
         self.digest_tag = digest_tag
+        self.image_role = _environment_image_role(session_id)
+        self.image_tag = f"{digest_tag}-{self.image_role}"
+        self.build_context_name = "environment" if self.image_role == AGENT_IMAGE_ROLE else "tests"
+        self.verifier_image_required = verifier_image_required
         self.task_archive_presigned_url = task_archive_presigned_url
         self.proxy_image = proxy_image
         self.evaluation_run_id = evaluation_run_id
         self.max_cost_usd = max_cost_usd
         self.inference_seed = inference_seed
         self.openrouter_sidecar_env: dict[str, str] = openrouter_sidecar_env or {}
-        self.proxy_data_dir: Path | None = Path(proxy_data_dir) if proxy_data_dir else None
+        self.proxy_data_dir: Path | None = (
+            Path(proxy_data_dir) if proxy_data_dir and self.image_role == AGENT_IMAGE_ROLE else None
+        )
         self.registry_credentials_secret = registry_credentials_secret
         self._registry_password = registry_password
         self._registry_insecure = registry_insecure
@@ -774,7 +822,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
             build_registry_insecure if build_registry_insecure is not None else registry_insecure
         )
 
-        image = f"{registry}/{task_name.lower()}:{digest_tag}"
+        image = f"{registry}/{task_name.lower()}:{self.image_tag}"
         # Eval pods need credentials to pull the task image from the in-cluster registry.
         pull_secrets = [registry_credentials_secret] if registry_credentials_secret else []
         super().__init__(
@@ -795,17 +843,50 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
     async def start(self, force_build: bool) -> None:
         """Ensure the task image exists in the registry, then start the Pod."""
         await self._ensure_client()
-        await self._ensure_image(force_build=force_build)
+        if self.image_role == AGENT_IMAGE_ROLE:
+            if self.verifier_image_required:
+                await asyncio.gather(
+                    self._ensure_image(
+                        image_role=AGENT_IMAGE_ROLE,
+                        force_build=force_build,
+                        allow_build=True,
+                    ),
+                    self._ensure_image(
+                        image_role=VERIFIER_IMAGE_ROLE,
+                        force_build=force_build,
+                        allow_build=True,
+                    ),
+                )
+            else:
+                await self._ensure_image(
+                    image_role=AGENT_IMAGE_ROLE,
+                    force_build=force_build,
+                    allow_build=True,
+                )
+        else:
+            await self._ensure_image(
+                image_role=VERIFIER_IMAGE_ROLE,
+                force_build=False,
+                allow_build=False,
+            )
         await super().start(force_build=False)
 
     async def stop(self, delete: bool = True) -> None:
         """Download proxy data from the Pod, then delete it."""
-        if self.proxy_data_dir is not None and self._core_api is not None:
+        if self.image_role == AGENT_IMAGE_ROLE and self.proxy_data_dir is not None and self._core_api is not None:
             try:
                 self.logger.debug(f"Downloading proxy data from Pod {self.pod_name}:/proxy-data")
                 await self.download_dir("/proxy-data", self.proxy_data_dir)
             except Exception as exc:
                 self.logger.warning(f"Failed to download proxy data from Pod {self.pod_name}: {exc}")
+        if (
+            delete
+            and self.image_role == AGENT_IMAGE_ROLE
+            and self.verifier_image_required
+            and self._core_api is not None
+        ):
+            await self._delete_pod_and_wait(wait_for_absence=False)
+            return
         await super().stop(delete=delete)
 
     # ------------------------------------------------------------------
@@ -814,12 +895,15 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
 
     def _build_labels(self) -> dict[str, str]:
         labels = super()._build_labels()
-        labels["ridges.ai/phase"] = "agent"
+        labels["ridges.ai/phase"] = "agent" if self.image_role == AGENT_IMAGE_ROLE else "verification"
+        labels["ridges.ai/environment-role"] = self.image_role
         labels["ridges.ai/evaluation-run-id"] = self.evaluation_run_id
         return labels
 
     def _build_volumes(self) -> list[k8s_client.V1Volume]:
         volumes = super()._build_volumes()
+        if self.image_role != AGENT_IMAGE_ROLE:
+            return volumes
         volumes.append(k8s_client.V1Volume(name="proxy-certs", empty_dir=k8s_client.V1EmptyDirVolumeSource()))
         volumes.append(k8s_client.V1Volume(name="proxy-data", empty_dir=k8s_client.V1EmptyDirVolumeSource()))
         return volumes
@@ -831,15 +915,16 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         # ca-bundle.crt = system CAs + proxy CA, so agents trust both external
         # HTTPS endpoints and the proxy's self-signed cert.
         main = containers[0]
-        main_env = list(main.env or [])
-        main_env.append(k8s_client.V1EnvVar(name="SSL_CERT_FILE", value="/proxy-certs/ca-bundle.crt"))
-        main_env.append(k8s_client.V1EnvVar(name="REQUESTS_CA_BUNDLE", value="/proxy-certs/ca-bundle.crt"))
-        main.env = main_env
+        if self.image_role == AGENT_IMAGE_ROLE:
+            main_env = list(main.env or [])
+            main_env.append(k8s_client.V1EnvVar(name="SSL_CERT_FILE", value="/proxy-certs/ca-bundle.crt"))
+            main_env.append(k8s_client.V1EnvVar(name="REQUESTS_CA_BUNDLE", value="/proxy-certs/ca-bundle.crt"))
+            main.env = main_env
 
-        mounts = list(main.volume_mounts or [])
-        mounts.append(k8s_client.V1VolumeMount(name="proxy-certs", mount_path="/proxy-certs", read_only=True))
-        mounts.append(k8s_client.V1VolumeMount(name="proxy-data", mount_path="/proxy-data", read_only=True))
-        main.volume_mounts = mounts
+            mounts = list(main.volume_mounts or [])
+            mounts.append(k8s_client.V1VolumeMount(name="proxy-certs", mount_path="/proxy-certs", read_only=True))
+            mounts.append(k8s_client.V1VolumeMount(name="proxy-data", mount_path="/proxy-data", read_only=True))
+            main.volume_mounts = mounts
 
         # Drop all Linux capabilities except SETUID/SETGID which Harbor's
         # exec path needs (`su <user> -s /bin/bash -c ...` for exec_as_root
@@ -860,7 +945,8 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
             ),
         )
 
-        containers.append(self._proxy_container())
+        if self.image_role == AGENT_IMAGE_ROLE:
+            containers.append(self._proxy_container())
         return containers
 
     def _build_pod_spec(self) -> k8s_client.V1PodSpec:
@@ -877,6 +963,9 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         # Private CIDRs are excluded so in-cluster services are not intercepted.
         # Image has iptables pre-installed (see Dockerfile.iptables-init) so pod
         # startup never depends on reaching the Alpine package CDN at runtime.
+        if self.image_role != AGENT_IMAGE_ROLE:
+            return spec
+
         spec.init_containers = [
             k8s_client.V1Container(
                 name="iptables-init",
@@ -950,15 +1039,28 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
     # On-demand image building via BuildKit (rootless)
     # ------------------------------------------------------------------
 
-    async def _ensure_image(self, *, force_build: bool = False) -> None:
-        """Check registry for the task image; build with BuildKit if missing."""
-        image_ref = f"{self.build_registry}/{self.task_name.lower()}:{self.digest_tag}"
+    async def _ensure_image(
+        self,
+        *,
+        image_role: str,
+        force_build: bool,
+        allow_build: bool,
+    ) -> None:
+        """Require one role image, building it only during the agent setup phase."""
+        image_tag = f"{self.digest_tag}-{image_role}"
+        image_ref = f"{self.build_registry}/{self.task_name.lower()}:{image_tag}"
 
-        if not force_build and await self._image_exists_in_registry(image_ref):
+        if not force_build and await self._image_exists_in_registry(image_tag):
             self.logger.debug(f"Image {image_ref} already in registry – skipping build")
             return
 
-        job_name = f"build-{self._slug(self.task_name)}-{self.digest_tag}"
+        if not allow_build:
+            raise RuntimeError(
+                f"Required prebuilt {image_role} image is missing from the registry: {image_ref}. "
+                "Separate verifier images must be built before the agent starts"
+            )
+
+        job_name = _build_job_name(self.task_name, self.digest_tag, image_role)
         secret_name = f"{job_name}-url"
         self.logger.info(f"Building image {image_ref} via BuildKit job {job_name}")
 
@@ -972,7 +1074,14 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                 raise
 
         try:
-            await asyncio.to_thread(self._create_build_job_sync, job_name, secret_name, image_ref, 0)
+            await asyncio.to_thread(
+                self._create_build_job_sync,
+                job_name,
+                secret_name,
+                image_ref,
+                image_role,
+                0,
+            )
         except ApiException as exc:
             if exc.status == 409:
                 if await self._is_job_failed(job_name):
@@ -985,20 +1094,33 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                     await self._delete_job(job_name)
                     await self._delete_secret(secret_name)
                     await asyncio.to_thread(self._create_build_secret_sync, secret_name)
-                    await asyncio.to_thread(self._create_build_job_sync, job_name, secret_name, image_ref, retry_tier)
+                    await asyncio.to_thread(
+                        self._create_build_job_sync,
+                        job_name,
+                        secret_name,
+                        image_ref,
+                        image_role,
+                        retry_tier,
+                    )
                 else:
                     self.logger.debug(f"Build job {job_name} already exists — another screener is building")
             else:
                 raise
 
-        await self._wait_for_build_job(job_name, secret_name, image_ref, timeout_sec=2000)
+        await self._wait_for_build_job(
+            job_name,
+            secret_name,
+            image_ref,
+            image_role,
+            timeout_sec=2000,
+        )
 
-    async def _image_exists_in_registry(self, image_ref: str) -> bool:
-        """HEAD-check the task image (self.task_name:self.digest_tag) in the registry."""
+    async def _image_exists_in_registry(self, image_tag: str) -> bool:
+        """HEAD-check one role-specific task image in the build registry."""
         return await _registry_image_exists(
             self.build_registry,
             self.task_name,
-            self.digest_tag,
+            image_tag,
             registry_insecure=self._build_registry_insecure,
             registry_credentials_secret=self.registry_credentials_secret,
             registry_password=self._registry_password,
@@ -1016,7 +1138,14 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         )
         self._api.create_namespaced_secret(namespace=self.namespace, body=secret)
 
-    def _create_build_job_sync(self, job_name: str, secret_name: str, image_ref: str, tier: int) -> None:
+    def _create_build_job_sync(
+        self,
+        job_name: str,
+        secret_name: str,
+        image_ref: str,
+        image_role: str,
+        tier: int,
+    ) -> None:
         """Create the BuildKit (rootless) build Job at the given memory tier.
 
         Drop-in replacement for the old Kaniko Job: BuildKit streams layers to
@@ -1032,11 +1161,17 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
             self.build_registry,
             self._build_registry_insecure,
             self.registry_credentials_secret,
+            context_name="environment" if image_role == AGENT_IMAGE_ROLE else "tests",
         )
         self._batch.create_namespaced_job(namespace=self.namespace, body=job)
 
     async def _wait_for_build_job(
-        self, job_name: str, secret_name: str, image_ref: str, timeout_sec: int = 600
+        self,
+        job_name: str,
+        secret_name: str,
+        image_ref: str,
+        image_role: str,
+        timeout_sec: int = 600,
     ) -> None:
         """Poll until the build Job succeeds or fails.
 
@@ -1088,7 +1223,14 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                 )
                 await self._delete_job(job_name)
                 try:
-                    await asyncio.to_thread(self._create_build_job_sync, job_name, secret_name, image_ref, next_tier)
+                    await asyncio.to_thread(
+                        self._create_build_job_sync,
+                        job_name,
+                        secret_name,
+                        image_ref,
+                        image_role,
+                        next_tier,
+                    )
                 except ApiException as exc:
                     if exc.status != 409:
                         raise
@@ -1187,12 +1329,6 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
             if exc.status != 404:
                 self.logger.warning(f"Failed to delete build Secret {secret_name}: {exc}")
 
-    @staticmethod
-    def _slug(name: str) -> str:
-        """Sanitise a task name for use in Kubernetes resource names."""
-        slug = re.sub(r"[^a-z0-9-]", "-", name.lower())
-        return slug[:40].strip("-")
-
 
 # ---------------------------------------------------------------------------
 # Module-level BuildKit helpers, shared by the per-task lazy build path above
@@ -1287,6 +1423,8 @@ def _build_job_body(
     registry: str,
     registry_insecure: bool,
     registry_credentials_secret: str | None,
+    *,
+    context_name: str = "environment",
 ) -> "k8s_client.V1Job":
     """Build the BuildKit (rootless) build Job spec at the given memory tier.
 
@@ -1305,7 +1443,7 @@ def _build_job_body(
             'curl -sSfL "$PRESIGNED_URL" -o /tmp/task.tar.gz && '
             "mkdir -p /workspace && "
             "tar -xzf /tmp/task.tar.gz -C /workspace --strip-components=1 && "
-            "test -f /workspace/environment/Dockerfile"
+            f"test -f /workspace/{context_name}/Dockerfile"
         ],
         env=[
             k8s_client.V1EnvVar(
@@ -1336,8 +1474,8 @@ def _build_job_body(
     buildkit_args = [
         "build",
         "--frontend=dockerfile.v0",
-        "--local=context=/workspace/environment",
-        "--local=dockerfile=/workspace/environment",
+        f"--local=context=/workspace/{context_name}",
+        f"--local=dockerfile=/workspace/{context_name}",
         "--opt=filename=Dockerfile",
         f"--output={output_opt}",
         f"--export-cache={export_cache_opt}",
@@ -1522,12 +1660,13 @@ async def pre_build_images(
     core_api, batch_api = await asyncio.to_thread(_init_standalone_k8s_clients, kubeconfig_context)
 
     async def _pre_build_one(task_name: str, digest_tag: str, presigned_url: str) -> None:
-        image_ref = f"{effective_build_registry}/{task_name.lower()}:{digest_tag}"
+        image_tag = f"{digest_tag}-{AGENT_IMAGE_ROLE}"
+        image_ref = f"{effective_build_registry}/{task_name.lower()}:{image_tag}"
         try:
             if await _registry_image_exists(
                 effective_build_registry,
                 task_name,
-                digest_tag,
+                image_tag,
                 registry_insecure=effective_build_registry_insecure,
                 registry_credentials_secret=registry_credentials_secret,
                 registry_password=registry_password,
@@ -1535,7 +1674,7 @@ async def pre_build_images(
                 logger.debug(f"Pre-build: {image_ref} already in registry — skipping")
                 return
 
-            job_name = f"build-{RidgesKubernetesEnvironment._slug(task_name)}-{digest_tag}"
+            job_name = _build_job_name(task_name, digest_tag, AGENT_IMAGE_ROLE)
             secret_name = f"{job_name}-url"
 
             try:
@@ -1582,6 +1721,7 @@ async def pre_build_images(
                             effective_build_registry,
                             effective_build_registry_insecure,
                             registry_credentials_secret,
+                            context_name="environment",
                         ),
                     )
                 )

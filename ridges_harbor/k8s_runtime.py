@@ -37,13 +37,12 @@ def build_k8s_verifier_egress_hook(
     2. ``touch /tmp/egress-unlocked`` is exec'd into the ``proxy`` container so
        the SNI router switches from allowlist-only mode to full passthrough.
 
-    The pod name is derived from ``event.trial_id`` at invocation time because
-    Harbor auto-generates the trial name (and thus the pod name via session_id)
-    independently of the job name used by the runner.
+    The pod name is derived from Harbor's semantic trial name. In Harbor 0.20,
+    ``trial_id`` is a UUID and is not the environment session name.
     """
 
     async def enable_verifier_egress(event: Any) -> None:
-        pod_name = event.trial_id.lower().replace("_", "-")[:63]
+        pod_name = f"{event.trial_name}__env".lower().replace("_", "-")[:63]
 
         # 1. Flip the NetworkPolicy label.
         await asyncio.to_thread(

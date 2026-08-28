@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from kubernetes.client.rest import ApiException
@@ -58,6 +59,7 @@ def make_env() -> RidgesKubernetesEnvironment:
     env._core_api = _Api()  # backs the read-only `_api` property
     env._resolve_user = lambda user: None
     env._merge_env = lambda extra: {}
+    env.task_env_config = SimpleNamespace(workdir=None)
 
     async def _noop():
         pass
@@ -139,6 +141,23 @@ async def test_successful_exec_still_returns_result(monkeypatch) -> None:
 
     assert result.return_code == 0
     assert result.stdout == "hi\n"
+
+
+@pytest.mark.anyio
+async def test_exec_defaults_to_task_environment_workdir(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def successful_stream(*args, **kwargs):
+        captured["command"] = kwargs["command"]
+        return FakeResp(returncode=0)
+
+    environment = make_env()
+    environment.task_env_config = SimpleNamespace(workdir="/task-workdir")
+    monkeypatch.setattr(k8s_environment, "stream", successful_stream)
+
+    await environment.exec("pwd")
+
+    assert captured["command"] == ["sh", "-c", "cd /task-workdir && bash -c pwd"]
 
 
 @pytest.mark.anyio
