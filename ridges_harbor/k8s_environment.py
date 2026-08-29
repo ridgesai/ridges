@@ -699,18 +699,26 @@ class KubernetesEnvironment(BaseEnvironment):
                     namespace=self.namespace,
                 )
                 phase = pod.status.phase
+                container_statuses = pod.status.container_statuses or []
+                for container_status in container_statuses:
+                    if container_status.state.terminated:
+                        raise RuntimeError(
+                            f"Pod {self.pod_name} has a terminated required container: {self._pod_failure_summary(pod)}"
+                        )
+
+                    if container_status.state.waiting and container_status.state.waiting.reason in (
+                        "ImagePullBackOff",
+                        "ErrImagePull",
+                    ):
+                        raise RuntimeError(
+                            f"Failed to pull image for Pod {self.pod_name}: {container_status.state.waiting.message}"
+                        )
                 if phase == "Running" and pod.status.container_statuses:
-                    if all(c.ready for c in pod.status.container_statuses):
+                    if all(container_status.ready for container_status in container_statuses):
                         self.logger.debug(f"Pod {self.pod_name} is ready")
                         return
                 elif phase in ("Failed", "Unknown", "Error"):
                     raise RuntimeError(f"Pod {self.pod_name} failed to start: {self._pod_failure_summary(pod)}")
-                elif phase == "Pending" and pod.status.container_statuses:
-                    for cs in pod.status.container_statuses:
-                        if cs.state.waiting and cs.state.waiting.reason in ("ImagePullBackOff", "ErrImagePull"):
-                            raise RuntimeError(
-                                f"Failed to pull image for Pod {self.pod_name}: {cs.state.waiting.message}"
-                            )
             except ApiException as exc:
                 if exc.status != 404:
                     raise RuntimeError(f"Kubernetes API error while waiting for Pod: {exc}") from exc
@@ -991,7 +999,8 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         )
 
     def _tmpfs_volume_name(self, service_name: str, index: int) -> str:
-        return f"tmpfs-{service_name}-{index}"
+        identity = f"{service_name}:{index}".encode()
+        return f"tmpfs-{hashlib.sha256(identity).hexdigest()[:20]}"
 
     def _healthcheck_startup_probe(self, healthcheck: ComposeHealthcheck | None) -> k8s_client.V1Probe | None:
         if healthcheck is None:
@@ -1013,27 +1022,33 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         ]
         default_request = self.sidecar_memory_request_mi * 1024 * 1024
         default_limit = self.sidecar_memory_limit_mi * 1024 * 1024
-        memory_request_bytes = sidecar.memory_request_bytes or default_request
-        memory_limit_bytes = sidecar.memory_limit_bytes or default_limit
+        tmpfs_bytes = sum(mount.size_bytes or 0 for mount in sidecar.tmpfs_mounts)
+        has_explicit_memory = sidecar.memory_request_bytes is not None or sidecar.memory_limit_bytes is not None
+        if has_explicit_memory:
+            memory_request_bytes = sidecar.memory_request_bytes or default_request
+            memory_limit_bytes = sidecar.memory_limit_bytes or default_limit
+            if tmpfs_bytes and memory_request_bytes <= tmpfs_bytes:
+                raise RuntimeError(f"sidecar {sidecar.name}: memory request must exceed total tmpfs size")
+
+            if tmpfs_bytes and memory_limit_bytes <= tmpfs_bytes:
+                raise RuntimeError(f"sidecar {sidecar.name}: memory limit must exceed total tmpfs size")
+        else:
+            # Backwards compatibility
+            memory_request_bytes = default_request + tmpfs_bytes
+            memory_limit_bytes = default_limit + tmpfs_bytes
         if memory_request_bytes > memory_limit_bytes:
             raise RuntimeError(f"sidecar {sidecar.name}: memory request exceeds memory limit")
-        if sidecar.memory_request_bytes is None and sidecar.memory_limit_bytes is None:
+        if not has_explicit_memory:
             self.logger.debug(
                 f"Sidecar {sidecar.name}: using default memory "
                 f"{self.sidecar_memory_request_mi}Mi/{self.sidecar_memory_limit_mi}Mi "
-                "(ClickHouse 2Gi floor; not measured RSS)"
+                "plus declared tmpfs capacity"
             )
-        # Sidecar ephemeral-storage is additive with main's storage_mb request.
-        ephemeral_bytes = sum(mount.size_bytes or 0 for mount in sidecar.tmpfs_mounts)
         requests: dict[str, str] = {
             "cpu": sidecar.cpu_request or DEFAULT_SIDECAR_CPU_REQUEST,
             "memory": k8s_memory_quantity(memory_request_bytes),
         }
         limits: dict[str, str] = {"memory": k8s_memory_quantity(memory_limit_bytes)}
-        if ephemeral_bytes:
-            ephemeral = str(ephemeral_bytes)
-            requests["ephemeral-storage"] = ephemeral
-            limits["ephemeral-storage"] = ephemeral
         return k8s_client.V1Container(
             name=sidecar.name,
             image=self._sidecar_image_ref(sidecar.name),
@@ -1061,7 +1076,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         volumes = super()._build_volumes()
         for sidecar in self._compose_sidecars():
             for index, mount in enumerate(sidecar.tmpfs_mounts):
-                empty_dir = k8s_client.V1EmptyDirVolumeSource()
+                empty_dir = k8s_client.V1EmptyDirVolumeSource(medium="Memory")
                 if mount.size_bytes is not None:
                     empty_dir.size_limit = str(mount.size_bytes)
                 volumes.append(
@@ -1116,7 +1131,15 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         if self.image_role == AGENT_IMAGE_ROLE:
             containers.append(self._proxy_container())
         containers.extend(self._sidecar_container(sidecar) for sidecar in self._compose_sidecars())
+        self._validate_container_names(containers)
         return containers
+
+    @staticmethod
+    def _validate_container_names(containers: Sequence[k8s_client.V1Container]) -> None:
+        names = [container.name for container in containers]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise RuntimeError(f"generated duplicate Kubernetes container names: {duplicates}")
 
     def _build_pod_spec(self) -> k8s_client.V1PodSpec:
         spec = super()._build_pod_spec()
@@ -1166,6 +1189,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                 ),
             )
         ]
+        self._validate_container_names([*(spec.containers or []), *(spec.init_containers or [])])
         return spec
 
     def _proxy_container(self) -> k8s_client.V1Container:
@@ -1205,7 +1229,22 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                 k8s_client.V1VolumeMount(name="proxy-certs", mount_path="/certs/output"),
                 k8s_client.V1VolumeMount(name="proxy-data", mount_path="/proxy-data"),
             ],
-            ports=[k8s_client.V1ContainerPort(container_port=15443)],
+            ports=[
+                k8s_client.V1ContainerPort(container_port=8080),
+                k8s_client.V1ContainerPort(container_port=15443),
+            ],
+            startup_probe=k8s_client.V1Probe(
+                http_get=k8s_client.V1HTTPGetAction(path="/healthz", port=8080),
+                period_seconds=5,
+                timeout_seconds=3,
+                failure_threshold=20,
+            ),
+            readiness_probe=k8s_client.V1Probe(
+                http_get=k8s_client.V1HTTPGetAction(path="/healthz", port=8080),
+                period_seconds=5,
+                timeout_seconds=3,
+                failure_threshold=3,
+            ),
         )
 
     # ------------------------------------------------------------------
