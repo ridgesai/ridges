@@ -266,7 +266,10 @@ K8S_MEMORY_LIMIT_MULTIPLIER: float = 1.0
 K8S_SIDECAR_MEMORY_REQUEST_MI: int = 512
 K8S_SIDECAR_MEMORY_LIMIT_MI: int = 2048
 
-PROXY_IMAGE: str = os.getenv("PROXY_IMAGE", "ghcr.io/ridgesai/sandbox-proxy:latest")
+PROXY_IMAGE: str = os.getenv(
+    "PROXY_IMAGE",
+    "ghcr.io/ridgesai/sandbox-proxy:0.0.4",
+)
 
 if RIDGES_ENVIRONMENT_TYPE == "kubernetes":
     K8S_NAMESPACE = os.getenv("K8S_NAMESPACE", "ridges")
