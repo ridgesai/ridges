@@ -1,10 +1,44 @@
+from pathlib import Path
+
 import pytest
+import yaml
 
 from ridges_harbor.k8s_compose import (
     parse_compose_bytes,
     parse_duration_seconds,
     parse_kubernetes_compose_text,
 )
+
+CONTRACT_CASES = yaml.safe_load(
+    (Path(__file__).parents[1] / "fixtures" / "portable_compose_contract.yaml").read_text()
+)["cases"]
+
+
+@pytest.mark.parametrize("case", CONTRACT_CASES, ids=lambda case: case["name"])
+def test_portable_compose_contract(case: dict[str, object]) -> None:
+    compose = yaml.safe_dump(case["compose"], sort_keys=False)
+
+    if case["valid"]:
+        parse_kubernetes_compose_text(compose)
+    else:
+        with pytest.raises(RuntimeError):
+            parse_kubernetes_compose_text(compose)
+
+
+def test_portable_compose_contract_rejects_recursive_yaml() -> None:
+    compose = (
+        "services:\n"
+        "  redis: &redis\n"
+        "    image: redis:7\n"
+        "    environment:\n"
+        "      LOOP: *redis\n"
+        "    healthcheck:\n"
+        '      test: [CMD-SHELL, "redis-cli ping"]\n'
+    )
+
+    with pytest.raises(RuntimeError, match="recursive YAML anchors"):
+        parse_kubernetes_compose_text(compose)
+
 
 PG_NETBOX_COMPOSE = """
 services:
@@ -25,6 +59,13 @@ services:
       interval: 2s
       timeout: 2s
       retries: 300
+    deploy:
+      resources:
+        limits:
+          memory: 6g
+        reservations:
+          memory: 5g
+          cpus: "0.5"
 
   redis:
     build:
@@ -35,6 +76,13 @@ services:
       interval: 2s
       timeout: 2s
       retries: 60
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 512m
+          cpus: "0.1"
 """
 
 CLICKHOUSE_COMPOSE = """
@@ -60,6 +108,13 @@ services:
       interval: 2s
       timeout: 2s
       retries: 60
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+        reservations:
+          memory: 2g
+          cpus: "0.5"
 """
 
 
@@ -103,7 +158,9 @@ def test_leftover_main_allows_command_and_depends_on() -> None:
         "      postgres:\n"
         "        condition: service_healthy\n"
         "  postgres:\n"
-        "    image: postgres:16\n"
+        "    image: postgres@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "    healthcheck:\n"
+        '      test: ["CMD-SHELL", "pg_isready"]\n'
     )
     assert [sidecar.name for sidecar in sidecars] == ["postgres"]
 
@@ -115,7 +172,10 @@ def test_leftover_main_rejects_invalid_healthcheck() -> None:
 
 def test_leftover_main_with_environment_is_not_a_sidecar() -> None:
     sidecars = parse_kubernetes_compose_text(
-        "services:\n  main:\n    environment:\n      FOO: bar\n  postgres:\n    image: postgres:16\n"
+        "services:\n  main:\n    environment:\n      FOO: bar\n  postgres:\n"
+        "    image: postgres@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "    healthcheck:\n"
+        '      test: ["CMD-SHELL", "pg_isready"]\n'
     )
     assert [sidecar.name for sidecar in sidecars] == ["postgres"]
 
@@ -136,7 +196,12 @@ def test_rejects_multiline_image() -> None:
 
 
 def test_parses_mem_limit_size_string() -> None:
-    sidecars = parse_kubernetes_compose_text("services:\n  redis:\n    image: redis:7\n    mem_limit: 1g\n")
+    sidecars = parse_kubernetes_compose_text(
+        "services:\n  redis:\n"
+        "    image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        '    healthcheck:\n      test: ["CMD-SHELL", "redis-cli ping"]\n'
+        "    mem_limit: 1g\n"
+    )
     assert sidecars[0].memory_limit_bytes == 1024**3
     assert sidecars[0].memory_request_bytes == 1024**3
 
@@ -145,7 +210,8 @@ def test_parses_deploy_reservations() -> None:
     sidecars = parse_kubernetes_compose_text(
         "services:\n"
         "  redis:\n"
-        "    image: redis:7\n"
+        "    image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        '    healthcheck:\n      test: ["CMD-SHELL", "redis-cli ping"]\n'
         "    deploy:\n"
         "      resources:\n"
         "        limits:\n"
@@ -162,7 +228,10 @@ def test_parses_deploy_reservations() -> None:
 def test_rejects_memory_request_above_limit() -> None:
     with pytest.raises(RuntimeError, match="memory request exceeds"):
         parse_kubernetes_compose_text(
-            "services:\n  redis:\n    image: redis:7\n    mem_reservation: 2g\n    mem_limit: 1g\n"
+            "services:\n  redis:\n"
+            "    image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+            '    healthcheck:\n      test: ["CMD-SHELL", "redis-cli ping"]\n'
+            "    mem_reservation: 2g\n    mem_limit: 1g\n"
         )
 
 
@@ -179,9 +248,73 @@ def test_rejects_ports() -> None:
         )
 
 
-def test_rejects_top_level_networks() -> None:
-    with pytest.raises(RuntimeError, match="unsupported top-level keys"):
-        parse_kubernetes_compose_text("networks:\n  default: {}\nservices:\n  postgres:\n    image: postgres:16\n")
+def test_rejects_init_container_service_name() -> None:
+    with pytest.raises(RuntimeError, match="reserved"):
+        parse_kubernetes_compose_text("services:\n  iptables-init:\n    image: alpine:3\n")
+
+
+def test_parses_materialized_scaffold_with_task_sidecar() -> None:
+    sidecars = parse_kubernetes_compose_text(
+        """
+services:
+  main:
+    depends_on:
+      sandbox-proxy:
+        condition: service_healthy
+    volumes:
+      - proxy-certs:/etc/ridges-proxy-certs:ro
+    networks:
+      - sandbox_internal
+  sandbox-proxy:
+    image: ghcr.io/ridgesai/sandbox-proxy:0.0.4
+    volumes:
+      - proxy-certs:/certs/output
+      - type: bind
+        source: /tmp/proxy-data
+        target: /proxy-data
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'print(1)'"]
+    networks:
+      sandbox_internal:
+        aliases: [openrouter.ai]
+      sandbox_egress:
+  postgres:
+    image: postgres@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+    networks: [sandbox_internal]
+networks:
+  sandbox_internal:
+    internal: true
+  sandbox_egress: {}
+volumes:
+  proxy-certs:
+"""
+    )
+    assert [sidecar.name for sidecar in sidecars] == ["postgres"]
+
+
+@pytest.mark.parametrize(
+    "compose, expected_error",
+    [
+        ("networks: []\nservices: {}\n", "networks must be a mapping"),
+        ("volumes: []\nservices: {}\n", "volumes must be a mapping"),
+        (
+            "services:\n  postgres:\n"
+            "    image: postgres@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+            '    healthcheck:\n      test: ["CMD-SHELL", "pg_isready"]\n'
+            "    networks: sandbox_internal\n",
+            "networks must be a list of strings or a string-keyed mapping",
+        ),
+        (
+            "services:\n  main:\n    volumes: proxy-certs:/certs\n",
+            "volumes must be a list",
+        ),
+    ],
+)
+def test_rejects_malformed_inert_scaffold_shapes(compose: str, expected_error: str) -> None:
+    with pytest.raises(RuntimeError, match=expected_error):
+        parse_kubernetes_compose_text(compose)
 
 
 def test_parse_duration_compose_seconds() -> None:

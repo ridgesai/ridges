@@ -136,6 +136,13 @@ def test_kubernetes_rejects_shared_tests_sidecars(tmp_path: Path) -> None:
         "      interval: 2s\n"
         "      timeout: 2s\n"
         "      retries: 300\n"
+        "    deploy:\n"
+        "      resources:\n"
+        "        limits:\n"
+        "          memory: 6g\n"
+        "        reservations:\n"
+        "          memory: 5g\n"
+        "          cpus: '0.5'\n"
         "  redis:\n"
         "    build:\n"
         "      context: .\n"
@@ -149,7 +156,7 @@ def test_kubernetes_rejects_shared_tests_sidecars(tmp_path: Path) -> None:
     (task_dir / "tests" / "docker-compose.yaml").write_text(
         "services:\n"
         "  clickhouse:\n"
-        "    image: clickhouse/clickhouse-server@sha256:deadbeef\n"
+        "    image: clickhouse/clickhouse-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
         "    healthcheck:\n"
         '      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping"]\n'
         "      interval: 2s\n"
@@ -179,7 +186,7 @@ def test_kubernetes_allows_separate_tests_sidecars(tmp_path: Path) -> None:
     (task_dir / "tests" / "docker-compose.yaml").write_text(
         "services:\n"
         "  clickhouse:\n"
-        "    image: clickhouse/clickhouse-server@sha256:deadbeef\n"
+        "    image: clickhouse/clickhouse-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
         "    healthcheck:\n"
         '      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping"]\n'
         "      interval: 2s\n"
@@ -200,7 +207,7 @@ def test_kubernetes_allows_separate_tests_sidecars(tmp_path: Path) -> None:
         ),
         (
             "tests/docker-compose.yaml",
-            "networks:\n  default: {}\nservices:\n  postgres:\n    image: postgres:16\n",
+            "configs:\n  default: {}\nservices: {}\n",
             "unsupported top-level keys",
         ),
     ],

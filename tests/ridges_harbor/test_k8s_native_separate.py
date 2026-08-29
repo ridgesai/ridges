@@ -1,6 +1,8 @@
 import io
+import logging
 import tarfile
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -44,6 +46,13 @@ def _write_pg_compose(directory: Path) -> None:
         "      interval: 2s\n"
         "      timeout: 2s\n"
         "      retries: 300\n"
+        "    deploy:\n"
+        "      resources:\n"
+        "        limits:\n"
+        "          memory: 6g\n"
+        "        reservations:\n"
+        "          memory: 5g\n"
+        "          cpus: '0.5'\n"
         "  redis:\n"
         "    build:\n"
         "      context: .\n"
@@ -53,6 +62,13 @@ def _write_pg_compose(directory: Path) -> None:
         "      interval: 2s\n"
         "      timeout: 2s\n"
         "      retries: 60\n"
+        "    deploy:\n"
+        "      resources:\n"
+        "        limits:\n"
+        "          memory: 1g\n"
+        "        reservations:\n"
+        "          memory: 512m\n"
+        "          cpus: '0.1'\n"
     )
 
 
@@ -72,6 +88,13 @@ def _write_clickhouse_compose(directory: Path) -> None:
         "        target: /var/lib/clickhouse\n"
         "        tmpfs:\n"
         "          size: 1073741824\n"
+        "    deploy:\n"
+        "      resources:\n"
+        "        limits:\n"
+        "          memory: 4g\n"
+        "        reservations:\n"
+        "          memory: 2g\n"
+        "          cpus: '0.5'\n"
     )
 
 
@@ -178,14 +201,15 @@ def test_agent_and_verifier_pods_include_compose_sidecars(tmp_path: Path) -> Non
     assert postgres.startup_probe.failure_threshold == 300
     assert postgres.startup_probe._exec.command == ["sh", "-c", "pg_isready"]
     assert postgres.security_context is None
-    tmpfs = next(volume for volume in agent._build_volumes() if volume.name == "tmpfs-postgres-0")
-    assert not tmpfs.empty_dir.medium
+    tmpfs_name = agent._tmpfs_volume_name("postgres", 0)
+    tmpfs = next(volume for volume in agent._build_volumes() if volume.name == tmpfs_name)
+    assert tmpfs.empty_dir.medium == "Memory"
     assert tmpfs.empty_dir.size_limit == "4294967296"
-    assert postgres.resources.requests["cpu"] == "250m"
-    assert postgres.resources.requests["memory"] == "512Mi"
-    assert postgres.resources.limits["memory"] == "2Gi"
-    assert postgres.resources.requests["ephemeral-storage"] == "4294967296"
-    assert postgres.resources.limits["ephemeral-storage"] == "4294967296"
+    assert postgres.resources.requests["cpu"] == "500m"
+    assert postgres.resources.requests["memory"] == "5Gi"
+    assert postgres.resources.limits["memory"] == "6Gi"
+    assert "ephemeral-storage" not in postgres.resources.requests
+    assert "ephemeral-storage" not in postgres.resources.limits
     redis = next(container for container in agent._build_containers() if container.name == "redis")
     assert "ephemeral-storage" not in redis.resources.requests
     assert redis.resources.requests["memory"] == "512Mi"
@@ -195,6 +219,54 @@ def test_agent_and_verifier_pods_include_compose_sidecars(tmp_path: Path) -> Non
     assert aliases[0].hostnames == ["postgres", "redis"]
     assert verifier._build_pod_spec().init_containers is None
     assert agent._pod_ready_timeout_sec() == 1200
+
+
+def test_tmpfs_volume_names_are_short_stable_and_collision_safe(tmp_path: Path) -> None:
+    environment = _make_environment(tmp_path, session_id="native-separate-task__env")
+    first = environment._tmpfs_volume_name("a" * 63, 0)
+    repeated = environment._tmpfs_volume_name("a" * 63, 0)
+    second = environment._tmpfs_volume_name("a" * 63, 1)
+
+    assert first == repeated
+    assert first != second
+    assert len(first) <= 63
+
+
+def test_generated_container_names_must_be_unique() -> None:
+    containers = [SimpleNamespace(name="main"), SimpleNamespace(name="main")]
+
+    with pytest.raises(RuntimeError, match="duplicate Kubernetes container names"):
+        RidgesKubernetesEnvironment._validate_container_names(containers)
+
+
+@pytest.mark.anyio
+async def test_wait_for_pod_ready_fails_on_terminated_container_while_running() -> None:
+    environment = KubernetesEnvironment.__new__(KubernetesEnvironment)
+    environment.pod_name = "pod-test"
+    environment.namespace = "default"
+    environment.logger = logging.getLogger(__name__)
+    environment._core_api = SimpleNamespace(
+        read_namespaced_pod=lambda **_kwargs: SimpleNamespace(
+            status=SimpleNamespace(
+                phase="Running",
+                reason=None,
+                message=None,
+                container_statuses=[
+                    SimpleNamespace(
+                        name="postgres",
+                        ready=False,
+                        state=SimpleNamespace(
+                            waiting=None,
+                            terminated=SimpleNamespace(exit_code=1),
+                        ),
+                    )
+                ],
+            )
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="terminated required container"):
+        await environment._wait_for_pod_ready(timeout_sec=1)
 
 
 def test_clickhouse_sidecar_uses_registry_tag_not_hub_ref(tmp_path: Path) -> None:
@@ -393,7 +465,10 @@ async def test_verifier_start_requires_prebuilt_image_and_never_builds(
 def test_declared_mem_limit_reaches_sidecar_resources(tmp_path: Path) -> None:
     (tmp_path / "environment").mkdir()
     (tmp_path / "environment" / "docker-compose.yaml").write_text(
-        "services:\n  redis:\n    image: redis:7\n    mem_limit: 1g\n"
+        "services:\n  redis:\n"
+        "    image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+        '    healthcheck:\n      test: ["CMD-SHELL", "redis-cli ping"]\n'
+        "    mem_limit: 1g\n"
     )
     agent = _make_environment(tmp_path, session_id="native-separate-task__env")
     redis = next(container for container in agent._build_containers() if container.name == "redis")
@@ -587,9 +662,15 @@ async def test_pre_build_peeks_compose_when_agent_tag_exists(monkeypatch) -> Non
         "_download_task_archive",
         lambda _url: _tar_gz_with_compose(
             environment=(
-                "services:\n  postgres:\n    build:\n      context: .\n      dockerfile: postgres.Dockerfile\n"
+                "services:\n  postgres:\n    build:\n      context: .\n"
+                "      dockerfile: postgres.Dockerfile\n"
+                '    healthcheck:\n      test: ["CMD-SHELL", "pg_isready"]\n'
             ),
-            tests=("services:\n  clickhouse:\n    image: clickhouse/clickhouse-server@sha256:deadbeef\n"),
+            tests=(
+                "services:\n  clickhouse:\n"
+                "    image: clickhouse/clickhouse-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+                '    healthcheck:\n      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping"]\n'
+            ),
         ),
     )
 
@@ -634,7 +715,9 @@ async def test_pre_build_skips_existing_sidecar_tags(monkeypatch) -> None:
         "_download_task_archive",
         lambda _url: _tar_gz_with_compose(
             environment=(
-                "services:\n  postgres:\n    build:\n      context: .\n      dockerfile: postgres.Dockerfile\n"
+                "services:\n  postgres:\n    build:\n      context: .\n"
+                "      dockerfile: postgres.Dockerfile\n"
+                '    healthcheck:\n      test: ["CMD-SHELL", "pg_isready"]\n'
             ),
         ),
     )
@@ -721,7 +804,11 @@ async def test_pre_build_does_not_queue_verifier_main_from_tests_compose_alone(m
     jobs = _install_pre_build_mocks(
         monkeypatch,
         archive=_tar_gz_with_compose(
-            tests="services:\n  clickhouse:\n    image: clickhouse/clickhouse-server@sha256:deadbeef\n",
+            tests=(
+                "services:\n  clickhouse:\n"
+                "    image: clickhouse/clickhouse-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+                '    healthcheck:\n      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping"]\n'
+            ),
         ),
         existing={"abc123def456-agent"},
     )
