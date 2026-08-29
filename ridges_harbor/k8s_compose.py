@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,8 +11,8 @@ from typing import Any, Mapping
 import yaml
 
 COMPOSE_LEFTOVER_SERVICES = frozenset({"main", "sandbox-proxy"})
-RESERVED_SIDECAR_NAMES = frozenset({"main", "proxy"})
-_ALLOWED_TOP_LEVEL_KEYS = frozenset({"services"})
+RESERVED_SIDECAR_NAMES = frozenset({"main", "proxy", "iptables-init"})
+_ALLOWED_TOP_LEVEL_KEYS = frozenset({"services", "networks", "volumes"})
 _ALLOWED_SIDECAR_KEYS = frozenset(
     {
         "image",
@@ -22,6 +23,7 @@ _ALLOWED_SIDECAR_KEYS = frozenset(
         "deploy",
         "mem_limit",
         "mem_reservation",
+        "networks",
     }
 )
 _LEFTOVER_INERT_KEYS = frozenset(
@@ -153,7 +155,10 @@ def parse_compose_cpus(value: Any, *, source: str, field: str) -> str:
     if isinstance(value, bool):
         raise RuntimeError(f"{source}: {field} must be a CPU count or millicore string")
     if isinstance(value, (int, float)):
-        millicores = int(round(float(value) * 1000))
+        cores = float(value)
+        if not math.isfinite(cores):
+            raise RuntimeError(f"{source}: {field} must be a CPU count or millicore string")
+        millicores = int(round(cores * 1000))
         if millicores < 1:
             raise RuntimeError(f"{source}: {field} must be a CPU count or millicore string")
         return f"{millicores}m"
@@ -166,6 +171,8 @@ def parse_compose_cpus(value: Any, *, source: str, field: str) -> str:
         cores = float(stripped)
     except ValueError as exc:
         raise RuntimeError(f"{source}: {field} must be a CPU count or millicore string") from exc
+    if not math.isfinite(cores):
+        raise RuntimeError(f"{source}: {field} must be a CPU count or millicore string")
     millicores = int(round(cores * 1000))
     if millicores < 1:
         raise RuntimeError(f"{source}: {field} must be a CPU count or millicore string")
@@ -206,6 +213,10 @@ def parse_kubernetes_compose_text(text: str, *, source: str = "docker-compose.ya
     unknown_top = sorted(set(raw) - _ALLOWED_TOP_LEVEL_KEYS)
     if unknown_top:
         raise RuntimeError(f"{source}: unsupported top-level keys {unknown_top}")
+
+    for inert_key in ("networks", "volumes"):
+        if inert_key in raw and not isinstance(raw[inert_key], Mapping):
+            raise RuntimeError(f"{source}: {inert_key} must be a mapping")
 
     services = raw.get("services")
     if services is None:
@@ -250,7 +261,8 @@ def _parse_leftover(name: str, spec: Any, *, source: str) -> None:
     if unknown:
         raise RuntimeError(f"{source}: service {name}: unsupported keys {unknown}")
     if "volumes" in spec:
-        _parse_volumes(name, spec.get("volumes"), source=source)
+        if not isinstance(spec.get("volumes"), list):
+            raise RuntimeError(f"{source}: service {name}: volumes must be a list")
     if "build" in spec:
         _parse_build(name, spec.get("build"), source=source)
     if "image" in spec:
@@ -259,6 +271,8 @@ def _parse_leftover(name: str, spec: Any, *, source: str) -> None:
         _parse_environment(name, spec.get("environment"), source=source)
     if "healthcheck" in spec:
         _parse_healthcheck(name, spec.get("healthcheck"), source=source)
+    if "networks" in spec:
+        _parse_networks(name, spec.get("networks"), source=source)
     _parse_resources(name, spec, source=source)
 
 
@@ -272,29 +286,45 @@ def _parse_sidecar(name: str, spec: Any, *, source: str) -> ComposeSidecar:
     unknown = sorted(set(spec) - _ALLOWED_SIDECAR_KEYS)
     if unknown:
         raise RuntimeError(f"{source}: service {name}: unsupported keys {unknown}")
+    _reject_interpolation(spec, location=f"service {name}", source=source)
 
-    image = spec.get("image")
-    build = spec.get("build")
-    has_image = image is not None and str(image).strip() != ""
-    has_build = build is not None
+    has_image = "image" in spec
+    has_build = "build" in spec
     if has_image == has_build:
         raise RuntimeError(f"{source}: service {name}: declare exactly one of 'image' or 'build'")
 
     dockerfile: str | None = None
     image_ref: str | None = None
     if has_image:
-        image_ref = _parse_image(name, image, source=source)
+        image_ref = _parse_image(name, spec["image"], source=source)
     else:
-        dockerfile = _parse_build(name, build, source=source)
+        dockerfile = _parse_build(name, spec["build"], source=source)
 
     memory_request_bytes, memory_limit_bytes, cpu_request = _parse_resources(name, spec, source=source)
+    _parse_networks(name, spec.get("networks"), source=source)
+    healthcheck = _parse_healthcheck(name, spec.get("healthcheck"), source=source)
+    if healthcheck is None:
+        raise RuntimeError(f"{source}: service {name}: healthcheck is required")
+
+    tmpfs_mounts = tuple(_parse_volumes(name, spec.get("volumes"), source=source))
+    tmpfs_bytes = sum(mount.size_bytes or 0 for mount in tmpfs_mounts)
+    if tmpfs_bytes:
+        if memory_limit_bytes is None:
+            raise RuntimeError(f"{source}: service {name}: tmpfs requires a memory limit")
+
+        if memory_request_bytes is None or memory_request_bytes <= tmpfs_bytes:
+            raise RuntimeError(f"{source}: service {name}: memory request must exceed total tmpfs size")
+
+        if memory_limit_bytes <= tmpfs_bytes:
+            raise RuntimeError(f"{source}: service {name}: memory limit must exceed total tmpfs size")
+
     return ComposeSidecar(
         name=name,
         image=image_ref,
         dockerfile=dockerfile,
         env=_parse_environment(name, spec.get("environment"), source=source),
-        healthcheck=_parse_healthcheck(name, spec.get("healthcheck"), source=source),
-        tmpfs_mounts=tuple(_parse_volumes(name, spec.get("volumes"), source=source)),
+        healthcheck=healthcheck,
+        tmpfs_mounts=tmpfs_mounts,
         memory_request_bytes=memory_request_bytes,
         memory_limit_bytes=memory_limit_bytes,
         cpu_request=cpu_request,
@@ -334,7 +364,17 @@ def _parse_environment(name: str, environment: Any, *, source: str) -> dict[str,
     if environment is None:
         return {}
     if isinstance(environment, Mapping):
-        return {str(key): "" if value is None else str(value) for key, value in environment.items()}
+        inherited = [str(key) for key, value in environment.items() if value is None]
+        if inherited:
+            raise RuntimeError(f"{source}: service {name}: environment values must be explicit: {sorted(inherited)}")
+        if not all(isinstance(key, str) for key in environment):
+            raise RuntimeError(f"{source}: service {name}: environment keys must be strings")
+        invalid_values = [key for key, value in environment.items() if not isinstance(value, str)]
+        if invalid_values:
+            raise RuntimeError(
+                f"{source}: service {name}: environment values must be strings: {sorted(invalid_values)}"
+            )
+        return dict(environment)
     if isinstance(environment, list):
         parsed: dict[str, str] = {}
         for index, item in enumerate(environment):
@@ -344,6 +384,63 @@ def _parse_environment(name: str, environment: Any, *, source: str) -> dict[str,
             parsed[key] = value
         return parsed
     raise RuntimeError(f"{source}: service {name}: environment must be a mapping or list")
+
+
+def _reject_interpolation(
+    value: Any,
+    *,
+    location: str,
+    source: str,
+    _active_ids: set[int] | None = None,
+) -> None:
+    if isinstance(value, str):
+        if "$" in value:
+            raise RuntimeError(f"{source}: {location} must not use host-environment interpolation")
+        return
+
+    if not isinstance(value, (list, Mapping)):
+        return
+
+    active_ids = _active_ids if _active_ids is not None else set()
+    identity = id(value)
+    if identity in active_ids:
+        raise RuntimeError(f"{source}: {location} must not contain recursive YAML anchors")
+    active_ids.add(identity)
+    try:
+        if isinstance(value, list):
+            for index, item in enumerate(value):
+                _reject_interpolation(
+                    item,
+                    location=f"{location}[{index}]",
+                    source=source,
+                    _active_ids=active_ids,
+                )
+        else:
+            for key, item in value.items():
+                _reject_interpolation(
+                    item,
+                    location=f"{location}.{key}",
+                    source=source,
+                    _active_ids=active_ids,
+                )
+    finally:
+        active_ids.remove(identity)
+
+
+def _parse_networks(name: str, networks: Any, *, source: str) -> None:
+    """Shape-check inert Compose networking without coupling to network names."""
+    if networks is None:
+        return
+
+    if isinstance(networks, list):
+        if all(isinstance(network, str) for network in networks):
+            return
+
+    elif isinstance(networks, Mapping):
+        if all(isinstance(network, str) for network in networks):
+            return
+
+    raise RuntimeError(f"{source}: service {name}: networks must be a list of strings or a string-keyed mapping")
 
 
 def _parse_healthcheck(name: str, healthcheck: Any, *, source: str) -> ComposeHealthcheck | None:
@@ -357,7 +454,9 @@ def _parse_healthcheck(name: str, healthcheck: Any, *, source: str) -> ComposeHe
     test = healthcheck.get("test")
     if not isinstance(test, list) or len(test) < 2 or test[0] != "CMD-SHELL":
         raise RuntimeError(f"{source}: service {name}: healthcheck.test must be CMD-SHELL plus a string")
-    script_parts = [str(part) for part in test[1:]]
+    if not all(isinstance(part, str) for part in test[1:]):
+        raise RuntimeError(f"{source}: service {name}: healthcheck.test must be CMD-SHELL plus a string")
+    script_parts = test[1:]
     retries = healthcheck.get("retries")
     if retries is not None and (not isinstance(retries, int) or retries < 1):
         raise RuntimeError(f"{source}: service {name}: healthcheck.retries must be a positive integer")
@@ -382,32 +481,27 @@ def _parse_volumes(name: str, volumes: Any, *, source: str) -> list[TmpfsMount]:
         if volume_type != "tmpfs":
             raise RuntimeError(f"{source}: service {name}: volume {index} must have type tmpfs")
         target = volume.get("target")
-        if not target or not isinstance(target, str):
-            raise RuntimeError(f"{source}: service {name}: volume {index} is missing target")
+        if not isinstance(target, str) or not target.startswith("/"):
+            raise RuntimeError(f"{source}: service {name}: volume {index} target must be an absolute path")
         extra = set(volume) - {"type", "target", "tmpfs"}
         if extra:
             raise RuntimeError(f"{source}: service {name}: volume {index} has unsupported keys {sorted(extra)}")
-        tmpfs = volume.get("tmpfs") or {}
-        if tmpfs and not isinstance(tmpfs, Mapping):
-            raise RuntimeError(f"{source}: service {name}: volume {index} tmpfs must be a mapping")
-        size = None
-        if isinstance(tmpfs, Mapping):
-            extra_tmpfs = set(tmpfs) - {"size"}
-            if extra_tmpfs:
-                raise RuntimeError(
-                    f"{source}: service {name}: volume {index} tmpfs has unsupported keys {sorted(extra_tmpfs)}"
-                )
-            if "size" in tmpfs:
-                size = parse_compose_bytes(
-                    tmpfs["size"],
-                    source=source,
-                    field=f"service {name}: volume {index} tmpfs.size",
-                )
+        tmpfs = volume.get("tmpfs")
+        if not isinstance(tmpfs, Mapping) or set(tmpfs) != {"size"}:
+            raise RuntimeError(f"{source}: service {name}: volume {index} tmpfs must contain exactly one size")
+        size = parse_compose_bytes(
+            tmpfs["size"],
+            source=source,
+            field=f"service {name}: volume {index} tmpfs.size",
+        )
         mounts.append(TmpfsMount(target=target, size_bytes=size))
     return mounts
 
 
 def _parse_resources(name: str, spec: Mapping[str, Any], *, source: str) -> tuple[int | None, int | None, str | None]:
+    if "deploy" in spec and ("mem_limit" in spec or "mem_reservation" in spec):
+        raise RuntimeError(f"{source}: service {name}: must not mix deploy resources with legacy memory fields")
+
     deploy_request, deploy_limit, cpu_request = _parse_deploy(name, spec.get("deploy"), source=source)
     legacy_request = None
     if "mem_reservation" in spec and deploy_request is None:
