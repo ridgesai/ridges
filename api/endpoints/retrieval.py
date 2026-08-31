@@ -7,11 +7,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 import api.config as config
+from api.competition_resolution import resolve_optional_public_competition
 from models.agent import (
     AgentStatus,
     PublicAgent,
 )
-from models.competition import CompetitionState, PublicCompetition
+from models.competition import CompetitionState
 from models.evaluation import Evaluation, EvaluationWithRuns
 from models.queue import QueueStage
 from queries.agent import (
@@ -27,7 +28,6 @@ from queries.agent import (
 )
 from queries.competition import (
     get_competition_policy,
-    get_public_competition,
     get_public_evaluation_set_context,
     resolve_compatibility_competition_set_id,
 )
@@ -50,25 +50,6 @@ router = APIRouter()
 CACHE_PAST_COMPETITION_TTL_SECONDS = 24 * 60 * 60
 
 
-async def _resolve_optional_public_set_id(set_id: int | None) -> int:
-    if set_id is None or set_id == -1:
-        resolved_set_id = await resolve_compatibility_competition_set_id()
-    else:
-        competition = await get_public_competition(set_id)
-        resolved_set_id = None if competition is None else competition.set_id
-
-    if resolved_set_id is None:
-        raise HTTPException(status_code=404, detail="No live competition found")
-    return resolved_set_id
-
-
-async def _public_competition_or_404(set_id: int) -> PublicCompetition:
-    competition = await get_public_competition(set_id)
-    if competition is None:
-        raise HTTPException(status_code=404, detail=f"Competition {set_id} not found")
-    return competition
-
-
 # /retrieval/queue?stage={pre_screening|screener_1|screener_2|validator}
 async def _build_queue(stage: QueueStage, set_id: int) -> List[PublicAgent]:
     agents = await get_agents_in_queue(stage, set_id)
@@ -81,10 +62,9 @@ _cached_past_queue = ttl_cache(ttl_seconds=CACHE_PAST_COMPETITION_TTL_SECONDS)(_
 
 @router.get("/queue")
 async def queue(stage: QueueStage, set_id: int | None = None) -> List[PublicAgent]:
-    resolved_set_id = await _resolve_optional_public_set_id(set_id)
-    competition = await _public_competition_or_404(resolved_set_id)
+    competition = await resolve_optional_public_competition(set_id)
     builder = _cached_past_queue if competition.state is CompetitionState.ended else _cached_live_queue
-    return await builder(stage, resolved_set_id)
+    return await builder(stage, competition.set_id)
 
 
 # /retrieval/top-agents
@@ -98,10 +78,9 @@ _cached_past_top_agents = ttl_cache(ttl_seconds=CACHE_PAST_COMPETITION_TTL_SECON
 
 @router.get("/top-agents")
 async def top_agents(set_id: int | None = None) -> List[PublicAgent]:
-    resolved_set_id = await _resolve_optional_public_set_id(set_id)
-    competition = await _public_competition_or_404(resolved_set_id)
+    competition = await resolve_optional_public_competition(set_id)
     builder = _cached_past_top_agents if competition.state is CompetitionState.ended else _cached_live_top_agents
-    return await builder(resolved_set_id)
+    return await builder(competition.set_id)
 
 
 # /retrieval/agent-by-id?agent_id=
@@ -259,14 +238,13 @@ _cached_past_top_scores_over_time = ttl_cache(ttl_seconds=CACHE_PAST_COMPETITION
 
 @router.get("/top-scores-over-time")
 async def top_scores_over_time(set_id: int | None = None) -> List[TopScoreOverTime]:
-    resolved_set_id = await _resolve_optional_public_set_id(set_id)
-    competition = await _public_competition_or_404(resolved_set_id)
+    competition = await resolve_optional_public_competition(set_id)
     builder = (
         _cached_past_top_scores_over_time
         if competition.state is CompetitionState.ended
         else _cached_live_top_scores_over_time
     )
-    return await builder(resolved_set_id)
+    return await builder(competition.set_id)
 
 
 # /retrieval/perfectly-solved-over-time
@@ -334,11 +312,10 @@ _cached_past_network_statistics = ttl_cache(ttl_seconds=CACHE_PAST_COMPETITION_T
 
 @router.get("/network-statistics")
 async def network_statistics(set_id: int | None = None) -> NetworkStatisticsResponse:
-    resolved_set_id = await _resolve_optional_public_set_id(set_id)
-    competition = await _public_competition_or_404(resolved_set_id)
+    competition = await resolve_optional_public_competition(set_id)
     builder = (
         _cached_past_network_statistics
         if competition.state is CompetitionState.ended
         else _cached_live_network_statistics
     )
-    return await builder(resolved_set_id)
+    return await builder(competition.set_id)

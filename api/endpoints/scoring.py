@@ -2,17 +2,14 @@ import asyncio
 from datetime import datetime
 from typing import Dict, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 
+from api.competition_resolution import resolve_optional_public_competition
 from api.incentives import get_current_allocations
-from models.competition import CompetitionState, PublicCompetition
+from models.competition import CompetitionState
 from models.evaluation_set import EvaluationSetGroup
-from queries.competition import (
-    get_competition_policy,
-    get_public_competition,
-    resolve_compatibility_competition_set_id,
-)
+from queries.competition import get_competition_policy
 from queries.evaluation_set import get_set_created_at
 from queries.statistics import (
     get_average_score_per_evaluation_set_group,
@@ -22,24 +19,6 @@ from utils.ttl import ttl_cache
 
 router = APIRouter()
 CACHE_PAST_COMPETITION_TTL_SECONDS = 24 * 60 * 60
-
-
-async def _resolve_optional_public_set_id(set_id: int | None) -> int:
-    if set_id is None or set_id == -1:
-        resolved_set_id = await resolve_compatibility_competition_set_id()
-    else:
-        competition = await get_public_competition(set_id)
-        resolved_set_id = None if competition is None else competition.set_id
-    if resolved_set_id is None:
-        raise HTTPException(status_code=404, detail="No live competition found")
-    return resolved_set_id
-
-
-async def _public_competition_or_404(set_id: int) -> PublicCompetition:
-    competition = await get_public_competition(set_id)
-    if competition is None:
-        raise HTTPException(status_code=404, detail=f"Competition {set_id} not found")
-    return competition
 
 
 # /scoring/weights
@@ -99,10 +78,9 @@ _cached_past_screener_info = ttl_cache(ttl_seconds=CACHE_PAST_COMPETITION_TTL_SE
 
 @router.get("/screener-info")
 async def screener_info(set_id: int | None = None) -> ScoringScreenerInfoResponse:
-    resolved_set_id = await _resolve_optional_public_set_id(set_id)
-    competition = await _public_competition_or_404(resolved_set_id)
+    competition = await resolve_optional_public_competition(set_id)
     builder = _cached_past_screener_info if competition.state is CompetitionState.ended else _cached_live_screener_info
-    return await builder(resolved_set_id)
+    return await builder(competition.set_id)
 
 
 # /scoring/latest-set-info
@@ -113,6 +91,6 @@ class ScoringLatestSetInfo(BaseModel):
 
 @router.get("/latest-set-info")
 async def latest_set_info() -> ScoringLatestSetInfo:
-    set_id = await _resolve_optional_public_set_id(None)
-    created_at = await get_set_created_at(set_id)
-    return ScoringLatestSetInfo(latest_set_id=set_id, latest_set_created_at=created_at)
+    competition = await resolve_optional_public_competition()
+    created_at = await get_set_created_at(competition.set_id)
+    return ScoringLatestSetInfo(latest_set_id=competition.set_id, latest_set_created_at=created_at)
