@@ -23,7 +23,6 @@ from models.competition import (
     derive_competition_state,
     exact_decimal_sum,
 )
-from models.upload import UploadCompetition
 from queries.errors import (
     CompetitionAdminConflictError,
     CompetitionNotAcceptingSubmissionsError,
@@ -387,16 +386,6 @@ async def get_current_competition_context(conn: DatabaseConnection) -> Competiti
 @db_operation
 async def lock_current_competition_context(conn: DatabaseConnection) -> CompetitionContext | None:
     return await _get_current_competition_context(conn, for_update=True)
-
-
-@db_operation
-async def get_accepting_upload_competitions(conn: DatabaseConnection) -> list[UploadCompetition]:
-    competitions = await _get_public_competitions(conn)
-    return [
-        UploadCompetition(set_id=competition.set_id, name=competition.name)
-        for competition in reversed(competitions)
-        if competition.accepting
-    ]
 
 
 @db_operation

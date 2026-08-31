@@ -36,13 +36,6 @@ class AgentDirectCheckResponse(AgentCheckResponse):
     set_id: int = Field(..., description="Competition selected for direct agent admission")
 
 
-class UploadCompetition(BaseModel):
-    """Narrow competition choice exposed only for uploads."""
-
-    set_id: int
-    name: Optional[str] = None
-
-
 class ErrorResponse(BaseModel):
     """Error response model"""
 

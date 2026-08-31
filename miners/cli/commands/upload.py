@@ -114,7 +114,7 @@ def _print_upload_preview(*, hotkey: str, target: UploadTarget) -> None:
 
 
 def _get_upload_competitions(client: httpx.Client, *, api_url: str) -> list[dict]:
-    response = client.get(f"{api_url}/upload/competitions", timeout=UPLOAD_TIMEOUT_SECONDS)
+    response = client.get(f"{api_url}/competitions?accepting=true", timeout=UPLOAD_TIMEOUT_SECONDS)
     if response.status_code != 200:
         raise click.ClickException(f"Could not discover upload competitions: {response.text}")
 

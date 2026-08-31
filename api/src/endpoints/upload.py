@@ -36,7 +36,6 @@ from models.upload import (
     PrepareUploadRequest,
     TicketCheckRequest,
     TicketCheckResponse,
-    UploadCompetition,
     UploadPriceResponse,
 )
 from queries.agent import (
@@ -48,7 +47,7 @@ from queries.agent import (
     record_upload_attempt,
 )
 from queries.banned_coldkey import get_banned_coldkey
-from queries.competition import get_accepting_upload_competitions, resolve_upload_competition
+from queries.competition import resolve_upload_competition
 from queries.errors import (
     ColdkeyBannedError,
     CompetitionNotAcceptingSubmissionsError,
@@ -90,12 +89,6 @@ async def _resolve_upload_set_id(set_id: int | None) -> int:
         return await resolve_upload_competition(set_id)
     except (CompetitionNotAcceptingSubmissionsError, UploadCompetitionSelectionError) as exception:
         raise HTTPException(status_code=409, detail=str(exception)) from exception
-
-
-@router.get("/competitions", tags=["upload"], response_model=list[UploadCompetition])
-async def get_upload_competitions() -> list[UploadCompetition]:
-    """Return the uncached, upload-specific accepting competition list."""
-    return await get_accepting_upload_competitions()
 
 
 async def _exact_credit_replay_response(
