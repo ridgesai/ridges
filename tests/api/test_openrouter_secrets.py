@@ -457,6 +457,7 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
         payment_extrinsic_index="0",
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
+        set_id=1,
     )
 
     assert response.status == "success"
@@ -495,6 +496,7 @@ async def test_check_agent_uses_shared_openrouter_validation(monkeypatch) -> Non
         name="Agent",
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
+        set_id=1,
     )
 
     assert response.status == "success"
