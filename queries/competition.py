@@ -27,7 +27,6 @@ from queries.errors import (
     CompetitionAdminConflictError,
     CompetitionNotAcceptingSubmissionsError,
     CompetitionNotFoundError,
-    UploadCompetitionSelectionError,
 )
 from utils.database import DatabaseConnection, db_operation
 
@@ -389,29 +388,23 @@ async def lock_current_competition_context(conn: DatabaseConnection) -> Competit
 
 
 @db_operation
-async def resolve_upload_competition(conn: DatabaseConnection, set_id: int | None) -> int:
-    """Resolve an explicit accepting competition or the sole accepting choice."""
-    if set_id is not None:
-        competitions = await _get_public_competitions(conn, set_id=set_id)
-        competition = competitions[0] if competitions else None
-        if competition is None or not competition.accepting:
-            row = await conn.fetchrow(
-                f"""
-                {_COMPETITION_CONTEXT_SELECT}
-                WHERE set_id = $1
-                """,
-                set_id,
-            )
-            if row is None:
-                raise CompetitionNotAcceptingSubmissionsError(set_id=set_id, state=None)
-            context = _context_from_row(row)
-            raise CompetitionNotAcceptingSubmissionsError(set_id=set_id, state=context.state.value)
-        return competition.set_id
-
-    accepting = [competition for competition in await _get_public_competitions(conn) if competition.accepting]
-    if len(accepting) != 1:
-        raise UploadCompetitionSelectionError(len(accepting))
-    return accepting[0].set_id
+async def resolve_upload_competition(conn: DatabaseConnection, set_id: int) -> int:
+    """Validate that the explicitly selected competition accepts uploads."""
+    competitions = await _get_public_competitions(conn, set_id=set_id)
+    competition = competitions[0] if competitions else None
+    if competition is None or not competition.accepting:
+        row = await conn.fetchrow(
+            f"""
+            {_COMPETITION_CONTEXT_SELECT}
+            WHERE set_id = $1
+            """,
+            set_id,
+        )
+        if row is None:
+            raise CompetitionNotAcceptingSubmissionsError(set_id=set_id, state=None)
+        context = _context_from_row(row)
+        raise CompetitionNotAcceptingSubmissionsError(set_id=set_id, state=context.state.value)
+    return competition.set_id
 
 
 async def lock_competition_for_admission(

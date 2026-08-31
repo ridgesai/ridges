@@ -155,7 +155,7 @@ async def create_agent_with_upload_credit(
     openrouter_api_key_label: str,
     openrouter_api_key_creator_user_id: str,
     openrouter_validated_at: datetime,
-    set_id: int | None = None,
+    set_id: int,
 ) -> tuple[UUID, bool]:
     """Compatibility wrapper for credit admission used by focused query tests."""
     payment_block_hash, payment_extrinsic_index = credit_payment_identity(credit_id)
