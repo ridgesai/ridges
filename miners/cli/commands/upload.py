@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sys
 import uuid as _uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -140,15 +141,17 @@ def _select_upload_competition(
     if not competitions:
         raise click.ClickException("No competition is accepting uploads")
 
-    if len(competitions) == 1:
-        return competitions[0]["set_id"]
-
     rendered = ", ".join(
         f"{competition['set_id']} ({competition.get('name') or 'unnamed'})" for competition in competitions
     )
-    raise click.ClickException(
-        f"Multiple competitions are accepting uploads: {rendered}. Use --competition INTEGER to choose one."
-    )
+    if not sys.stdin.isatty():
+        raise click.ClickException(
+            f"Competitions accepting uploads: {rendered}. Use --competition INTEGER to choose one."
+        )
+
+    console.print(f"Competitions accepting uploads: {rendered}")
+    selection = Prompt.ask("🎯 Competition to upload to", choices=[str(set_id) for set_id in choices])
+    return int(selection)
 
 
 def _lookup_latest_agent(
@@ -450,7 +453,7 @@ def _execute_upload(
     target: UploadTarget,
     credentials: OpenRouterUploadCredentials,
     receipt: PaymentReceipt | CreditReceipt,
-    set_id: int | None = None,
+    set_id: int,
     pending: Optional[PendingUpload] = None,
     run_check: bool = True,
     emit_ticket_on_failure: bool = False,
@@ -473,8 +476,6 @@ def _execute_upload(
         If True validate if upload is allowed, by default True
     """
     if pending is None:
-        if set_id is None:
-            raise click.ClickException("No upload competition was selected")
         pending = _prepare_pending_upload(client=client, wallet=wallet, target=target, set_id=set_id)
     if run_check:
         _check_upload_allowed(client, target=target, pending=pending, credentials=credentials, set_id=set_id)
