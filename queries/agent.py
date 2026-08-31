@@ -71,6 +71,7 @@ class CreditUploadFunding:
 class AgentAdmissionResult:
     agent_id: UUID
     replayed: bool = False
+    miner_coldkey: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -173,6 +174,7 @@ LEFT JOIN agents competition_baseline
 AGENT_PUBLIC_SELECT_COLUMNS = """
     a.agent_id,
     a.miner_hotkey,
+    a.miner_coldkey,
     a.name,
     a.version_num,
     a.status,
@@ -518,7 +520,7 @@ async def _lock_credit_funding(
 
     existing = await conn.fetchrow(
         """
-        SELECT miner_hotkey, source_sha256, set_id
+        SELECT miner_hotkey, miner_coldkey, source_sha256, set_id
         FROM agents
         WHERE agent_id = $1
         """,
@@ -530,7 +532,11 @@ async def _lock_credit_funding(
         and existing["source_sha256"] == source_sha256
         and existing["set_id"] == set_id
     ):
-        return AgentAdmissionResult(agent_id=credit["redeemed_agent_id"], replayed=True)
+        return AgentAdmissionResult(
+            agent_id=credit["redeemed_agent_id"],
+            replayed=True,
+            miner_coldkey=existing["miner_coldkey"],
+        )
     raise UploadCreditAlreadyRedeemedError(credit["redeemed_agent_id"])
 
 
@@ -798,7 +804,7 @@ async def admit_agent(
                 agent_id,
             )
 
-    return AgentAdmissionResult(agent_id=agent_id)
+    return AgentAdmissionResult(agent_id=agent_id, miner_coldkey=miner_coldkey)
 
 
 @db_operation
@@ -945,6 +951,7 @@ async def get_top_agents(
         select
             ass.agent_id,
             ass.miner_hotkey,
+            a.miner_coldkey,
             ass.name,
             ass.version_num,
             ass.status,

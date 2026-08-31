@@ -779,7 +779,7 @@ async def get_evaluation_set_leaderboard_agents(
     return await conn.fetch(
         f"""
         WITH {_SQL_SET_WINDOW_CTE},
-        {_sql_agents_in_window_cte("a.agent_id, a.miner_hotkey, a.name, a.version_num, a.status::text, a.created_at, (a.set_id IS NULL) AS legacy_membership")},
+        {_sql_agents_in_window_cte("a.agent_id, a.miner_hotkey, a.miner_coldkey, a.name, a.version_num, a.status::text, a.created_at, (a.set_id IS NULL) AS legacy_membership")},
         {_sql_validator_metrics_cte(include_validator_hotkeys=True)},
         tentative_scores AS (
             WITH tentative_runs AS (
@@ -876,6 +876,7 @@ async def get_evaluation_set_leaderboard_agents(
             rs.rank,
             aiw.agent_id,
             aiw.miner_hotkey,
+            aiw.miner_coldkey,
             aiw.name,
             aiw.version_num,
             aiw.status,
@@ -999,6 +1000,7 @@ async def get_approved_agents_for_set(
         SELECT
             a.agent_id,
             a.miner_hotkey,
+            a.miner_coldkey,
             a.name,
             a.version_num,
             a.created_at,

@@ -215,6 +215,7 @@ class PublicAgent(BaseModel):
 
     agent_id: UUID
     miner_hotkey: str
+    miner_coldkey: str | None = None
     name: str
     version_num: int
     status: AgentStatus
