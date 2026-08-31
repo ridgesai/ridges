@@ -6,7 +6,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -15,6 +15,7 @@ import queries.competition as competition_queries
 import utils.database as _db
 from api.endpoints import admin as admin_endpoint
 from api.endpoints.admin import router as admin_router
+from api.exception_handlers import register_exception_handlers
 from models.competition import (
     CompetitionAdminSnapshot,
     CompetitionAllocationSnapshot,
@@ -29,7 +30,7 @@ from queries.competition import (
     replace_competition_policy,
     update_competition_state,
 )
-from queries.errors import CompetitionAdminConflictError
+from queries.errors import CompetitionAdminConflictError, CompetitionNotFoundError
 from utils.ttl import clear_all_ttl_caches, ttl_cache
 
 pytestmark = pytest.mark.anyio
@@ -446,6 +447,7 @@ def _make_client(monkeypatch) -> TestClient:
     )
     app = FastAPI()
     app.include_router(admin_router, prefix="/admin")
+    register_exception_handlers(app)
     return TestClient(app)
 
 
@@ -540,6 +542,37 @@ def test_successful_competition_admin_calls_clear_process_local_ttl_caches(monke
     assert clear_caches.call_count == 3
 
 
+def test_competition_admin_domain_errors_map_to_http_statuses(monkeypatch) -> None:
+    client = _make_client(monkeypatch)
+    auth = {"Authorization": f"Bearer {config.COLDKEY_BAN_ADMIN_API_KEY}"}
+
+    monkeypatch.setattr(
+        admin_endpoint,
+        "update_competition_state",
+        AsyncMock(side_effect=CompetitionNotFoundError(1)),
+    )
+    response = client.put(
+        "/admin/competitions/1/state",
+        json=_state_request().model_dump(mode="json"),
+        headers=auth,
+    )
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Competition 1 does not exist"}
+
+    monkeypatch.setattr(
+        admin_endpoint,
+        "replace_competition_policy",
+        AsyncMock(side_effect=CompetitionAdminConflictError("rejected")),
+    )
+    response = client.put(
+        "/admin/competitions/1/policy",
+        json=_policy_request().model_dump(mode="json"),
+        headers=auth,
+    )
+    assert response.status_code == 409
+    assert response.json() == {"detail": "rejected"}
+
+
 async def test_competition_admin_success_refreshes_cached_values_but_failure_keeps_them(monkeypatch) -> None:
     clear_all_ttl_caches()
     source = {"value": "before"}
@@ -574,13 +607,12 @@ async def test_competition_admin_success_refreshes_cached_values_but_failure_kee
             "replace_competition_policy",
             AsyncMock(side_effect=CompetitionAdminConflictError("rejected")),
         )
-        with pytest.raises(HTTPException) as error:
+        with pytest.raises(CompetitionAdminConflictError):
             await admin_endpoint.put_competition_policy(
                 set_id=1,
                 request=_policy_request(),
                 actor=ADMIN_ACTOR,
             )
-        assert error.value.status_code == 409
         assert await cached_value() == "after"
         assert reads == 2
     finally:
