@@ -1,5 +1,5 @@
 import secrets
-from typing import Annotated, NoReturn
+from typing import Annotated
 
 from bittensor_wallet.keypair import Keypair
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -24,7 +24,6 @@ from queries.competition import (
     replace_competition_policy,
     update_competition_state,
 )
-from queries.errors import CompetitionAdminConflictError, CompetitionNotFoundError
 from queries.internal_flag import add_hotkey_to_blacklist, remove_hotkey_from_blacklist, set_internal_flag
 from queries.upload_credit import grant_upload_credit
 from utils.debug_lock import DebugLock
@@ -79,26 +78,13 @@ def validate_hotkey(miner_hotkey: str) -> None:
         raise HTTPException(status_code=400, detail="Invalid hotkey SS58 address") from None
 
 
-def _raise_competition_admin_error(error: Exception) -> NoReturn:
-    if isinstance(error, CompetitionNotFoundError):
-        raise HTTPException(status_code=404, detail=str(error)) from error
-
-    if isinstance(error, CompetitionAdminConflictError):
-        raise HTTPException(status_code=409, detail=str(error)) from error
-
-    raise error
-
-
 @router.put("/competitions/{set_id}/state", response_model=CompetitionAdminSnapshot)
 async def put_competition_state(
     set_id: int,
     request: CompetitionStateUpdateRequest,
     actor: Annotated[str, Depends(require_coldkey_ban_admin)],
 ) -> CompetitionAdminSnapshot:
-    try:
-        snapshot = await update_competition_state(set_id=set_id, target=request, actor=actor)
-    except (CompetitionNotFoundError, CompetitionAdminConflictError) as error:
-        _raise_competition_admin_error(error)
+    snapshot = await update_competition_state(set_id=set_id, target=request, actor=actor)
     clear_all_ttl_caches()
     return snapshot
 
@@ -109,10 +95,7 @@ async def put_competition_policy(
     request: CompetitionPolicyUpdateRequest,
     actor: Annotated[str, Depends(require_coldkey_ban_admin)],
 ) -> CompetitionAdminSnapshot:
-    try:
-        snapshot = await replace_competition_policy(set_id=set_id, target=request, actor=actor)
-    except (CompetitionNotFoundError, CompetitionAdminConflictError) as error:
-        _raise_competition_admin_error(error)
+    snapshot = await replace_competition_policy(set_id=set_id, target=request, actor=actor)
     clear_all_ttl_caches()
     return snapshot
 
@@ -122,10 +105,7 @@ async def put_competition_allocations(
     request: CompetitionAllocationUpdateRequest,
     actor: Annotated[str, Depends(require_coldkey_ban_admin)],
 ) -> CompetitionAllocationSnapshot:
-    try:
-        snapshot = await replace_competition_allocations(target=request, actor=actor)
-    except CompetitionAdminConflictError as error:
-        _raise_competition_admin_error(error)
+    snapshot = await replace_competition_allocations(target=request, actor=actor)
     clear_all_ttl_caches()
     return snapshot
 

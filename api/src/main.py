@@ -24,6 +24,7 @@ from api.endpoints.scaling import router as scaling_router
 from api.endpoints.scoring import router as scoring_router
 from api.endpoints.statistics import router as statistics_router
 from api.endpoints.validator import router as validator_router
+from api.exception_handlers import register_exception_handlers
 from api.loops.approval_projector import approval_projector_loop
 from api.loops.pre_screening_judge import pre_screening_projector_loop
 from api.loops.validator_heartbeat_timeout import validator_heartbeat_timeout_loop
@@ -114,6 +115,7 @@ async def lifespan(app: FastAPI):
 initialize_sentry()
 
 app = FastAPI(lifespan=lifespan)
+register_exception_handlers(app)
 
 # Middleware registration order: last added = outermost (runs first on requests).
 # CorrelationIdMiddleware must be outermost so the ID is set before RequestInterceptorMiddleware reads it.
