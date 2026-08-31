@@ -1217,33 +1217,6 @@ async def test_owner_bypasses_rate_limit():
 
 
 @pytest.mark.anyio
-async def test_upload_competition_discovery_filters_orders_and_ignores_global_freeze():
-    async with _db.pool.acquire() as conn:
-        await conn.execute("UPDATE competitions SET name = 'One' WHERE set_id = 1")
-    await _insert_competition(8, name="Eight")
-    await _insert_competition(2, name="Two")
-    await _insert_competition(3, name="Draft", start_date=None, configured=False)
-    await _insert_competition(4, name="Unconfigured", configured=False)
-    await _insert_competition(5, name="Paused", is_paused=True)
-    now = datetime.now(timezone.utc)
-    await _insert_competition(6, name="Closed", submissions_closed_at=now)
-    await _insert_competition(7, name="Ended", start_date=now - timedelta(hours=1), end_date=now)
-
-    original_flag = upload_module.config.DISALLOW_UPLOADS
-    upload_module.config.DISALLOW_UPLOADS = True
-    try:
-        discovered = await upload_module.get_upload_competitions()
-    finally:
-        upload_module.config.DISALLOW_UPLOADS = original_flag
-
-    assert [choice.model_dump() for choice in discovered] == [
-        {"set_id": 1, "name": "One"},
-        {"set_id": 2, "name": "Two"},
-        {"set_id": 8, "name": "Eight"},
-    ]
-
-
-@pytest.mark.anyio
 async def test_preflight_auto_selects_one_and_requires_explicit_choice_for_many():
     from fastapi import HTTPException
 
@@ -1559,9 +1532,4 @@ async def test_openapi_exposes_only_the_frozen_upload_competition_contract():
     prepare_response_properties = schema["components"]["schemas"][prepare_response_ref.rsplit("/", 1)[-1]]["properties"]
     assert "set_id" not in prepare_response_properties
 
-    competition_response = schema["paths"]["/upload/competitions"]["get"]["responses"]["200"]["content"][
-        "application/json"
-    ]["schema"]
-    item_ref = competition_response["items"]["$ref"]
-    competition_properties = schema["components"]["schemas"][item_ref.rsplit("/", 1)[-1]]["properties"]
-    assert set(competition_properties) == {"set_id", "name"}
+    assert "/upload/competitions" not in schema["paths"]
