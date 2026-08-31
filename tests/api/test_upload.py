@@ -1360,6 +1360,9 @@ async def test_exact_credit_replay_survives_lifecycle_change_and_rejects_conflic
     replay = await _call_post_agent(credit_id=credit_id)
     assert replay.status == "success"
     assert "No new agent was created" in replay.message
+    assert replay.agent_id == first.agent_id
+    assert replay.miner_hotkey == FAKE_HOTKEY
+    assert replay.miner_coldkey == FAKE_COLDKEY
     upload_module.upload_text_file_to_s3.assert_not_awaited()
 
     with pytest.raises(HTTPException) as source_conflict:

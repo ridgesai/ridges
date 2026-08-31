@@ -208,6 +208,9 @@ async def test_burn_ticket_redeem_creates_agent():
     response = await _redeem(_burn_ticket_blob(quote_id))
 
     assert response.status == "success"
+    assert response.agent_id is not None
+    assert response.miner_hotkey == HOTKEY
+    assert response.miner_coldkey == FAKE_COLDKEY
     async with _db.pool.acquire() as conn:
         agent = await conn.fetchrow("SELECT miner_hotkey, name FROM agents WHERE miner_hotkey = $1", HOTKEY)
         payment = await conn.fetchrow(

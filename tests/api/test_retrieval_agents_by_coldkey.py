@@ -74,6 +74,7 @@ async def test_groups_agents_by_hotkey():
     assert list(result.keys()) == [HOTKEY_A, HOTKEY_B]  # hotkeys sorted
     assert [a.version_num for a in result[HOTKEY_A]] == [1, 0]  # newest first
     assert all(a.miner_hotkey == HOTKEY_A for a in result[HOTKEY_A])
+    assert all(a.miner_coldkey == COLDKEY for a in result[HOTKEY_A])
     assert len(result[HOTKEY_B]) == 1
 
 

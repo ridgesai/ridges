@@ -438,7 +438,7 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
         captured["api_key_creator_user_id"] = openrouter_api_key_creator_user_id
         captured["validated_at"] = openrouter_validated_at
         captured["miner_coldkey"] = miner_coldkey
-        return SimpleNamespace(agent_id=uuid4(), replayed=False)
+        return SimpleNamespace(agent_id=uuid4(), replayed=False, miner_coldkey=miner_coldkey)
 
     upload_endpoint = _patch_upload_dependencies(
         monkeypatch,
