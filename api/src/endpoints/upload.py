@@ -102,7 +102,7 @@ async def _exact_credit_replay_response(
     upload_data: dict,
 ) -> AgentUploadResponse | None:
     try:
-        replayed_agent_id = await get_exact_upload_credit_replay(
+        replay = await get_exact_upload_credit_replay(
             credit_id=credit_id,
             miner_hotkey=miner_hotkey,
             source_sha256=source_sha256,
@@ -114,19 +114,25 @@ async def _exact_credit_replay_response(
             detail=f"Upload credit {credit_id} was already used for agent {exception.agent_id}",
         ) from exception
 
-    if replayed_agent_id is None:
+    if replay is None:
         return None
 
     success_message = (
-        f"Upload credit {credit_id} was already used for agent {replayed_agent_id}. No new agent was created."
+        f"Upload credit {credit_id} was already used for agent {replay.agent_id}. No new agent was created."
     )
     await record_upload_attempt(
         upload_type="agent",
         success=True,
-        agent_id=replayed_agent_id,
+        agent_id=replay.agent_id,
         **upload_data,
     )
-    return AgentUploadResponse(status="success", message=success_message)
+    return AgentUploadResponse(
+        status="success",
+        message=success_message,
+        agent_id=replay.agent_id,
+        miner_hotkey=miner_hotkey,
+        miner_coldkey=replay.miner_coldkey,
+    )
 
 
 @router.post("/agent/check", tags=["upload"], response_model=AgentDirectCheckResponse)
@@ -632,7 +638,13 @@ async def _process_agent_upload(
         # Record successful upload
         await record_upload_attempt(upload_type="agent", success=True, agent_id=agent_id, **upload_data)
 
-        return AgentUploadResponse(status="success", message=success_message)
+        return AgentUploadResponse(
+            status="success",
+            message=success_message,
+            agent_id=agent_id,
+            miner_hotkey=miner_hotkey,
+            miner_coldkey=admission.miner_coldkey,
+        )
 
     except DuplicateAgentIDError as e:
         logger.warning(f"Agent upload failed, duplicate agent ID found: {e}")

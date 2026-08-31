@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import NamedTuple, Optional
 from uuid import UUID
 
 from models.agent import AgentCreate
@@ -14,6 +14,13 @@ from utils.s3 import upload_text_file_to_s3
 def credit_payment_identity(credit_id: UUID) -> tuple[str, str]:
     """Return the canonical synthetic payment identity for a credit."""
     return f"credit:{credit_id}", "0"
+
+
+class CreditReplay(NamedTuple):
+    """The stored identity of an exact credit replay match."""
+
+    agent_id: UUID
+    miner_coldkey: str | None
 
 
 @db_operation
@@ -110,13 +117,14 @@ async def get_exact_upload_credit_replay(
     miner_hotkey: str,
     source_sha256: str,
     set_id: int | None,
-) -> UUID | None:
+) -> CreditReplay | None:
     """Return an exact successful credit replay without consulting lifecycle state."""
     row = await conn.fetchrow(
         """
         SELECT
             credit.redeemed_agent_id,
             agent.miner_hotkey AS agent_hotkey,
+            agent.miner_coldkey AS agent_coldkey,
             agent.source_sha256,
             agent.set_id
         FROM upload_credits credit
@@ -135,7 +143,7 @@ async def get_exact_upload_credit_replay(
         and row["source_sha256"] == source_sha256
         and (set_id is None or row["set_id"] == set_id)
     ):
-        return row["redeemed_agent_id"]
+        return CreditReplay(agent_id=row["redeemed_agent_id"], miner_coldkey=row["agent_coldkey"])
     raise UploadCreditAlreadyRedeemedError(row["redeemed_agent_id"])
 
 
