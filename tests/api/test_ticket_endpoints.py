@@ -190,7 +190,7 @@ def _credit_ticket_blob(credit_id: uuid.UUID) -> str:
     return encode_ticket(sign_ticket(unsigned, KEYPAIR.sign))
 
 
-async def _redeem(ticket_blob: str, content: bytes = b"async def agent_main(input): return 'ok'"):
+async def _redeem(ticket_blob: str, content: bytes = b"async def agent_main(input): return 'ok'", set_id: int = 1):
     return await upload_module.post_agent_ticket(
         request=_make_request(),
         agent_file=_make_upload_file(content),
@@ -198,6 +198,7 @@ async def _redeem(ticket_blob: str, content: bytes = b"async def agent_main(inpu
         name="ticket-agent",
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
+        set_id=set_id,
     )
 
 
