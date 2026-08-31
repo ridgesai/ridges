@@ -7,9 +7,14 @@ router = APIRouter(tags=["competitions"])
 
 
 @router.get("")
-async def competition_catalog() -> list[PublicCompetition]:
-    """Return every competition that has opened, newest first."""
-    return await get_public_competitions()
+async def competition_catalog(accepting: bool | None = None) -> list[PublicCompetition]:
+    """Return every competition that has opened, newest first.
+    This route must stay uncached.
+    """
+    competitions = await get_public_competitions()
+    if accepting is None:
+        return competitions
+    return [competition for competition in competitions if competition.accepting == accepting]
 
 
 @router.get("/{set_id}")
