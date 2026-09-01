@@ -273,6 +273,7 @@ def test_public_agent_populates_complete_competition_state():
     assert set(serialized) == {
         "agent_id",
         "miner_hotkey",
+        "miner_coldkey",
         "name",
         "version_num",
         "status",

@@ -192,7 +192,7 @@ def rank_reward_candidates(
             elapsed_hours=elapsed_hours,
             half_life_hours=reward_half_life_hours,
         )
-        if not math.isfinite(current_reward_score) or current_reward_score < 0:
+        if not _is_finite_nonnegative(current_reward_score):
             raise ValueError(f"Agent {candidate.agent_id} produced an invalid decayed reward score")
 
         if current_reward_score > 0:
@@ -211,7 +211,7 @@ def rank_reward_candidates(
 
 def normalize_agent_reward_weights(candidates: list[RankedRewardCandidate]) -> dict[UUID, float]:
     total = sum(candidate.current_reward_score for candidate in candidates)
-    if not math.isfinite(total) or total < 0:
+    if not _is_finite_nonnegative(total):
         raise ValueError("Reward candidate total must be finite and non-negative")
     if total == 0:
         return {}

@@ -334,7 +334,7 @@ async def _call_post_agent(
     include_quote: bool = True,
     credit_id: uuid.UUID | None = None,
     content: bytes = b"async def agent_main(input): return 'ok'",
-    set_id: int | None = None,
+    set_id: int | None = 1,
     payment_block_hash: str = FAKE_BLOCK_HASH,
     payment_extrinsic_index: str = FAKE_EXTRINSIC_INDEX,
 ) -> AgentUploadResponse:
@@ -401,6 +401,7 @@ async def test_check_agent_persists_payment_quote():
         name="test-agent",
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
+        set_id=1,
     )
 
     assert response.status == "success"
@@ -445,6 +446,7 @@ async def test_check_agent_with_credit_skips_rate_limit_and_burn_checks(monkeypa
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
         use_credit=True,
+        set_id=1,
     )
 
     assert response.payment_method == "credit"
@@ -473,6 +475,7 @@ async def test_check_agent_dev_does_not_enforce_upload_cooldown(monkeypatch):
         name="test-agent",
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
+        set_id=1,
     )
 
     assert response.status == "success"
@@ -494,6 +497,7 @@ async def test_check_agent_with_credit_never_falls_back_to_burn():
             openrouter_api_key="sk-or-v1-runtime",
             openrouter_management_key="sk-or-v1-management",
             use_credit=True,
+            set_id=1,
         )
 
     assert exc_info.value.status_code == 402
@@ -522,6 +526,7 @@ async def test_check_agent_rejects_unusable_credit(unusable: str):
             openrouter_management_key="sk-or-v1-management",
             use_credit=True,
             credit_id=str(credit_id),
+            set_id=1,
         )
 
     assert exc_info.value.status_code == 402
@@ -543,6 +548,7 @@ async def test_check_agent_rejects_banned_coldkey_before_stake_lookup():
             name="test-agent",
             openrouter_api_key="sk-or-v1-runtime",
             openrouter_management_key="sk-or-v1-management",
+            set_id=1,
         )
 
     assert exc_info.value.status_code == 403
@@ -563,6 +569,7 @@ async def test_check_agent_owner_bypasses_coldkey_ban(monkeypatch):
         name="owner-agent",
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
+        set_id=1,
     )
 
     assert response.status == "success"
@@ -613,6 +620,7 @@ async def test_check_agent_rejects_position_or_lock_limited_alpha(
             name="test-agent",
             openrouter_api_key="sk-or-v1-runtime",
             openrouter_management_key="sk-or-v1-management",
+            set_id=1,
         )
 
     assert exc_info.value.status_code == 402
@@ -725,6 +733,7 @@ async def test_concurrent_credit_redemption_creates_one_agent():
         "openrouter_api_key_label": "label",
         "openrouter_api_key_creator_user_id": "creator",
         "openrouter_validated_at": datetime.now(timezone.utc),
+        "set_id": 1,
     }
 
     first_result, second_result = await asyncio.gather(
@@ -1217,49 +1226,9 @@ async def test_owner_bypasses_rate_limit():
 
 
 @pytest.mark.anyio
-async def test_upload_competition_discovery_filters_orders_and_ignores_global_freeze():
-    async with _db.pool.acquire() as conn:
-        await conn.execute("UPDATE competitions SET name = 'One' WHERE set_id = 1")
-    await _insert_competition(8, name="Eight")
-    await _insert_competition(2, name="Two")
-    await _insert_competition(3, name="Draft", start_date=None, configured=False)
-    await _insert_competition(4, name="Unconfigured", configured=False)
-    await _insert_competition(5, name="Paused", is_paused=True)
-    now = datetime.now(timezone.utc)
-    await _insert_competition(6, name="Closed", submissions_closed_at=now)
-    await _insert_competition(7, name="Ended", start_date=now - timedelta(hours=1), end_date=now)
-
-    original_flag = upload_module.config.DISALLOW_UPLOADS
-    upload_module.config.DISALLOW_UPLOADS = True
-    try:
-        discovered = await upload_module.get_upload_competitions()
-    finally:
-        upload_module.config.DISALLOW_UPLOADS = original_flag
-
-    assert [choice.model_dump() for choice in discovered] == [
-        {"set_id": 1, "name": "One"},
-        {"set_id": 2, "name": "Two"},
-        {"set_id": 8, "name": "Eight"},
-    ]
-
-
-@pytest.mark.anyio
-async def test_preflight_auto_selects_one_and_requires_explicit_choice_for_many():
+async def test_preflight_requires_explicit_competition_and_honors_the_choice():
     from fastapi import HTTPException
 
-    sole = await upload_module.check_agent_post(
-        request=_make_request(),
-        agent_file=_make_upload_file(),
-        public_key="deadbeef",
-        file_info=f"{FAKE_HOTKEY}:0",
-        signature="fakesig",
-        name="test-agent",
-        openrouter_api_key="sk-or-v1-runtime",
-        openrouter_management_key="sk-or-v1-management",
-    )
-    assert sole.set_id == 1
-
-    await _insert_competition(2, name="Two")
     with pytest.raises(HTTPException) as exc_info:
         await upload_module.check_agent_post(
             request=_make_request(),
@@ -1271,24 +1240,27 @@ async def test_preflight_auto_selects_one_and_requires_explicit_choice_for_many(
             openrouter_api_key="sk-or-v1-runtime",
             openrouter_management_key="sk-or-v1-management",
         )
-    assert exc_info.value.status_code == 409
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == upload_module.OUTDATED_UPLOAD_CLIENT_MESSAGE
 
-    explicit = await upload_module.check_agent_post(
-        request=_make_request(),
-        agent_file=_make_upload_file(),
-        public_key="deadbeef",
-        file_info=f"{FAKE_HOTKEY}:0",
-        signature="fakesig",
-        name="test-agent",
-        openrouter_api_key="sk-or-v1-runtime",
-        openrouter_management_key="sk-or-v1-management",
-        set_id=2,
-    )
-    assert explicit.set_id == 2
+    await _insert_competition(2, name="Two")
+    for chosen_set_id in (1, 2):
+        explicit = await upload_module.check_agent_post(
+            request=_make_request(),
+            agent_file=_make_upload_file(),
+            public_key="deadbeef",
+            file_info=f"{FAKE_HOTKEY}:0",
+            signature="fakesig",
+            name="test-agent",
+            openrouter_api_key="sk-or-v1-runtime",
+            openrouter_management_key="sk-or-v1-management",
+            set_id=chosen_set_id,
+        )
+        assert explicit.set_id == chosen_set_id
 
 
 @pytest.mark.anyio
-async def test_preflight_rejects_zero_accepting_competitions():
+async def test_preflight_rejects_non_accepting_competition():
     from fastapi import HTTPException
 
     async with _db.pool.acquire() as conn:
@@ -1304,6 +1276,7 @@ async def test_preflight_rejects_zero_accepting_competitions():
             name="test-agent",
             openrouter_api_key="sk-or-v1-runtime",
             openrouter_management_key="sk-or-v1-management",
+            set_id=1,
         )
     assert exc_info.value.status_code == 409
 
@@ -1319,6 +1292,7 @@ async def test_preflight_selection_is_pinned_when_another_competition_opens():
         name="test-agent",
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
+        set_id=1,
     )
     assert preflight.set_id == 1
     async with _db.pool.acquire() as conn:
@@ -1386,6 +1360,9 @@ async def test_exact_credit_replay_survives_lifecycle_change_and_rejects_conflic
     replay = await _call_post_agent(credit_id=credit_id)
     assert replay.status == "success"
     assert "No new agent was created" in replay.message
+    assert replay.agent_id == first.agent_id
+    assert replay.miner_hotkey == FAKE_HOTKEY
+    assert replay.miner_coldkey == FAKE_COLDKEY
     upload_module.upload_text_file_to_s3.assert_not_awaited()
 
     with pytest.raises(HTTPException) as source_conflict:
@@ -1559,9 +1536,4 @@ async def test_openapi_exposes_only_the_frozen_upload_competition_contract():
     prepare_response_properties = schema["components"]["schemas"][prepare_response_ref.rsplit("/", 1)[-1]]["properties"]
     assert "set_id" not in prepare_response_properties
 
-    competition_response = schema["paths"]["/upload/competitions"]["get"]["responses"]["200"]["content"][
-        "application/json"
-    ]["schema"]
-    item_ref = competition_response["items"]["$ref"]
-    competition_properties = schema["components"]["schemas"][item_ref.rsplit("/", 1)[-1]]["properties"]
-    assert set(competition_properties) == {"set_id", "name"}
+    assert "/upload/competitions" not in schema["paths"]

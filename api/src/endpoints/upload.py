@@ -36,7 +36,6 @@ from models.upload import (
     PrepareUploadRequest,
     TicketCheckRequest,
     TicketCheckResponse,
-    UploadCompetition,
     UploadPriceResponse,
 )
 from queries.agent import (
@@ -48,12 +47,11 @@ from queries.agent import (
     record_upload_attempt,
 )
 from queries.banned_coldkey import get_banned_coldkey
-from queries.competition import get_accepting_upload_competitions, resolve_upload_competition
+from queries.competition import resolve_upload_competition
 from queries.errors import (
     ColdkeyBannedError,
     CompetitionNotAcceptingSubmissionsError,
     DuplicateAgentIDError,
-    UploadCompetitionSelectionError,
     UploadCooldownError,
     UploadCreditAlreadyRedeemedError,
     UploadCreditUnavailableError,
@@ -81,21 +79,18 @@ logger = logging.getLogger(__name__)
 
 UPLOAD_PAYMENT_QUOTE_TTL_SECONDS = 60 * 60
 OUTDATED_UPLOAD_CLIENT_MESSAGE = "This upload client is outdated. Please upgrade Ridges CLI and retry."
+COMPETITION_SELECTION_REQUIRED_MESSAGE = (
+    "No competition was selected. Choose a competition (set_id) and retry; CLI users should upgrade Ridges CLI."
+)
 
 router = APIRouter()
 
 
-async def _resolve_upload_set_id(set_id: int | None) -> int:
+async def _resolve_upload_set_id(set_id: int) -> int:
     try:
         return await resolve_upload_competition(set_id)
-    except (CompetitionNotAcceptingSubmissionsError, UploadCompetitionSelectionError) as exception:
+    except CompetitionNotAcceptingSubmissionsError as exception:
         raise HTTPException(status_code=409, detail=str(exception)) from exception
-
-
-@router.get("/competitions", tags=["upload"], response_model=list[UploadCompetition])
-async def get_upload_competitions() -> list[UploadCompetition]:
-    """Return the uncached, upload-specific accepting competition list."""
-    return await get_accepting_upload_competitions()
 
 
 async def _exact_credit_replay_response(
@@ -103,11 +98,11 @@ async def _exact_credit_replay_response(
     credit_id: UUID,
     miner_hotkey: str,
     source_sha256: str,
-    set_id: int | None,
+    set_id: int,
     upload_data: dict,
 ) -> AgentUploadResponse | None:
     try:
-        replayed_agent_id = await get_exact_upload_credit_replay(
+        replay = await get_exact_upload_credit_replay(
             credit_id=credit_id,
             miner_hotkey=miner_hotkey,
             source_sha256=source_sha256,
@@ -119,19 +114,25 @@ async def _exact_credit_replay_response(
             detail=f"Upload credit {credit_id} was already used for agent {exception.agent_id}",
         ) from exception
 
-    if replayed_agent_id is None:
+    if replay is None:
         return None
 
     success_message = (
-        f"Upload credit {credit_id} was already used for agent {replayed_agent_id}. No new agent was created."
+        f"Upload credit {credit_id} was already used for agent {replay.agent_id}. No new agent was created."
     )
     await record_upload_attempt(
         upload_type="agent",
         success=True,
-        agent_id=replayed_agent_id,
+        agent_id=replay.agent_id,
         **upload_data,
     )
-    return AgentUploadResponse(status="success", message=success_message)
+    return AgentUploadResponse(
+        status="success",
+        message=success_message,
+        agent_id=replay.agent_id,
+        miner_hotkey=miner_hotkey,
+        miner_coldkey=replay.miner_coldkey,
+    )
 
 
 @router.post("/agent/check", tags=["upload"], response_model=AgentDirectCheckResponse)
@@ -154,6 +155,8 @@ async def check_agent_post(
 ) -> AgentDirectCheckResponse:
     if config.DISALLOW_UPLOADS:
         raise HTTPException(status_code=503, detail=config.DISALLOW_UPLOADS_REASON)
+    if set_id is None:
+        raise HTTPException(status_code=400, detail=OUTDATED_UPLOAD_CLIENT_MESSAGE)
     miner_hotkey = get_miner_hotkey(file_info)
     is_owner_upload = miner_hotkey == config.OWNER_HOTKEY
     resolved_set_id = await _resolve_upload_set_id(set_id)
@@ -345,7 +348,7 @@ async def _process_agent_upload(
     openrouter_api_key: str,
     openrouter_management_key: str,
     legacy_signature: Optional[tuple[str, str, str]],
-    set_id: int | None,
+    set_id: int,
 ) -> AgentUploadResponse:
     """Shared upload core for /upload/agent (legacy file_info signature) and /upload/agent/ticket.
 
@@ -635,7 +638,13 @@ async def _process_agent_upload(
         # Record successful upload
         await record_upload_attempt(upload_type="agent", success=True, agent_id=agent_id, **upload_data)
 
-        return AgentUploadResponse(status="success", message=success_message)
+        return AgentUploadResponse(
+            status="success",
+            message=success_message,
+            agent_id=agent_id,
+            miner_hotkey=miner_hotkey,
+            miner_coldkey=admission.miner_coldkey,
+        )
 
     except DuplicateAgentIDError as e:
         logger.warning(f"Agent upload failed, duplicate agent ID found: {e}")
@@ -725,6 +734,8 @@ async def post_agent(
 
     Rate limiting may apply based on configuration.
     """
+    if set_id is None:
+        raise HTTPException(status_code=400, detail=OUTDATED_UPLOAD_CLIENT_MESSAGE)
     return await _process_agent_upload(
         request=request,
         agent_file=agent_file,
@@ -770,6 +781,8 @@ async def post_agent_ticket(
     set_id: Annotated[Optional[int], Form(description="Competition to enter")] = None,
 ) -> AgentUploadResponse:
     """Redeem a prepare-upload ticket: same verification and creation flow as /upload/agent."""
+    if set_id is None:
+        raise HTTPException(status_code=400, detail=COMPETITION_SELECTION_REQUIRED_MESSAGE)
     try:
         decoded = decode_ticket(ticket)
     except ValueError as exception:

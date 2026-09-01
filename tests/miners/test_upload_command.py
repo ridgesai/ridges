@@ -73,7 +73,7 @@ def _competition_client(competitions: list[dict]) -> MagicMock:
     return client
 
 
-def test_select_upload_competition_handles_zero_one_many_and_explicit() -> None:
+def test_select_upload_competition_requires_deliberate_choice(monkeypatch) -> None:
     with pytest.raises(upload_module.click.ClickException, match="No competition"):
         upload_module._select_upload_competition(
             _competition_client([]),
@@ -83,32 +83,54 @@ def test_select_upload_competition_handles_zero_one_many_and_explicit() -> None:
 
     assert (
         upload_module._select_upload_competition(
-            _competition_client([{"set_id": 7, "name": "Seven"}]),
-            api_url="https://example.test",
-            requested_set_id=None,
-        )
-        == 7
-    )
-
-    many = _competition_client([{"set_id": 2, "name": "Two"}, {"set_id": 9, "name": "Nine"}])
-    with pytest.raises(upload_module.click.ClickException) as exc_info:
-        upload_module._select_upload_competition(
-            many,
-            api_url="https://example.test",
-            requested_set_id=None,
-        )
-    assert "2 (Two)" in str(exc_info.value)
-    assert "9 (Nine)" in str(exc_info.value)
-    assert "--competition INTEGER" in str(exc_info.value)
-
-    assert (
-        upload_module._select_upload_competition(
             _competition_client([{"set_id": 2, "name": "Two"}, {"set_id": 9, "name": "Nine"}]),
             api_url="https://example.test",
             requested_set_id=9,
         )
         == 9
     )
+    with pytest.raises(upload_module.click.ClickException, match="not accepting"):
+        upload_module._select_upload_competition(
+            _competition_client([{"set_id": 2, "name": "Two"}]),
+            api_url="https://example.test",
+            requested_set_id=9,
+        )
+
+    # Without --competition and without a TTY, fail fast
+    monkeypatch.setattr(upload_module.sys, "stdin", MagicMock(isatty=MagicMock(return_value=False)))
+    with pytest.raises(upload_module.click.ClickException) as exc_info:
+        upload_module._select_upload_competition(
+            _competition_client([{"set_id": 7, "name": "Seven"}]),
+            api_url="https://example.test",
+            requested_set_id=None,
+        )
+    assert "7 (Seven)" in str(exc_info.value)
+    assert "--competition INTEGER" in str(exc_info.value)
+
+    # Interactive sessions prompt for an explicit choice, even with a single competition.
+    monkeypatch.setattr(upload_module.sys, "stdin", MagicMock(isatty=MagicMock(return_value=True)))
+    prompt = MagicMock(return_value="7")
+    monkeypatch.setattr(upload_module.Prompt, "ask", prompt)
+    assert (
+        upload_module._select_upload_competition(
+            _competition_client([{"set_id": 7, "name": "Seven"}]),
+            api_url="https://example.test",
+            requested_set_id=None,
+        )
+        == 7
+    )
+    assert prompt.call_args.kwargs["choices"] == ["7"]
+
+    prompt.return_value = "9"
+    assert (
+        upload_module._select_upload_competition(
+            _competition_client([{"set_id": 2, "name": "Two"}, {"set_id": 9, "name": "Nine"}]),
+            api_url="https://example.test",
+            requested_set_id=None,
+        )
+        == 9
+    )
+    assert prompt.call_args.kwargs["choices"] == ["2", "9"]
 
 
 def test_latest_agent_preview_is_filtered_to_selected_set() -> None:

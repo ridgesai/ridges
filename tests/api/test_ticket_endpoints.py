@@ -190,7 +190,7 @@ def _credit_ticket_blob(credit_id: uuid.UUID) -> str:
     return encode_ticket(sign_ticket(unsigned, KEYPAIR.sign))
 
 
-async def _redeem(ticket_blob: str, content: bytes = b"async def agent_main(input): return 'ok'"):
+async def _redeem(ticket_blob: str, content: bytes = b"async def agent_main(input): return 'ok'", set_id: int = 1):
     return await upload_module.post_agent_ticket(
         request=_make_request(),
         agent_file=_make_upload_file(content),
@@ -198,6 +198,7 @@ async def _redeem(ticket_blob: str, content: bytes = b"async def agent_main(inpu
         name="ticket-agent",
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
+        set_id=set_id,
     )
 
 
@@ -207,6 +208,9 @@ async def test_burn_ticket_redeem_creates_agent():
     response = await _redeem(_burn_ticket_blob(quote_id))
 
     assert response.status == "success"
+    assert response.agent_id is not None
+    assert response.miner_hotkey == HOTKEY
+    assert response.miner_coldkey == FAKE_COLDKEY
     async with _db.pool.acquire() as conn:
         agent = await conn.fetchrow("SELECT miner_hotkey, name FROM agents WHERE miner_hotkey = $1", HOTKEY)
         payment = await conn.fetchrow(

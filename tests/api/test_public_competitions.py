@@ -8,7 +8,6 @@ from fastapi import FastAPI, HTTPException
 
 import utils.database as _db
 from api.endpoints import competitions as competitions_endpoint
-from api.src.endpoints.upload import get_upload_competitions
 from models.competition import CompetitionPolicy, CompetitionState
 from queries.competition import resolve_compatibility_competition_set_id
 
@@ -103,7 +102,7 @@ async def clean_competitions(postgres_db):
 
 async def test_catalog_n0_and_private_detail_return_no_public_competition() -> None:
     assert await competitions_endpoint.competition_catalog() == []
-    assert await get_upload_competitions() == []
+    assert await competitions_endpoint.competition_catalog(accepting=True) == []
     assert await resolve_compatibility_competition_set_id() is None
 
     with pytest.raises(HTTPException) as error:
@@ -177,8 +176,10 @@ async def test_catalog_derives_every_state_and_capability_without_global_flags(m
     assert by_id[8].state is CompetitionState.open
     assert (by_id[8].accepting, by_id[8].processable, by_id[8].emission_active) == (False, False, False)
 
-    accepting = await get_upload_competitions()
-    assert [choice.model_dump() for choice in accepting] == [{"set_id": 3, "name": "Open"}]
+    accepting = await competitions_endpoint.competition_catalog(accepting=True)
+    assert [(competition.set_id, competition.name) for competition in accepting] == [(3, "Open")]
+    not_accepting = await competitions_endpoint.competition_catalog(accepting=False)
+    assert [competition.set_id for competition in not_accepting] == [8, 7, 6, 5, 4]
 
 
 async def test_compatibility_resolver_prefers_newest_open_then_draining_then_paused() -> None:
