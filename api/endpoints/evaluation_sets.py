@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.incentives import CurrentAllocations, get_current_allocations
+from api.src.utils.leaderboard_cache import get_cached_leaderboard_rows
 from models.agent import AgentStatus, PublicAgent
 from models.evaluation_set import (
     EvaluationSet,
@@ -33,7 +34,6 @@ from queries.evaluation_set import (
     get_all_evaluation_set_problems_for_set_id,
     get_all_evaluation_sets,
     get_approved_agents_for_set,
-    get_evaluation_set_leaderboard_agents,
     get_evaluation_set_leaderboard_summary,
     get_evaluation_set_performance_improvement,
     get_evaluation_set_pre_screening_distribution,
@@ -324,22 +324,20 @@ async def evaluation_set_overview(
 #
 # GET evaluation-sets/{set_id}/leaderboard
 #
-async def _build_leaderboard(set_id: int, required_validator_count: int | None) -> list[PublicAgent]:
-    agent_rows = await get_evaluation_set_leaderboard_agents(set_id, required_validator_count)
-    return [PublicAgent(**dict(row), set_id=set_id) for row in agent_rows]
-
-
-_cached_build_leaderboard = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECONDS)(_build_leaderboard)
-
-
 @router.get("/{set_id}/leaderboard")
 async def evaluation_set_leaderboard(
     set_id: Annotated[int, Depends(resolve_set_id)],
 ) -> list[PublicAgent]:
+    """Retrieve the agent's leaderboard per evaluation set.
+
+    Data for historical sets is cached for 24 hours while
+    data for active sets is cached for 15 seconds.
+    """
     context = await _public_evaluation_set_or_404(set_id)
-    if context.use_historical_cache:
-        return await _cached_build_leaderboard(set_id, context.required_validator_count)
-    return await _build_leaderboard(set_id, context.required_validator_count)
+    agent_rows = await get_cached_leaderboard_rows(
+        set_id, context.required_validator_count, context.use_historical_cache
+    )
+    return [PublicAgent(**dict(row), set_id=set_id) for row in agent_rows]
 
 
 #
