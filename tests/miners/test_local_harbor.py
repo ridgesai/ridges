@@ -297,7 +297,7 @@ async def test_run_local_task_passes_separate_mode_to_agent_wrapper(tmp_path: Pa
     )
 
     assert FakeJob.created_configs[0].agents[0].kwargs["separate_verifier"] is True
-    assert FakeJob.created_configs[0].artifacts == ["/logs/agent/patch.diff"]
+    assert FakeJob.created_configs[0].artifacts == []
     assert FakeJob.created_configs[0].verifier.import_path is None
 
 

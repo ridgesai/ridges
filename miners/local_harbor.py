@@ -317,8 +317,6 @@ async def run_local_task(
     resolved_job_name = job_name or f"{effective_task_name}__{uuid4().hex[:8]}"
     job_dir = resolved_results_dir / resolved_job_name
 
-    job_artifacts = ["/logs/agent/patch.diff"] if separate_verifier else []
-
     config = JobConfig(
         job_name=resolved_job_name,
         jobs_dir=resolved_results_dir,
@@ -329,7 +327,7 @@ async def run_local_task(
         retry=RetryConfig(max_retries=0),
         environment=EnvironmentConfig(env={}),
         verifier=VerifierConfig(),
-        artifacts=job_artifacts,
+        artifacts=[],
         tasks=[TaskConfig(path=effective_task_dir)],
         agents=[
             AgentConfig(
