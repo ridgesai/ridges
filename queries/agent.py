@@ -1403,11 +1403,6 @@ async def get_public_agent_rows_by_miner_coldkey(conn: DatabaseConnection, miner
 
     Rows with a NULL coldkey are excluded — miner_coldkey was added 2026-07-10
     without backfill, so agents uploaded before then (and dev uploads) won't appear.
-
-    Returns rows rather than PublicAgent so callers can merge per-competition
-    leaderboard fields (rank, validator metrics) into them before the model is
-    built: PublicAgent assembles competition_state in a before-validator, so the
-    merge has to happen while the row is still a mapping.
     """
     return await conn.fetch(
         f"""
