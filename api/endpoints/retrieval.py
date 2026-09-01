@@ -19,7 +19,6 @@ from queries.agent import (
     get_agent_by_id,
     get_agent_score_and_set_id,
     get_agents_in_queue,
-    get_all_public_agents_by_miner_coldkey,
     get_all_public_agents_by_miner_hotkey,
     get_code_hiding_score_cutoff,
     get_latest_public_agent_for_miner_hotkey,
@@ -33,6 +32,7 @@ from queries.competition import (
 )
 from queries.evaluation import get_approved_leader_ranking_for_set, get_evaluations_for_agent_id
 from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
+from queries.evaluation_set import get_public_agents_with_rank_by_miner_coldkey
 from queries.statistics import (
     PerfectlySolvedOverTime,
     ProblemSetCreationTime,
@@ -133,10 +133,17 @@ async def all_agents_by_hotkey(miner_hotkey: str, set_id: int | None = None) -> 
 async def agents_by_coldkey(miner_coldkey: str) -> dict[str, List[PublicAgent]]:
     """Returns the PublicAgent model shape, similar to /retrieval/all-agents-by-hotkey.
     Grouping: hotkeys sorted, agents newest-first within each.
+
+    Each agent carries the rank and validator metrics of its own competition set, computed
+    by the same query the public leaderboard uses.
     """
-    agents = await get_all_public_agents_by_miner_coldkey(miner_coldkey)
+    rows = await get_public_agents_with_rank_by_miner_coldkey(
+        miner_coldkey=miner_coldkey,
+        default_required_validator_count=config.NUM_EVALS_PER_AGENT,
+    )
     grouped: dict[str, List[PublicAgent]] = {}
-    for agent in agents:
+    for row in rows:
+        agent = PublicAgent(**dict(row))
         grouped.setdefault(agent.miner_hotkey, []).append(agent)
     return grouped
 
