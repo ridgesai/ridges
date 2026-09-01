@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID, uuid5
 
+import asyncpg
+
 import api.config as config
 from models.agent import (
     Agent,
@@ -1393,3 +1395,28 @@ async def get_pending_work_counts(conn: DatabaseConnection) -> dict[str, int]:
         "screener_1_pending": row["screener_1_pending"],
         "screener_2_pending": row["screener_2_pending"],
     }
+
+
+@db_operation
+async def get_public_agent_rows_by_miner_coldkey(conn: DatabaseConnection, miner_coldkey: str) -> list[asyncpg.Record]:
+    """All agents stamped with this coldkey at upload time, as raw rows.
+
+    Rows with a NULL coldkey are excluded — miner_coldkey was added 2026-07-10
+    without backfill, so agents uploaded before then (and dev uploads) won't appear.
+
+    Returns rows rather than PublicAgent so callers can merge per-competition
+    leaderboard fields (rank, validator metrics) into them before the model is
+    built: PublicAgent assembles competition_state in a before-validator, so the
+    merge has to happen while the row is still a mapping.
+    """
+    return await conn.fetch(
+        f"""
+        SELECT
+            {AGENT_PUBLIC_SELECT_COLUMNS}
+        FROM agents a
+        {AGENT_PUBLIC_JOINS}
+        WHERE a.miner_coldkey = $1
+        ORDER BY a.miner_hotkey, a.created_at DESC, a.agent_id
+        """,
+        miner_coldkey,
+    )
