@@ -8,9 +8,10 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import api.endpoints.evaluation_sets as evaluation_sets_endpoint
 import utils.database as _db
 from api.endpoints import retrieval as retrieval_module
+from api.src.utils.leaderboard_cache import get_cached_leaderboard_rows
+from models.agent import PublicAgent
 from queries.competition import initialize_current_competition_policy
 from tests.api.test_evaluation_sets import (
     _configure_competition,
@@ -245,6 +246,11 @@ def _metrics(agent):
     )
 
 
+async def _leaderboard_by_agent_id(set_id: int, required_validator_count: int) -> dict[uuid.UUID, PublicAgent]:
+    rows = await get_cached_leaderboard_rows(set_id, required_validator_count, use_historical_cache=False)
+    return {row["agent_id"]: PublicAgent(**dict(row), set_id=set_id) for row in rows}
+
+
 async def test_enriched_fields_match_leaderboard_and_rank_globally():
     """Enriched fields equal the leaderboard's, and rank counts every agent in the set.
 
@@ -273,7 +279,7 @@ async def test_enriched_fields_match_leaderboard_and_rank_globally():
         await _insert_agent_score(conn, agent_id=mine, miner_hotkey=HOTKEY_A, set_id=1, final_score=0.5)
 
     clear_all_ttl_caches()
-    leaderboard = {a.agent_id: a for a in await evaluation_sets_endpoint._build_leaderboard(1, 2)}
+    leaderboard = await _leaderboard_by_agent_id(1, 2)
     result = await retrieval_module.agents_by_coldkey(miner_coldkey=COLDKEY)
 
     agent = result[HOTKEY_A][0]
@@ -303,7 +309,7 @@ async def test_tentative_scores_included_for_evaluating_agent():
         await _run_validator_evaluations(conn, agent_id=agent_id, set_id=1, solved=2, cost_usd=0.10, runtime_seconds=30)
 
     clear_all_ttl_caches()
-    leaderboard = {a.agent_id: a for a in await evaluation_sets_endpoint._build_leaderboard(1, 2)}
+    leaderboard = await _leaderboard_by_agent_id(1, 2)
     result = await retrieval_module.agents_by_coldkey(miner_coldkey=COLDKEY)
 
     agent = result[HOTKEY_A][0]
