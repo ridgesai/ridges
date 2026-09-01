@@ -8,7 +8,8 @@ from ridges_harbor.runner import (
     _validate_kubernetes_task_services,
 )
 
-SEPARATE_TOML = '\n[verifier]\nenvironment_mode = "separate"\n'
+PATCH_ARTIFACT_TOML = 'artifacts = ["/logs/agent/patch.diff"]\n'
+SEPARATE_TOML = f'\n{PATCH_ARTIFACT_TOML}[verifier]\nenvironment_mode = "separate"\n'
 
 
 def _write_task(path: Path, verifier_toml: str = "") -> Path:
@@ -74,10 +75,40 @@ def test_preflight_accepts_a_separate_task_that_ships_a_tests_dockerfile(tmp_pat
 def test_preflight_accepts_a_separate_task_with_a_prebuilt_verifier_image(tmp_path: Path) -> None:
     task_dir = _write_task(
         tmp_path / "task",
-        '\n[verifier]\n[verifier.environment]\ndocker_image = "alpine:3.20"\n',
+        f'\n{PATCH_ARTIFACT_TOML}[verifier]\n[verifier.environment]\ndocker_image = "alpine:3.20"\n',
     )
 
     assert _resolve_separate_verifier(task_dir) is True
+
+
+def test_preflight_accepts_the_patch_artifact_declared_as_a_table(tmp_path: Path) -> None:
+    task_dir = _write_task(
+        tmp_path / "task",
+        '\n[[artifacts]]\nsource = "/logs/agent/patch.diff"\n\n[verifier]\nenvironment_mode = "separate"\n',
+    )
+    (task_dir / "tests" / "Dockerfile").write_text("FROM alpine:3.20\nCOPY . /tests\n")
+
+    assert _resolve_separate_verifier(task_dir) is True
+
+
+@pytest.mark.parametrize(
+    "artifacts_toml",
+    [
+        pytest.param("", id="missing"),
+        pytest.param('artifacts = ["/logs/agent/other.diff"]\n', id="wrong-path"),
+        pytest.param('artifacts = ["/logs/agent/patch.diff", "/logs/agent/extra.txt"]\n', id="extra-entry"),
+        pytest.param('[[artifacts]]\nsource = "/logs/agent/patch.diff"\nservice = "db"\n', id="sidecar-service"),
+    ],
+)
+def test_preflight_rejects_a_separate_task_without_exactly_the_patch_artifact(
+    tmp_path: Path,
+    artifacts_toml: str,
+) -> None:
+    task_dir = _write_task(tmp_path / "task", f'\n{artifacts_toml}[verifier]\nenvironment_mode = "separate"\n')
+    (task_dir / "tests" / "Dockerfile").write_text("FROM alpine:3.20\nCOPY . /tests\n")
+
+    with pytest.raises(RuntimeError, match="exactly one task-level artifact"):
+        _resolve_separate_verifier(task_dir)
 
 
 def test_preflight_rejects_a_separate_task_without_a_verifier_environment(tmp_path: Path) -> None:
