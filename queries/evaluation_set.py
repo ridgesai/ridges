@@ -17,24 +17,47 @@ from utils.database import DatabaseConnection, db_operation
 # ---------------------------------------------------------------------------
 # Shared SQL fragments for evaluation-set window queries.
 # These CTEs appear across get_evaluation_set_submission_stats,
-# get_evaluation_set_leaderboard_agents, and get_evaluation_set_leaderboard_summary.
-# $1 is always the set_id parameter.
+# get_evaluation_set_leaderboard_agents, get_evaluation_set_leaderboard_summary
+# and get_public_agents_with_rank_by_miner_coldkey.
+#
+# Every fragment is scoped by a `target_sets(set_id, required_validator_count)`
+# CTE rather than a scalar set id, and carries `set_id` as a column through the
+# chain. Single-set callers define target_sets as one row, which makes the
+# per-set PARTITION BY / GROUP BY clauses degenerate to their single-set form —
+# that is what lets the coldkey query rank across several sets at once while
+# reusing this exact ranking logic.
 # ---------------------------------------------------------------------------
+
+# One row: the scalar (set_id, required_validator_count) a single-set caller passes as $1/$2.
+_SQL_SINGLE_TARGET_SET_CTE = """\
+target_sets AS (
+    SELECT $1::integer AS set_id, $2::integer AS required_validator_count
+)"""
+
+# As above, for callers that take no required_validator_count parameter.
+_SQL_SINGLE_TARGET_SET_NO_RVC_CTE = """\
+target_sets AS (
+    SELECT $1::integer AS set_id, NULL::integer AS required_validator_count
+)"""
 
 _SQL_SET_WINDOW_CTE = """\
 set_window AS (
     SELECT
+        ts.set_id,
+        ts.required_validator_count,
         COALESCE(
-            (SELECT start_date FROM competitions WHERE set_id = $1),
-            (SELECT MIN(created_at) FROM evaluation_sets WHERE set_id = $1)
+            c.start_date,
+            (SELECT MIN(created_at) FROM evaluation_sets WHERE set_id = ts.set_id)
         ) as set_start,
         -- TODO: fallback end-boundary via next set's created_at may not correctly
         -- capture all competing agents; set competition_end_date explicitly to fix.
         COALESCE(
-            (SELECT end_date FROM competitions WHERE set_id = $1),
+            c.end_date,
             (SELECT MIN(created_at) FROM evaluation_sets
-                WHERE set_id = (SELECT MIN(set_id) FROM evaluation_sets WHERE set_id > $1))
+                WHERE set_id = (SELECT MIN(set_id) FROM evaluation_sets WHERE set_id > ts.set_id))
         ) as set_end
+    FROM target_sets ts
+    LEFT JOIN competitions c ON c.set_id = ts.set_id
 )"""
 
 
@@ -42,6 +65,8 @@ def _sql_agents_in_window_cte(select_columns: str) -> str:
     return f"""
     agents_in_window AS MATERIALIZED (
         SELECT
+            sw.set_id,
+            sw.required_validator_count,
             {select_columns},
             review.approval_review_status AS approval_review_status,
             CASE
@@ -54,27 +79,30 @@ def _sql_agents_in_window_cte(select_columns: str) -> str:
                 THEN true
                 ELSE false
             END AS disqualified
-        FROM agents a
-        CROSS JOIN set_window sw
-        LEFT JOIN agent_final_review_statuses review
-            ON review.agent_id = a.agent_id
-            AND review.set_id = $1  
-        WHERE (
-                a.set_id = $1
+        FROM set_window sw
+        JOIN agents a
+            ON (
+                a.set_id = sw.set_id
                 OR (
                     a.set_id is NULL
                     AND a.created_at >= sw.set_start
                     AND (sw.set_end IS NULL OR a.created_at < sw.set_end)
                 )
-        )
-        AND NOT EXISTS (
+            )
+        LEFT JOIN agent_final_review_statuses review
+            ON review.agent_id = a.agent_id
+            AND review.set_id = sw.set_id
+        WHERE NOT EXISTS (
             SELECT 1 FROM benchmark_agent_ids b WHERE b.agent_id = a.agent_id)
     )
     """
 
 
 def _sql_validator_metrics_cte(include_validator_hotkeys: bool, agent_filter_cte: str = "agents_in_window") -> str:
-    """This method returns a CTE that computes average validator cost and runtime per agent, over their 3 "valid" evaluations. A valid evaluation is one with the status set to 'success' or 'running' or that it was cancelled.
+    """This method returns a CTE that computes average validator cost and runtime per (agent, set), over their 3 "valid" evaluations. A valid evaluation is one with the status set to 'success' or 'running' or that it was cancelled.
+
+    Grouping carries set_id because an agent can hold evaluations under more than one
+    set; averaging across sets would blend unrelated competitions.
 
 
     Optionally includes an array of validator hotkeys for those 3 evaluations.
@@ -84,7 +112,8 @@ def _sql_validator_metrics_cte(include_validator_hotkeys: bool, agent_filter_cte
     include_validator_hotkeys : bool
         Whether to include an array of validator hotkeys for the evaluations considered in the averages.
     agent_filter_cte : str
-        Name of the CTE providing agent_id values to filter against. Defaults to "agents_in_window".
+        Name of the CTE providing (agent_id, set_id, required_validator_count) rows to filter
+        against. Defaults to "agents_in_window".
 
     Returns
     -------
@@ -98,24 +127,28 @@ def _sql_validator_metrics_cte(include_validator_hotkeys: bool, agent_filter_cte
         f"validator_metrics AS MATERIALIZED (\n"
         f"    SELECT\n"
         f"        sample.agent_id,\n"
+        f"        sample.set_id,\n"
         f"        AVG(sample.avg_cost_usd) AS average_cost_usd,\n"
         f"        AVG(sample.avg_running_secs) AS average_runtime_seconds"
         f"{hotkeys_col}\n"
         f"    FROM (\n"
         f"        SELECT\n"
         f"            ranked.agent_id,\n"
+        f"            ranked.set_id,\n"
+        f"            aiw.required_validator_count,\n"
         f"            ranked.evaluation_id,\n"
         f"            ranked.validator_hotkey,\n"
         f"            ranked.avg_running_secs,\n"
         f"            ranked.avg_cost_usd,\n"
         f"            ranked.status,\n"
         f"            ROW_NUMBER() OVER (\n"
-        f"                PARTITION BY ranked.agent_id\n"
+        f"                PARTITION BY ranked.agent_id, ranked.set_id\n"
         f"                ORDER BY ranked.status\n"
         f"            ) AS rn\n"
         f"        FROM (\n"
         f"            SELECT\n"
         f"                evaluations.agent_id,\n"
+        f"                evaluations.set_id,\n"
         f"                evaluations.evaluation_id,\n"
         f"                evaluations.validator_hotkey,\n"
         f"                AVG(\n"
@@ -149,18 +182,140 @@ def _sql_validator_metrics_cte(include_validator_hotkeys: bool, agent_filter_cte
         f"                JOIN evaluation_runs_hydrated erh USING (evaluation_id)\n"
         f"            WHERE\n"
         f"                evaluations.evaluation_set_group = 'validator'::EvaluationSetGroup\n"
-        f"                AND evaluations.set_id = $1\n"
+        f"                AND evaluations.set_id IN (SELECT set_id FROM target_sets)\n"
         f"            GROUP BY\n"
         f"                evaluations.agent_id,\n"
+        f"                evaluations.set_id,\n"
         f"                evaluations.evaluation_id\n"
         f"        ) AS ranked\n"
-        f"        JOIN {agent_filter_cte} aiw ON aiw.agent_id = ranked.agent_id\n"
+        f"        JOIN {agent_filter_cte} aiw\n"
+        f"            ON aiw.agent_id = ranked.agent_id\n"
+        f"           AND aiw.set_id = ranked.set_id\n"
         f"        where ranked.status in ('running', 'success') or ranked.cancelled is true\n"
         f"    ) AS sample\n"
-        f"    WHERE sample.rn <= $2::integer\n"
-        f"    GROUP BY sample.agent_id\n"
+        f"    WHERE sample.rn <= sample.required_validator_count::integer\n"
+        f"    GROUP BY sample.agent_id, sample.set_id\n"
         f")"
     )
+
+
+# The tentative/scored/ranked pipeline behind every public rank. Depends on the
+# agents_in_window and validator_metrics CTEs, and ranks within each target set.
+# Shared verbatim by the leaderboard and the by-coldkey query so a rank can never
+# differ between the two.
+_SQL_RANKED_SCORES_CTES = """\
+tentative_scores AS (
+            WITH tentative_runs AS (
+                SELECT eh.agent_id, aiw.set_id, aiw.required_validator_count,
+                       eh.validator_hotkey, erh.problem_name,
+                       (erh.solved IS TRUE OR erh.error_code = 3060) AS solved_effective,
+                       aiw.disqualified, aiw.created_at, aiw.status AS agent_status
+                FROM evaluations_hydrated eh
+                JOIN agents_in_window aiw
+                    ON aiw.agent_id = eh.agent_id
+                   AND aiw.set_id = eh.set_id
+                   AND aiw.status in ('evaluating','cancelled')
+                JOIN evaluation_runs_hydrated erh ON erh.evaluation_id = eh.evaluation_id
+                WHERE eh.evaluation_set_group = 'validator'::EvaluationSetGroup
+                  AND NOT EXISTS (
+                      SELECT 1 FROM agent_scores ass
+                      WHERE ass.agent_id = eh.agent_id AND ass.set_id = aiw.set_id
+                  )
+            ),
+            per_problem AS (
+                SELECT
+                    agent_id,
+                    set_id,
+                    required_validator_count,
+                    problem_name,
+                    disqualified,
+                    created_at,
+                    agent_status,
+                    COUNT(DISTINCT validator_hotkey) FILTER (WHERE solved_effective)
+                        AS solved_validator_count
+                FROM tentative_runs
+                GROUP BY agent_id, set_id, required_validator_count, problem_name,
+                         disqualified, created_at, agent_status
+            ),
+            problem_count AS (
+                SELECT
+                    ts.set_id,
+                    (
+                        SELECT COUNT(*)::float
+                        FROM evaluation_sets es
+                        WHERE es.set_id = ts.set_id
+                          AND es.set_group = 'validator'::EvaluationSetGroup
+                    ) AS n
+                FROM target_sets ts
+            ),
+            validator_counts AS (
+                SELECT
+                    agent_id,
+                    set_id,
+                    COUNT(DISTINCT validator_hotkey)::int AS validator_count,
+                    ARRAY_AGG(DISTINCT validator_hotkey ORDER BY validator_hotkey) AS validator_hotkeys
+                FROM tentative_runs
+                GROUP BY agent_id, set_id
+            )
+            SELECT
+                pp.agent_id,
+                pp.set_id,
+                COUNT(*) FILTER (WHERE pp.solved_validator_count >= vc.validator_count)::float
+                    / NULLIF(pc.n, 0) AS final_score,
+                vc.validator_count,
+                vc.validator_hotkeys,
+                pp.disqualified,
+                pp.created_at,
+                pp.agent_status
+            FROM per_problem pp
+            JOIN validator_counts vc ON vc.agent_id = pp.agent_id AND vc.set_id = pp.set_id
+            JOIN problem_count pc ON pc.set_id = pp.set_id
+            GROUP BY pp.agent_id, pp.set_id, vc.validator_count, vc.validator_hotkeys, pp.disqualified,
+                     pp.created_at, pp.agent_status, pp.required_validator_count, pc.n
+            HAVING vc.validator_count >= pp.required_validator_count::integer
+               AND COUNT(*) FILTER (WHERE pp.solved_validator_count >= vc.validator_count) > 0
+        ),
+        scored_agents AS (
+            SELECT aiw.set_id, ass.agent_id, ass.final_score, ass.validator_count,
+                   COALESCE(vm.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys, aiw.disqualified, aiw.created_at,
+                   aiw.status AS agent_status
+            FROM agent_scores ass
+            JOIN agents_in_window aiw
+                ON aiw.agent_id = ass.agent_id
+               AND aiw.set_id = ass.set_id
+            LEFT JOIN validator_metrics vm
+                ON vm.agent_id = ass.agent_id
+               AND vm.set_id = aiw.set_id
+            UNION ALL
+            SELECT ts.set_id, ts.agent_id, ts.final_score, ts.validator_count, ts.validator_hotkeys, ts.disqualified,
+                   ts.created_at, ts.agent_status
+            FROM tentative_scores ts
+        ),
+        ranked_scores AS (
+            SELECT
+                sa.set_id,
+                sa.agent_id,
+                sa.final_score,
+                sa.validator_count,
+                vm.average_cost_usd,
+                vm.average_runtime_seconds,
+                COALESCE(vm.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys,
+                CASE
+                    WHEN sa.disqualified OR sa.agent_status = 'cancelled' THEN NULL
+                    ELSE ROW_NUMBER() OVER (
+                        PARTITION BY sa.set_id, (sa.disqualified OR sa.agent_status = 'cancelled')
+                        ORDER BY
+                            ROUND(sa.final_score::numeric, 6) DESC,
+                            vm.average_cost_usd ASC NULLS LAST,
+                            sa.created_at ASC,
+                            sa.agent_id ASC
+                    )::int
+                END AS rank
+            FROM scored_agents sa
+            LEFT JOIN validator_metrics vm
+                ON vm.agent_id = sa.agent_id
+               AND vm.set_id = sa.set_id
+        )"""
 
 
 def _sql_top_agent_for_summary() -> str:
@@ -175,7 +330,7 @@ def _sql_top_agent_for_summary() -> str:
                 CASE
                     WHEN aiw.disqualified THEN NULL
                     ELSE ROW_NUMBER() OVER (
-                        PARTITION BY aiw.disqualified
+                        PARTITION BY aiw.set_id, aiw.disqualified
                         ORDER BY
                             ROUND(sa.final_score::numeric, 6) DESC,
                             vm.average_cost_usd ASC NULLS LAST,
@@ -184,10 +339,13 @@ def _sql_top_agent_for_summary() -> str:
                     )::int
                 END AS rank
             FROM agent_scores sa
-            JOIN agents_in_window aiw ON aiw.agent_id = sa.agent_id
-            LEFT JOIN validator_metrics vm ON vm.agent_id = sa.agent_id
-            WHERE sa.set_id = $1
-              AND aiw.status = 'finished'
+            JOIN agents_in_window aiw
+                ON aiw.agent_id = sa.agent_id
+               AND aiw.set_id = sa.set_id
+            LEFT JOIN validator_metrics vm
+                ON vm.agent_id = sa.agent_id
+               AND vm.set_id = aiw.set_id
+            WHERE aiw.status = 'finished'
               AND NOT aiw.disqualified
             ORDER BY rank
             LIMIT 1
@@ -336,7 +494,8 @@ async def get_evaluation_set_pre_screening_distribution(
 ) -> asyncpg.Record:
     return await conn.fetchrow(
         f"""
-        WITH {_SQL_SET_WINDOW_CTE},
+        WITH {_SQL_SINGLE_TARGET_SET_NO_RVC_CTE},
+        {_SQL_SET_WINDOW_CTE},
         {_sql_agents_in_window_cte("a.agent_id, a.status")}
         SELECT
             COUNT(*) FILTER (
@@ -379,7 +538,8 @@ async def get_evaluation_set_score_distribution(
 
     return await conn.fetch(
         f"""
-        WITH {_SQL_SET_WINDOW_CTE},
+        WITH {_SQL_SINGLE_TARGET_SET_CTE},
+        {_SQL_SET_WINDOW_CTE},
         {_sql_agents_in_window_cte("a.agent_id, a.status")},
         eligible_agents AS MATERIALIZED (
             SELECT aiw.agent_id
@@ -650,7 +810,8 @@ async def get_evaluation_set_submission_stats(conn: DatabaseConnection, set_id: 
     """
     return await conn.fetchrow(
         f"""
-        WITH {_SQL_SET_WINDOW_CTE},
+        WITH {_SQL_SINGLE_TARGET_SET_NO_RVC_CTE},
+        {_SQL_SET_WINDOW_CTE},
         {_sql_agents_in_window_cte("a.agent_id, a.miner_hotkey, a.status")},
         last_evaluation_per_agent as (
             select
@@ -738,7 +899,8 @@ async def get_evaluation_set_score_stats(conn: DatabaseConnection, set_id: int) 
     """
     return await conn.fetchrow(
         f"""
-        WITH {_SQL_SET_WINDOW_CTE},
+        WITH {_SQL_SINGLE_TARGET_SET_NO_RVC_CTE},
+        {_SQL_SET_WINDOW_CTE},
         {_sql_agents_in_window_cte("a.agent_id, a.status")}
         SELECT
             MAX(s.final_score) AS best,
@@ -778,100 +940,11 @@ async def get_evaluation_set_leaderboard_agents(
     """Return all competition-window agents with leaderboard fields for an evaluation set."""
     return await conn.fetch(
         f"""
-        WITH {_SQL_SET_WINDOW_CTE},
+        WITH {_SQL_SINGLE_TARGET_SET_CTE},
+        {_SQL_SET_WINDOW_CTE},
         {_sql_agents_in_window_cte("a.agent_id, a.miner_hotkey, a.miner_coldkey, a.name, a.version_num, a.status::text, a.created_at, (a.set_id IS NULL) AS legacy_membership")},
         {_sql_validator_metrics_cte(include_validator_hotkeys=True)},
-        tentative_scores AS (
-            WITH tentative_runs AS (
-                SELECT eh.agent_id, eh.validator_hotkey, erh.problem_name,
-                       (erh.solved IS TRUE OR erh.error_code = 3060) AS solved_effective,
-                       aiw.disqualified, aiw.created_at, aiw.status AS agent_status
-                FROM evaluations_hydrated eh
-                JOIN agents_in_window aiw
-                    ON aiw.agent_id = eh.agent_id AND aiw.status in ('evaluating','cancelled')
-                JOIN evaluation_runs_hydrated erh ON erh.evaluation_id = eh.evaluation_id
-                WHERE eh.set_id = $1
-                  AND eh.evaluation_set_group = 'validator'::EvaluationSetGroup
-                  AND NOT EXISTS (
-                      SELECT 1 FROM agent_scores ass
-                      WHERE ass.agent_id = eh.agent_id AND ass.set_id = $1
-                  )
-            ),
-            per_problem AS (
-                SELECT
-                    agent_id,
-                    problem_name,
-                    disqualified,
-                    created_at,
-                    agent_status,
-                    COUNT(DISTINCT validator_hotkey) FILTER (WHERE solved_effective)
-                        AS solved_validator_count
-                FROM tentative_runs
-                GROUP BY agent_id, problem_name, disqualified, created_at, agent_status
-            ),
-            problem_count AS (
-                SELECT COUNT(*)::float AS n
-                FROM evaluation_sets
-                WHERE set_id = $1 AND set_group = 'validator'::EvaluationSetGroup
-            ),
-            validator_counts AS (
-                SELECT
-                    agent_id,
-                    COUNT(DISTINCT validator_hotkey)::int AS validator_count,
-                    ARRAY_AGG(DISTINCT validator_hotkey ORDER BY validator_hotkey) AS validator_hotkeys
-                FROM tentative_runs
-                GROUP BY agent_id
-            )
-            SELECT
-                pp.agent_id,
-                COUNT(*) FILTER (WHERE pp.solved_validator_count >= vc.validator_count)::float
-                    / NULLIF((SELECT n FROM problem_count), 0) AS final_score,
-                vc.validator_count,
-                vc.validator_hotkeys,
-                pp.disqualified,
-                pp.created_at,
-                pp.agent_status
-            FROM per_problem pp
-            JOIN validator_counts vc ON vc.agent_id = pp.agent_id
-            GROUP BY pp.agent_id, vc.validator_count, vc.validator_hotkeys, pp.disqualified, pp.created_at, pp.agent_status
-            HAVING vc.validator_count >= $2::integer
-               AND COUNT(*) FILTER (WHERE pp.solved_validator_count >= vc.validator_count) > 0
-        ),
-        scored_agents AS (
-            SELECT ass.agent_id, ass.final_score, ass.validator_count,
-                   COALESCE(vm.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys, aiw.disqualified, aiw.created_at,
-                   aiw.status AS agent_status
-            FROM agent_scores ass
-            JOIN agents_in_window aiw ON aiw.agent_id = ass.agent_id
-            LEFT JOIN validator_metrics vm ON vm.agent_id = ass.agent_id
-            WHERE ass.set_id = $1
-            UNION ALL
-            SELECT ts.agent_id, ts.final_score, ts.validator_count, ts.validator_hotkeys, ts.disqualified, ts.created_at,
-                   ts.agent_status
-            FROM tentative_scores ts
-        ),
-        ranked_scores AS (
-            SELECT
-                sa.agent_id,
-                sa.final_score,
-                sa.validator_count,
-                vm.average_cost_usd,
-                vm.average_runtime_seconds,
-                COALESCE(vm.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys,
-                CASE
-                    WHEN sa.disqualified OR sa.agent_status = 'cancelled' THEN NULL
-                    ELSE ROW_NUMBER() OVER (
-                        PARTITION BY (sa.disqualified OR sa.agent_status = 'cancelled')
-                        ORDER BY
-                            ROUND(sa.final_score::numeric, 6) DESC,
-                            vm.average_cost_usd ASC NULLS LAST,
-                            sa.created_at ASC,
-                            sa.agent_id ASC
-                    )::int
-                END AS rank
-            FROM scored_agents sa
-            LEFT JOIN validator_metrics vm ON vm.agent_id = sa.agent_id
-        )
+        {_SQL_RANKED_SCORES_CTES}
         SELECT
             rs.rank,
             aiw.agent_id,
@@ -900,13 +973,15 @@ async def get_evaluation_set_leaderboard_agents(
             aiw.created_at,
             aiw.disqualified
         FROM agents_in_window aiw
-        LEFT JOIN ranked_scores rs ON rs.agent_id = aiw.agent_id
+        LEFT JOIN ranked_scores rs
+            ON rs.agent_id = aiw.agent_id
+           AND rs.set_id = aiw.set_id
         LEFT JOIN approved_agents aa
             ON aa.agent_id = aiw.agent_id
-           AND aa.set_id = $1
+           AND aa.set_id = aiw.set_id
         LEFT JOIN agents baseline
             ON baseline.agent_id = aa.baseline_agent_id
-           AND (baseline.set_id IS NULL OR baseline.set_id = $1)
+           AND (baseline.set_id IS NULL OR baseline.set_id = aiw.set_id)
         ORDER BY
             rs.rank ASC NULLS LAST,
             rs.final_score DESC NULLS LAST,
@@ -928,7 +1003,8 @@ async def get_evaluation_set_leaderboard_summary(
 
     return await conn.fetchrow(
         f"""
-        WITH {_SQL_SET_WINDOW_CTE},
+        WITH {_SQL_SINGLE_TARGET_SET_CTE},
+        {_SQL_SET_WINDOW_CTE},
         {_sql_agents_in_window_cte("a.agent_id, a.name, a.version_num, a.created_at, a.status")},
         {_sql_validator_metrics_cte(include_validator_hotkeys=False)},
         {_sql_top_agent_for_summary()},
@@ -937,13 +1013,13 @@ async def get_evaluation_set_leaderboard_summary(
                 AVG(vm.average_cost_usd) AS average_agent_cost_usd,
                 AVG(vm.average_runtime_seconds) AS average_agent_runtime_seconds
             FROM validator_metrics vm
-            JOIN agents_in_window aa ON vm.agent_id = aa.agent_id
+            JOIN agents_in_window aa ON vm.agent_id = aa.agent_id AND vm.set_id = aa.set_id
             WHERE NOT aa.disqualified AND aa.status = 'finished'
         ),
         lowest_cost_agent AS (
             SELECT vm.agent_id, vm.average_cost_usd AS value
             FROM validator_metrics vm
-            JOIN agents_in_window aa ON vm.agent_id = aa.agent_id
+            JOIN agents_in_window aa ON vm.agent_id = aa.agent_id AND vm.set_id = aa.set_id
             WHERE NOT aa.disqualified AND aa.status = 'finished'
               AND vm.average_cost_usd IS NOT NULL
             ORDER BY vm.average_cost_usd ASC
@@ -952,7 +1028,7 @@ async def get_evaluation_set_leaderboard_summary(
         lowest_runtime_agent AS (
             SELECT vm.agent_id, vm.average_runtime_seconds AS value
             FROM validator_metrics vm
-            JOIN agents_in_window aa ON vm.agent_id = aa.agent_id
+            JOIN agents_in_window aa ON vm.agent_id = aa.agent_id AND vm.set_id = aa.set_id
             WHERE NOT aa.disqualified AND aa.status = 'finished'
               AND vm.average_runtime_seconds IS NOT NULL
             ORDER BY vm.average_runtime_seconds ASC
@@ -987,12 +1063,12 @@ async def get_approved_agents_for_set(
 ) -> list[asyncpg.Record]:
     return await conn.fetch(
         f"""
-        WITH
+        WITH {_SQL_SINGLE_TARGET_SET_CTE},
         approved_agent_ids AS (
-            SELECT aa.agent_id
-            FROM approved_agents aa
-            WHERE aa.set_id = $1
-              AND aa.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+            SELECT aa.agent_id, ts.set_id, ts.required_validator_count
+            FROM target_sets ts
+            JOIN approved_agents aa ON aa.set_id = ts.set_id
+            WHERE aa.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
         ),
         {_sql_validator_metrics_cte(include_validator_hotkeys=False, agent_filter_cte="approved_agent_ids")}
         -- agent_scores has one row per agent; set_id tracks the most recent set.
@@ -1027,7 +1103,9 @@ async def get_approved_agents_for_set(
         LEFT JOIN agents baseline
             ON baseline.agent_id = aa.baseline_agent_id
            AND (baseline.set_id IS NULL OR baseline.set_id = $1)
-        LEFT JOIN validator_metrics vm ON vm.agent_id = aa.agent_id
+        LEFT JOIN validator_metrics vm
+            ON vm.agent_id = aa.agent_id
+           AND vm.set_id = aa.set_id
         WHERE aa.set_id = $1
           AND (a.set_id IS NULL OR a.set_id = aa.set_id)
           AND aa.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
@@ -1042,4 +1120,130 @@ async def get_approved_agents_for_set(
         """,
         set_id,
         required_validator_count,
+    )
+
+
+# The set an agent competes in, resolved the same way AGENT_PUBLIC_JOINS resolves it in
+# queries/agent.py. An agent belongs to exactly one set, so this is a single value per agent.
+_SQL_COLDKEY_AGENTS_CTE = """\
+coldkey_agents AS (
+    SELECT a.agent_id, cc.set_id
+    FROM agents a
+    CROSS JOIN LATERAL (
+        SELECT COALESCE(
+            a.set_id,
+            (
+                SELECT aa.set_id
+                FROM approved_agents aa
+                WHERE aa.agent_id = a.agent_id
+                ORDER BY aa.set_id DESC
+                LIMIT 1
+            ),
+            (
+                SELECT afr.set_id
+                FROM agent_final_review_statuses afr
+                WHERE afr.agent_id = a.agent_id
+                ORDER BY afr.updated_at DESC, afr.set_id DESC
+                LIMIT 1
+            ),
+            (SELECT ass.set_id FROM agent_scores ass WHERE ass.agent_id = a.agent_id),
+            (SELECT MAX(e.set_id) FROM evaluations e WHERE e.agent_id = a.agent_id)
+        ) AS set_id
+    ) cc
+    WHERE a.miner_coldkey = $1
+)"""
+
+
+@db_operation
+async def get_public_agents_with_rank_by_miner_coldkey(
+    conn: DatabaseConnection,
+    miner_coldkey: str,
+    default_required_validator_count: int,
+    earliest_supported_set_id: int = EARLIEST_SET_ID_WITH_GOOD_DATA,
+) -> list[asyncpg.Record]:
+    """All agents stamped with this coldkey, each ranked within its own competition set.
+
+    Rows with a NULL coldkey are excluded — miner_coldkey was added 2026-07-10
+    without backfill, so agents uploaded before then (and dev uploads) won't appear.
+
+    Ranking reuses the leaderboard's own CTEs over every set this coldkey competed in,
+    so a rank here always equals the one /evaluation-sets/{set_id}/leaderboard reports.
+    Ranks are computed across all agents in each set; the coldkey filter is applied only
+    in the final SELECT, after ranking.
+
+    Agents whose set predates ``earliest_supported_set_id``, or that resolve to no set at
+    all, are still returned: they keep the score agent_scores holds for them and come back
+    with a NULL rank, matching the leaderboard, which does not serve those sets.
+    """
+    return await conn.fetch(
+        f"""
+        WITH {_SQL_COLDKEY_AGENTS_CTE},
+        target_sets AS (
+            SELECT DISTINCT
+                ck.set_id,
+                COALESCE(c.required_validator_count, $2::integer) AS required_validator_count
+            FROM coldkey_agents ck
+            LEFT JOIN competitions c ON c.set_id = ck.set_id
+            WHERE ck.set_id IS NOT NULL
+              AND ck.set_id >= $3::integer
+        ),
+        {_SQL_SET_WINDOW_CTE},
+        {_sql_agents_in_window_cte("a.agent_id, a.created_at, a.status::text, a.miner_coldkey")},
+        {_sql_validator_metrics_cte(include_validator_hotkeys=True)},
+        {_SQL_RANKED_SCORES_CTES}
+        SELECT
+            a.agent_id,
+            a.miner_hotkey,
+            a.miner_coldkey,
+            a.name,
+            a.version_num,
+            a.status,
+            a.created_at,
+            (a.set_id IS NULL) AS legacy_membership,
+            ck.set_id,
+            rs.rank,
+            COALESCE(rs.final_score, ass.final_score) AS final_score,
+            COALESCE(rs.validator_count, ass.validator_count) AS validator_count,
+            rs.average_cost_usd,
+            rs.average_runtime_seconds,
+            COALESCE(rs.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys,
+            COALESCE(aiw.disqualified, false) AS disqualified,
+            COALESCE(aiw.approval_review_status, review.approval_review_status)
+                AS approval_review_status,
+            (aa.agent_id IS NOT NULL) AS approved,
+            aa.performance_delta,
+            aa.cost_delta,
+            aa.relative_improvement_units,
+            aa.time_multiplier,
+            aa.initial_reward_score,
+            aa.approved_at,
+            baseline.agent_id AS baseline_agent_id,
+            baseline.name AS baseline_agent_name,
+            baseline.version_num AS baseline_agent_version_num
+        FROM agents a
+        JOIN coldkey_agents ck ON ck.agent_id = a.agent_id
+        LEFT JOIN agents_in_window aiw
+            ON aiw.agent_id = a.agent_id
+           AND aiw.set_id = ck.set_id
+        LEFT JOIN ranked_scores rs
+            ON rs.agent_id = a.agent_id
+           AND rs.set_id = ck.set_id
+        LEFT JOIN agent_scores ass
+            ON ass.agent_id = a.agent_id
+           AND ass.set_id = ck.set_id
+        LEFT JOIN approved_agents aa
+            ON aa.agent_id = a.agent_id
+           AND aa.set_id = ck.set_id
+        LEFT JOIN agent_final_review_statuses review
+            ON review.agent_id = a.agent_id
+           AND review.set_id = ck.set_id
+        LEFT JOIN agents baseline
+            ON baseline.agent_id = aa.baseline_agent_id
+           AND (baseline.set_id IS NULL OR baseline.set_id = ck.set_id)
+        WHERE a.miner_coldkey = $1
+        ORDER BY a.miner_hotkey, a.created_at DESC, a.agent_id
+        """,
+        miner_coldkey,
+        default_required_validator_count,
+        earliest_supported_set_id,
     )

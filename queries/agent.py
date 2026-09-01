@@ -1393,24 +1393,3 @@ async def get_pending_work_counts(conn: DatabaseConnection) -> dict[str, int]:
         "screener_1_pending": row["screener_1_pending"],
         "screener_2_pending": row["screener_2_pending"],
     }
-
-
-@db_operation
-async def get_all_public_agents_by_miner_coldkey(conn: DatabaseConnection, miner_coldkey: str) -> list[PublicAgent]:
-    """All agents stamped with this coldkey at upload time.
-
-    Rows with a NULL coldkey are excluded — miner_coldkey was added 2026-07-10
-    without backfill, so agents uploaded before then (and dev uploads) won't appear.
-    """
-    result = await conn.fetch(
-        f"""
-        SELECT
-            {AGENT_PUBLIC_SELECT_COLUMNS}
-        FROM agents a
-        {AGENT_PUBLIC_JOINS}
-        WHERE a.miner_coldkey = $1
-        ORDER BY a.miner_hotkey, a.created_at DESC, a.agent_id
-        """,
-        miner_coldkey,
-    )
-    return [PublicAgent(**agent) for agent in result]
