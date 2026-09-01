@@ -23,6 +23,7 @@ from queries.agent import (
     get_code_hiding_score_cutoff,
     get_latest_public_agent_for_miner_hotkey,
     get_public_agent_by_id,
+    get_public_agent_rows_by_miner_coldkey,
     get_top_agents,
 )
 from queries.competition import (
@@ -32,7 +33,7 @@ from queries.competition import (
 )
 from queries.evaluation import get_approved_leader_ranking_for_set, get_evaluations_for_agent_id
 from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
-from queries.evaluation_set import get_public_agents_with_rank_by_miner_coldkey
+from queries.evaluation_set import get_evaluation_set_leaderboard_agents
 from queries.statistics import (
     PerfectlySolvedOverTime,
     ProblemSetCreationTime,
@@ -127,6 +128,32 @@ async def all_agents_by_hotkey(miner_hotkey: str, set_id: int | None = None) -> 
     return agents
 
 
+# Leaderboard fields the per-set query owns. final_score and validator_count are
+# included because the leaderboard adds tentative scores for agents still evaluating,
+# which agent_scores has no row for yet.
+_LEADERBOARD_FIELDS = (
+    "rank",
+    "final_score",
+    "validator_count",
+    "average_cost_usd",
+    "average_runtime_seconds",
+    "validator_hotkeys",
+    "disqualified",
+)
+
+
+async def _leaderboard_rows_by_agent_id(set_id: int) -> dict[UUID, dict]:
+    """The set's leaderboard, keyed by agent, or empty if the set is not public."""
+    context = await get_public_evaluation_set_context(set_id)
+    if context is None:
+        return {}
+    rows = await get_evaluation_set_leaderboard_agents(set_id, context.required_validator_count)
+    return {row["agent_id"]: dict(row) for row in rows}
+
+
+_cached_leaderboard_rows_by_agent_id = ttl_cache(ttl_seconds=60)(_leaderboard_rows_by_agent_id)
+
+
 # /retrieval/agents-by-coldkey?miner_coldkey=
 @router.get("/agents-by-coldkey")
 @ttl_cache(ttl_seconds=60)
@@ -134,16 +161,28 @@ async def agents_by_coldkey(miner_coldkey: str) -> dict[str, List[PublicAgent]]:
     """Returns the PublicAgent model shape, similar to /retrieval/all-agents-by-hotkey.
     Grouping: hotkeys sorted, agents newest-first within each.
 
-    Each agent carries the rank and validator metrics of its own competition set, computed
-    by the same query the public leaderboard uses.
+    Each agent also carries the rank and validator metrics of its own competition,
+    taken from that competition's leaderboard so the two always agree. Rank is a
+    position among every agent in a set, so the leaderboards are fetched whole, one
+    per set the coldkey competed in, and merged in by agent. Agents whose set has no
+    public leaderboard keep the score agent_scores holds for them and no rank.
     """
-    rows = await get_public_agents_with_rank_by_miner_coldkey(
-        miner_coldkey=miner_coldkey,
-        default_required_validator_count=config.NUM_EVALS_PER_AGENT,
+    rows = [dict(row) for row in await get_public_agent_rows_by_miner_coldkey(miner_coldkey)]
+
+    set_ids = sorted({row["set_id"] for row in rows if row.get("set_id") is not None})
+    leaderboards = dict(
+        zip(
+            set_ids,
+            await asyncio.gather(*(_cached_leaderboard_rows_by_agent_id(set_id) for set_id in set_ids)),
+        )
     )
+
     grouped: dict[str, List[PublicAgent]] = {}
     for row in rows:
-        agent = PublicAgent(**dict(row))
+        leaderboard_row = leaderboards.get(row.get("set_id"), {}).get(row["agent_id"])
+        if leaderboard_row is not None:
+            row.update({field: leaderboard_row[field] for field in _LEADERBOARD_FIELDS})
+        agent = PublicAgent(**row)
         grouped.setdefault(agent.miner_hotkey, []).append(agent)
     return grouped
 
