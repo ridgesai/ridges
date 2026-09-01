@@ -11,7 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 from models.openrouter import OpenRouterRuntimeConfig
-from ridges_harbor._stdlib_contract import HARBOR_RUNNER_ERROR_FILENAME
+from ridges_harbor._stdlib_contract import HARBOR_RUNNER_ERROR_FILENAME, PATCH_FILENAME
 from ridges_harbor.digest import compute_task_digest
 from ridges_harbor.docker_runtime import (
     TrialHook,
@@ -49,17 +49,33 @@ def _resolve_separate_verifier(task_dir: Path) -> bool:
 
     Docker rejects a verifier environment without a build definition deep inside
     Harbor, while Kubernetes only notices in a BuildKit init container. Checking
-    on the host makes both backends refuse the same archives.
+    on the host makes both backends refuse the same archives. Separate tasks must
+    also declare the published patch as their sole task-level artifact.
     """
+    from harbor.constants import MAIN_SERVICE_NAME
     from harbor.environments.definition import has_agent_environment_definition
+    from harbor.models.task.artifacts import effective_artifact_service, normalize_artifact_entries
     from harbor.models.task.verifier_mode import (
         resolve_effective_verifier_env_config,
         task_has_any_separate_verifier,
     )
+    from harbor.models.trial.paths import EnvironmentPaths
 
     task = _load_single_step_task(task_dir)
     if not task_has_any_separate_verifier(task.config):
         return False
+
+    patch_artifact = (EnvironmentPaths.agent_dir / PATCH_FILENAME).as_posix()
+    artifacts = normalize_artifact_entries(task.config.artifacts)
+    if (
+        len(artifacts) != 1
+        or artifacts[0].source != patch_artifact
+        or effective_artifact_service(artifacts[0]) != MAIN_SERVICE_NAME
+    ):
+        raise RuntimeError(
+            f"Separate-verifier task {task_dir} must declare exactly one task-level artifact: "
+            f"{patch_artifact!r} from the main service"
+        )
 
     verifier_env = resolve_effective_verifier_env_config(task.config, None)
     docker_image = verifier_env.docker_image if verifier_env is not None else None
@@ -345,8 +361,6 @@ async def _run_task_dir(
         )
         enable_verifier_egress = build_enable_verifier_egress_hook(ridges_trial_id=ridges_trial_id)
 
-    job_artifacts = ["/logs/agent/patch.diff"] if separate_verifier else []
-
     job_config = JobConfig(
         job_name=resolved_job_name,
         jobs_dir=results_dir,
@@ -357,7 +371,7 @@ async def _run_task_dir(
         retry=RetryConfig(max_retries=0),
         environment=environment_config,
         verifier=VerifierConfig(max_timeout_sec=effective_verifier_timeout),
-        artifacts=job_artifacts,
+        artifacts=[],
         environment_build_timeout_multiplier=environment_build_timeout_multiplier,
         tasks=[TaskConfig(path=task_dir)],
         agents=[
