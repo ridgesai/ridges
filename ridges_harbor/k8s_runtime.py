@@ -15,6 +15,8 @@ from typing import Any, Awaitable, Callable
 
 from kubernetes import client as k8s_client
 
+from ridges_harbor.k8s_environment import sanitize_kubernetes_resource_name
+
 logger = logging.getLogger(__name__)
 
 TrialHook = Callable[[Any], Awaitable[None]]
@@ -42,7 +44,7 @@ def build_k8s_verifier_egress_hook(
     """
 
     async def enable_verifier_egress(event: Any) -> None:
-        pod_name = f"{event.trial_name}__env".lower().replace("_", "-")[:63]
+        pod_name = sanitize_kubernetes_resource_name(f"{event.trial_name}__env")
 
         # 1. Flip the NetworkPolicy label.
         await asyncio.to_thread(

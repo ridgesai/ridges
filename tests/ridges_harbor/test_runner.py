@@ -277,15 +277,14 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
 
 @pytest.mark.anyio
 async def test_run_task_dir_uses_loopback_proxy_in_kubernetes(tmp_path: Path, monkeypatch) -> None:
-    from kubernetes import client as k8s_client
-    from kubernetes import config as k8s_config
-
     from validator import config as validator_config
 
     _install_fake_harbor(monkeypatch)
     monkeypatch.setenv("RIDGES_ENVIRONMENT_TYPE", "kubernetes")
-    monkeypatch.setattr(k8s_config, "load_incluster_config", lambda: None)
-    monkeypatch.setattr(k8s_client, "CoreV1Api", lambda: object())
+    monkeypatch.setattr(
+        "ridges_harbor.k8s_environment.build_isolated_k8s_apis",
+        lambda _context=None: (object(), object()),
+    )
     # These are absent if another test imported validator.config in Docker mode.
     monkeypatch.setattr(validator_config, "K8S_MEMORY_REQUEST_FRACTION", 0.25, raising=False)
     monkeypatch.setattr(validator_config, "K8S_CPU_REQUEST_FRACTION", 0.25, raising=False)
@@ -329,16 +328,15 @@ async def test_run_task_dir_prebuilds_kubernetes_verifier_image_for_separate_mod
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    from kubernetes import client as k8s_client
-    from kubernetes import config as k8s_config
-
     from validator import config as validator_config
 
     _install_fake_harbor(monkeypatch)
     monkeypatch.setattr(runner_module, "_resolve_separate_verifier", lambda _task_dir: True)
     monkeypatch.setenv("RIDGES_ENVIRONMENT_TYPE", "kubernetes")
-    monkeypatch.setattr(k8s_config, "load_incluster_config", lambda: None)
-    monkeypatch.setattr(k8s_client, "CoreV1Api", lambda: object())
+    monkeypatch.setattr(
+        "ridges_harbor.k8s_environment.build_isolated_k8s_apis",
+        lambda _context=None: (object(), object()),
+    )
     monkeypatch.setattr(validator_config, "K8S_MEMORY_REQUEST_FRACTION", 0.25, raising=False)
     monkeypatch.setattr(validator_config, "K8S_CPU_REQUEST_FRACTION", 0.25, raising=False)
     monkeypatch.setattr(validator_config, "K8S_MEMORY_LIMIT_MULTIPLIER", 1.0, raising=False)

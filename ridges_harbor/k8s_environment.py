@@ -31,6 +31,7 @@ import re
 import shlex
 import ssl
 import tarfile
+import time
 import urllib.request
 from pathlib import Path
 from typing import Any, Sequence
@@ -74,6 +75,60 @@ MAX_BUILD_JOB_NAME_LENGTH = 59
 DEFAULT_SIDECAR_MEMORY_REQUEST_MI = 512
 DEFAULT_SIDECAR_MEMORY_LIMIT_MI = 2048
 DEFAULT_SIDECAR_CPU_REQUEST = "250m"
+
+# RFC-1123 labels: lowercase alphanumerics and ``-``, at most 63 characters,
+# starting and ending with an alphanumeric. Pod names and label values both
+# have to satisfy this.
+_KUBERNETES_NAME_MAX_LENGTH = 63
+_KUBERNETES_NAME_ILLEGAL_RE = re.compile(r"[^a-z0-9]+")
+
+#: How often to ping an otherwise-silent exec stream to keep intermediaries
+#: from reaping it as idle.
+_KUBERNETES_EXEC_STREAM_PING_INTERVAL_SEC = 30.0
+
+_FATAL_WAITING_REASONS = frozenset({"ImagePullBackOff", "ErrImagePull", "CrashLoopBackOff"})
+
+
+def sanitize_kubernetes_resource_name(name: str) -> str:
+    """Coerce *name* into an RFC-1123 label the API server accepts.
+
+    Over-long names keep a hash suffix so that two names sharing a 63-char
+    prefix stay distinct instead of colliding on the same pod.
+    """
+    sanitized = _KUBERNETES_NAME_ILLEGAL_RE.sub("-", name.lower()).strip("-")
+    if not sanitized:
+        return "ridges"
+    if len(sanitized) <= _KUBERNETES_NAME_MAX_LENGTH:
+        return sanitized
+
+    digest = hashlib.sha256(name.encode()).hexdigest()[:8]
+    prefix_length = _KUBERNETES_NAME_MAX_LENGTH - len(digest) - 1
+    prefix = sanitized[:prefix_length].rstrip("-")
+    return f"{prefix}-{digest}"
+
+
+def build_isolated_k8s_apis(
+    kubeconfig_context: str | None = None,
+) -> tuple["k8s_client.CoreV1Api", "k8s_client.BatchV1Api"]:
+    """Return Core and Batch clients that share one non-global ApiClient.
+
+    Credentials land in a fresh ``Configuration`` instead of the SDK's global
+    default, so concurrent trials cannot observe a half-written kubeconfig.
+    Each environment also needs its own ``ApiClient``: the kubernetes
+    ``stream()`` helper monkey-patches ``ApiClient.request`` for the duration
+    of an exec websocket, which corrupts concurrent REST calls issued through
+    a shared client.
+    """
+    configuration = k8s_client.Configuration()
+    try:
+        k8s_config.load_incluster_config(client_configuration=configuration)
+    except k8s_config.ConfigException:
+        k8s_config.load_kube_config(
+            context=kubeconfig_context,
+            client_configuration=configuration,
+        )
+    api_client = k8s_client.ApiClient(configuration)
+    return k8s_client.CoreV1Api(api_client), k8s_client.BatchV1Api(api_client)
 
 
 def _environment_image_role(session_id: str) -> str:
@@ -183,12 +238,14 @@ class KubernetesEnvironment(BaseEnvironment):
         else:
             self.memory_limit = None
 
-        # Pod name: lowercase, no underscores, max 63 chars
-        self.pod_name = session_id.lower().replace("_", "-")[:63]
+        # Pod name: RFC-1123 label, hash-suffixed when over 63 chars.
+        self.pod_name = sanitize_kubernetes_resource_name(session_id)
 
-        # Kubernetes client – lazily initialised
+        # Kubernetes client – lazily initialised. Core and Batch share one
+        # isolated ApiClient so exec stream() cannot corrupt sibling REST calls.
         self._core_api: k8s_client.CoreV1Api | None = None
         self._batch_api: k8s_client.BatchV1Api | None = None
+        self._api_client: Any | None = None
 
     # ------------------------------------------------------------------
     # BaseEnvironment abstract properties
@@ -214,17 +271,25 @@ class KubernetesEnvironment(BaseEnvironment):
         """No local file validation needed – the image lives in the registry."""
 
     def _init_k8s_client(self) -> None:
-        """Load kubeconfig (or in-cluster config) and create API clients."""
-        try:
-            k8s_config.load_incluster_config()
-        except k8s_config.ConfigException:
-            k8s_config.load_kube_config(context=self.kubeconfig_context)
-        self._core_api = k8s_client.CoreV1Api()
-        self._batch_api = k8s_client.BatchV1Api()
+        """Load kubeconfig (or in-cluster config) into an isolated ApiClient."""
+        self._core_api, self._batch_api = build_isolated_k8s_apis(self.kubeconfig_context)
+        self._api_client = self._core_api.api_client
 
     async def _ensure_client(self) -> None:
         if self._core_api is None:
             await asyncio.to_thread(self._init_k8s_client)
+
+    def _release_client(self) -> None:
+        api_client = self._api_client
+        self._core_api = None
+        self._batch_api = None
+        self._api_client = None
+        if api_client is None:
+            return
+        try:
+            api_client.close()
+        except Exception:
+            pass
 
     @property
     def _api(self) -> k8s_client.CoreV1Api:
@@ -245,7 +310,7 @@ class KubernetesEnvironment(BaseEnvironment):
     def _build_labels(self) -> dict[str, str]:
         base = {
             "app": "ridges-eval",
-            "session": self.session_id[:63],
+            "session": sanitize_kubernetes_resource_name(self.session_id),
         }
         base.update(self._extra_labels)
         return base
@@ -361,14 +426,17 @@ class KubernetesEnvironment(BaseEnvironment):
             )
 
     async def stop(self, delete: bool = True) -> None:
-        """Delete the Pod (optionally)."""
+        """Delete the Pod (optionally) and release the isolated API client."""
         if self._core_api is None:
             return
-        if delete:
-            try:
-                await self._delete_pod_and_wait()
-            except RuntimeError:
-                self.logger.warning(f"Pod {self.pod_name} did not terminate cleanly during stop()")
+        try:
+            if delete:
+                try:
+                    await self._delete_pod_and_wait()
+                except RuntimeError:
+                    self.logger.warning(f"Pod {self.pod_name} did not terminate cleanly during stop()")
+        finally:
+            self._release_client()
 
     async def exec(
         self,
@@ -436,14 +504,7 @@ class KubernetesEnvironment(BaseEnvironment):
                 stdout, stderr = await asyncio.to_thread(self._read_exec_output, resp)
 
             resp.run_forever(timeout=0)
-            try:
-                return_code = resp.returncode
-            except (TypeError, ValueError, KeyError, IndexError) as exc:
-                raise ExecTransportError(
-                    f"Exec stream to Pod {self.pod_name} returned a malformed exit status: {exc!r}"
-                ) from exc
-            if return_code is None:
-                raise ExecTransportError(f"Exec stream to Pod {self.pod_name} closed without an exit status")
+            return_code = self._exec_stream_return_code(resp)
             return ExecResult(stdout=stdout, stderr=stderr, return_code=return_code)
 
         except ExecTransportError:
@@ -595,21 +656,55 @@ class KubernetesEnvironment(BaseEnvironment):
     # runs.
     # ------------------------------------------------------------------
 
+    def _exec_stream_return_code(self, resp: Any) -> int:
+        """The command's exit status, or raise if the stream never delivered one."""
+        try:
+            return_code = resp.returncode
+        except (TypeError, ValueError, KeyError, IndexError) as exc:
+            raise ExecTransportError(
+                f"Exec stream to Pod {self.pod_name} returned a malformed exit status: {exc!r}"
+            ) from exc
+        if return_code is None:
+            raise ExecTransportError(f"Exec stream to Pod {self.pod_name} closed without an exit status")
+        return return_code
+
+    def _ping_exec_stream(self, resp: Any) -> None:
+        """Best-effort websocket ping; raise only if the command has no exit status yet."""
+        sock = getattr(resp, "sock", None)
+        ping = getattr(sock, "ping", None)
+        if ping is None:
+            return
+        try:
+            ping()
+        except Exception as exc:
+            try:
+                self._exec_stream_return_code(resp)
+            except ExecTransportError:
+                raise ExecTransportError(
+                    f"Kubernetes exec stream keepalive ping failed for Pod {self.pod_name}"
+                ) from exc
+
     def _read_exec_output(self, resp: Any) -> tuple[str, str]:
         stdout = ""
         stderr = ""
+        last_ping = time.monotonic()
         while resp.is_open():
             resp.update(timeout=1)
             if resp.peek_stdout():
                 stdout += resp.read_stdout()
             if resp.peek_stderr():
                 stderr += resp.read_stderr()
+            now = time.monotonic()
+            if now - last_ping >= _KUBERNETES_EXEC_STREAM_PING_INTERVAL_SEC and resp.is_open():
+                self._ping_exec_stream(resp)
+                last_ping = now
         return stdout, stderr
 
     def _read_tar_stream(self, resp: Any) -> tuple[bytes, str]:
         """Blocking: drain a WebSocket exec stream, returning (stdout_bytes, stderr_text)."""
         tar_data = b""
         stderr_data = ""
+        last_ping = time.monotonic()
         while resp.is_open():
             resp.update(timeout=1)
             if resp.peek_stdout():
@@ -617,6 +712,10 @@ class KubernetesEnvironment(BaseEnvironment):
                 tar_data += chunk.encode("utf-8", errors="surrogateescape") if isinstance(chunk, str) else chunk
             if resp.peek_stderr():
                 stderr_data += resp.read_stderr()
+            now = time.monotonic()
+            if now - last_ping >= _KUBERNETES_EXEC_STREAM_PING_INTERVAL_SEC and resp.is_open():
+                self._ping_exec_stream(resp)
+                last_ping = now
         return tar_data, stderr_data
 
     def _write_tar_stream(self, resp: Any, payload: bytes) -> None:
@@ -657,8 +756,63 @@ class KubernetesEnvironment(BaseEnvironment):
         with tarfile.open(fileobj=tar_buffer, mode="r") as tar:
             tar.extractall(path=str(target_dir), filter="data")
 
+    @staticmethod
+    def _iter_container_statuses(pod: Any) -> list[tuple[str, Any]]:
+        status = pod.status
+        if status is None:
+            return []
+        items: list[tuple[str, Any]] = [("container", cs) for cs in (status.container_statuses or [])]
+        items.extend(("init container", cs) for cs in (getattr(status, "init_container_statuses", None) or []))
+        return items
+
+    def _raise_if_fatal_container_wait(self, kind: str, cs: Any) -> None:
+        waiting = cs.state.waiting if cs.state else None
+        if waiting is None or waiting.reason not in _FATAL_WAITING_REASONS:
+            return
+        name = getattr(cs, "name", "unknown")
+        message = waiting.message or waiting.reason
+        if waiting.reason in ("ImagePullBackOff", "ErrImagePull"):
+            raise RuntimeError(f"Failed to pull image for {kind} {name!r} in Pod {self.pod_name}: {message}")
+        raise RuntimeError(f"{kind.title()} {name!r} in Pod {self.pod_name} failed during startup: {message}")
+
+    async def _check_regular_containers_execable(self) -> None:
+        """Raise if the pod or a regular container can no longer accept exec.
+
+        One-shot init containers (iptables-init) terminate with exit 0 before
+        the pod is Running; that is success, not a dead sandbox.
+        """
+        try:
+            pod = await asyncio.to_thread(
+                self._api.read_namespaced_pod,
+                name=self.pod_name,
+                namespace=self.namespace,
+            )
+        except ApiException:
+            return
+
+        phase = pod.status.phase if pod.status else None
+        if phase in ("Failed", "Succeeded"):
+            raise RuntimeError(f"Pod {self.pod_name} is in terminal phase '{phase}' and cannot accept exec.")
+
+        for kind, cs in self._iter_container_statuses(pod):
+            if kind == "init container":
+                continue
+            terminated = None
+            if cs.state and cs.state.terminated:
+                terminated = cs.state.terminated
+            elif cs.last_state and cs.last_state.terminated:
+                terminated = cs.last_state.terminated
+            if terminated is not None:
+                raise RuntimeError(
+                    f"Container {cs.name!r} in pod {self.pod_name} has terminated "
+                    f"(reason={terminated.reason or ''!r}, "
+                    f"exit_code={terminated.exit_code}). "
+                    "Cannot exec into dead container."
+                )
+
     async def _wait_for_container_exec_ready(self, max_attempts: int = 60) -> None:
         for attempt in range(max_attempts):
+            await self._check_regular_containers_execable()
             try:
                 resp = await asyncio.to_thread(
                     stream,
@@ -699,22 +853,20 @@ class KubernetesEnvironment(BaseEnvironment):
                     namespace=self.namespace,
                 )
                 phase = pod.status.phase
-                container_statuses = pod.status.container_statuses or []
-                for container_status in container_statuses:
-                    if container_status.state.terminated:
+                for kind, cs in self._iter_container_statuses(pod):
+                    self._raise_if_fatal_container_wait(kind, cs)
+                    if kind == "init container" and cs.state and cs.state.terminated:
+                        exit_code = cs.state.terminated.exit_code
+                        if exit_code not in (0, None):
+                            raise RuntimeError(
+                                f"Init container {cs.name!r} in Pod {self.pod_name} exited with code {exit_code}"
+                            )
+                    if kind != "init container" and cs.state and cs.state.terminated:
                         raise RuntimeError(
                             f"Pod {self.pod_name} has a terminated required container: {self._pod_failure_summary(pod)}"
                         )
-
-                    if container_status.state.waiting and container_status.state.waiting.reason in (
-                        "ImagePullBackOff",
-                        "ErrImagePull",
-                    ):
-                        raise RuntimeError(
-                            f"Failed to pull image for Pod {self.pod_name}: {container_status.state.waiting.message}"
-                        )
                 if phase == "Running" and pod.status.container_statuses:
-                    if all(container_status.ready for container_status in container_statuses):
+                    if all(c.ready for c in pod.status.container_statuses):
                         self.logger.debug(f"Pod {self.pod_name} is ready")
                         return
                 elif phase in ("Failed", "Unknown", "Error"):
@@ -773,6 +925,11 @@ class KubernetesEnvironment(BaseEnvironment):
                     parts.append(f"container {cs.name} waiting: {cs.state.waiting.reason}")
                 elif cs.state.terminated:
                     parts.append(f"container {cs.name} terminated: exit={cs.state.terminated.exit_code}")
+        for cs in getattr(pod.status, "init_container_statuses", None) or []:
+            if cs.state.waiting:
+                parts.append(f"init container {cs.name} waiting: {cs.state.waiting.reason}")
+            elif cs.state.terminated:
+                parts.append(f"init container {cs.name} terminated: exit={cs.state.terminated.exit_code}")
         return "; ".join(parts) or "unknown"
 
 
@@ -947,21 +1104,24 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
 
     async def stop(self, delete: bool = True) -> None:
         """Download proxy data from the Pod, then delete it."""
-        if self.image_role == AGENT_IMAGE_ROLE and self.proxy_data_dir is not None and self._core_api is not None:
-            try:
-                self.logger.debug(f"Downloading proxy data from Pod {self.pod_name}:/proxy-data")
-                await self.download_dir("/proxy-data", self.proxy_data_dir)
-            except Exception as exc:
-                self.logger.warning(f"Failed to download proxy data from Pod {self.pod_name}: {exc}")
-        if (
-            delete
-            and self.image_role == AGENT_IMAGE_ROLE
-            and self.verifier_image_required
-            and self._core_api is not None
-        ):
-            await self._delete_pod_and_wait(wait_for_absence=False)
-            return
-        await super().stop(delete=delete)
+        try:
+            if self.image_role == AGENT_IMAGE_ROLE and self.proxy_data_dir is not None and self._core_api is not None:
+                try:
+                    self.logger.debug(f"Downloading proxy data from Pod {self.pod_name}:/proxy-data")
+                    await self.download_dir("/proxy-data", self.proxy_data_dir)
+                except Exception as exc:
+                    self.logger.warning(f"Failed to download proxy data from Pod {self.pod_name}: {exc}")
+            if (
+                delete
+                and self.image_role == AGENT_IMAGE_ROLE
+                and self.verifier_image_required
+                and self._core_api is not None
+            ):
+                await self._delete_pod_and_wait(wait_for_absence=False)
+                return
+            await super().stop(delete=delete)
+        finally:
+            self._release_client()
 
     def _pod_ready_timeout_sec(self) -> int:
         return 1200 if self._compose_sidecars() else super()._pod_ready_timeout_sec()
@@ -1844,11 +2004,7 @@ def _init_standalone_k8s_clients(
 ) -> tuple["k8s_client.CoreV1Api", "k8s_client.BatchV1Api"]:
     """Load kubeconfig (or in-cluster config) and create API clients, outside
     the context of any particular Harbor environment instance."""
-    try:
-        k8s_config.load_incluster_config()
-    except k8s_config.ConfigException:
-        k8s_config.load_kube_config(context=kubeconfig_context)
-    return k8s_client.CoreV1Api(), k8s_client.BatchV1Api()
+    return build_isolated_k8s_apis(kubeconfig_context)
 
 
 def _archive_file(archive_bytes: bytes, relative_path: str) -> bytes | None:

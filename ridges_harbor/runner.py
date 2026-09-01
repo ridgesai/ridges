@@ -258,9 +258,6 @@ async def _run_task_dir(
         # The proxy sidecar shares the pod network namespace and listens on 8080.
         agent_env["SANDBOX_PROXY_URL"] = "http://127.0.0.1:8080"
 
-        from kubernetes import client as k8s_client_mod
-        from kubernetes import config as k8s_config_mod
-
         from validator.config import (
             K8S_BUILD_REGISTRY,
             K8S_BUILD_REGISTRY_INSECURE,
@@ -282,6 +279,7 @@ async def _run_task_dir(
         K8S_OWNER_POD_NAME = os.getenv("MY_POD_NAME")
         K8S_OWNER_POD_UID = os.getenv("MY_POD_UID")
 
+        from ridges_harbor.k8s_environment import build_isolated_k8s_apis
         from ridges_harbor.k8s_runtime import build_k8s_verifier_egress_hook
 
         digest_tag = task_digest.split(":")[1][:12]
@@ -326,12 +324,7 @@ async def _run_task_dir(
             },
         )
 
-        # Build k8s client for the egress hook
-        try:
-            k8s_config_mod.load_incluster_config()
-        except k8s_config_mod.ConfigException:
-            k8s_config_mod.load_kube_config(context=K8S_CONTEXT)
-        core_api = k8s_client_mod.CoreV1Api()
+        core_api, _batch_api = build_isolated_k8s_apis(K8S_CONTEXT)
 
         enable_verifier_egress = build_k8s_verifier_egress_hook(
             namespace=K8S_NAMESPACE,
