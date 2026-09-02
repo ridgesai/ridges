@@ -1628,7 +1628,7 @@ async def test_overview_cache_classification_uses_fresh_competition_lifecycle(mo
 
 
 @pytest.mark.anyio
-async def test_problem_routes_use_explicit_or_compatibility_competition_without_draft_fallback():
+async def test_problem_routes_use_explicit_competition_without_draft_fallback():
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
         await conn.execute(
@@ -1640,10 +1640,8 @@ async def test_problem_routes_use_explicit_or_compatibility_competition_without_
         )
 
     explicit = await evaluation_sets_endpoint.evaluation_set_problems(set_id=1)
-    compatibility = await evaluation_sets_endpoint.evaluation_sets_all_latest_set_problems()
 
     assert [problem.problem_name for problem in explicit] == ["problem-a"]
-    assert compatibility == explicit
     with pytest.raises(HTTPException) as draft:
         await evaluation_sets_endpoint.resolve_explicit_set_id(2)
     assert draft.value.status_code == 404
