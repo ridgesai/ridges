@@ -40,6 +40,7 @@ from api.endpoints.validator_models import (
 )
 from db.models import InternalFlagName
 from models.agent import Agent, AgentStatus, PublicAgent
+from models.competition import CompetitionPolicy
 from models.evaluation import Evaluation, EvaluationStatus
 from models.evaluation_run import (
     EvaluationRun,
@@ -54,12 +55,12 @@ from models.openrouter import OpenRouterRuntimeConfig
 from models.validator import ConnectedValidatorInfo, ValidatorStatus
 from queries.agent import (
     get_agent_by_id,
-    get_next_agent_id_awaiting_evaluation_for_validator_hotkey,
+    get_evaluation_candidates_for_validator_hotkey,
     get_openrouter_secrets_for_agent_id,
-    get_top_agents,
 )
 from queries.approval import finish_agent_and_enqueue_approval
 from queries.banned_coldkey import is_agent_coldkey_banned
+from queries.competition import get_competition_policy
 from queries.evaluation import (
     create_new_evaluation_and_evaluation_runs,
     get_approved_leader_ranking_for_set,
@@ -67,7 +68,8 @@ from queries.evaluation import (
     get_evaluation_by_id,
     get_hydrated_evaluation_by_id,
     get_local_evaluation_score_upper_bound,
-    get_num_successful_validator_evaluations_for_agent_id,
+    get_num_successful_validator_evaluations_for_agent_in_set,
+    get_top_agent_score_for_set,
     get_validator_agent_score_for_set,
     set_unfinished_evaluation_runs_to_score_pruned,
     transition_agent_status_if_matches,
@@ -428,45 +430,56 @@ async def validator_request_evaluation(
     # TODO: .env
     try:
         async with DebugLock(lock, f"{validator.name} ({validator.hotkey}) for {lock_name}", timeout=60):
-            # Find the next agent awaiting an evaluation from this validator
-            agent_id = await get_next_agent_id_awaiting_evaluation_for_validator_hotkey(validator.hotkey)
-            if agent_id is None:
-                return None
+            candidate_batch = await get_evaluation_candidates_for_validator_hotkey(validator.hotkey)
+            for candidate in candidate_batch.candidates:
+                agent = await get_agent_by_id(candidate.agent_id)
+                if agent is None:
+                    logger.info(f"Skipping missing evaluation candidate {candidate.agent_id}")
+                    continue
 
-            agent = await get_agent_by_id(agent_id)
-            try:
-                agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
-            except Exception as exc:
-                logger.error(f"Failed to download agent code for {agent_id}: {exc}")
-                return None
+                try:
+                    agent_code = await download_text_file_from_s3(f"{candidate.agent_id}/agent.py")
+                except Exception as exc:
+                    logger.error(f"Failed to download agent code for {candidate.agent_id}: {exc}")
+                    continue
 
-            openrouter_config = None
+                openrouter_config = None
 
-            try:
-                openrouter_secrets = await get_openrouter_secrets_for_agent_id(agent_id)
-            except AgentKeyEncryptionConfigError as exc:
-                logger.error(
-                    f"OpenRouter secret decryption is unavailable for agent {agent_id} due to encryption "
-                    f"configuration: {exc}"
-                )
-                return None
-            except AgentKeyDecryptError as exc:
-                logger.error(f"OpenRouter secret unreadable for agent {agent_id}: {exc}")
-                return None
-            else:
-                if openrouter_secrets is not None:
-                    openrouter_config = OpenRouterRuntimeConfig(
-                        api_key=openrouter_secrets.runtime_api_key,
-                        management_key=openrouter_secrets.management_api_key,
-                        workspace_id=openrouter_secrets.workspace_id,
-                        expected_api_key_sha256=sha256_hex(openrouter_secrets.runtime_api_key),
+                try:
+                    openrouter_secrets = await get_openrouter_secrets_for_agent_id(candidate.agent_id)
+                except AgentKeyEncryptionConfigError as exc:
+                    logger.error(
+                        f"OpenRouter secret decryption is unavailable for agent {candidate.agent_id} due to "
+                        f"encryption configuration: {exc}"
                     )
+                    continue
 
-            # Create a new evaluation and evaluation runs for this agent & validator
-            evaluation_bundle = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
-            if evaluation_bundle is None:
+                except AgentKeyDecryptError as exc:
+                    logger.error(f"OpenRouter secret unreadable for agent {candidate.agent_id}: {exc}")
+                    continue
+
+                else:
+                    if openrouter_secrets is not None:
+                        openrouter_config = OpenRouterRuntimeConfig(
+                            api_key=openrouter_secrets.runtime_api_key,
+                            management_key=openrouter_secrets.management_api_key,
+                            workspace_id=openrouter_secrets.workspace_id,
+                            expected_api_key_sha256=sha256_hex(openrouter_secrets.runtime_api_key),
+                        )
+
+                evaluation_bundle = await create_new_evaluation_and_evaluation_runs(
+                    candidate,
+                    validator.hotkey,
+                    candidate_batch.observed_last_served_set_id,
+                )
+                if evaluation_bundle is None:
+                    continue
+
+                evaluation, evaluation_runs = evaluation_bundle
+                agent_id = candidate.agent_id
+                break
+            else:
                 return None
-            evaluation, evaluation_runs = evaluation_bundle
     except asyncio.TimeoutError:
         # We couldn't acquire the lock, just act as though there are no evaluations available
         # The validator will automatically retry in a few seconds
@@ -637,6 +650,21 @@ async def _get_score_bound_stop_decision(
     if agent.status != active_status:
         return None
 
+    if agent.set_id != evaluation.set_id:
+        logger.warning(
+            f"Skipping score-bound pruning for evaluation {evaluation.evaluation_id}: "
+            f"agent membership {agent.set_id} does not match set {evaluation.set_id}"
+        )
+        return None
+
+    policy = await get_competition_policy(evaluation.set_id)
+    if policy is None:
+        logger.warning(
+            f"Skipping score-bound pruning for evaluation {evaluation.evaluation_id}: "
+            f"competition {evaluation.set_id} has no policy"
+        )
+        return None
+
     stopped_status = _score_bound_stopped_status(evaluation.evaluation_set_group)
 
     match evaluation.evaluation_set_group:
@@ -644,7 +672,7 @@ async def _get_score_bound_stop_decision(
             return ScoreBoundStopDecision(
                 active_status=active_status,
                 stopped_status=stopped_status,
-                required_score=config.SCREENER_1_THRESHOLD,
+                required_score=policy.screener_1_threshold,
                 required_score_label="screener 1 threshold",
             )
 
@@ -652,7 +680,7 @@ async def _get_score_bound_stop_decision(
             return ScoreBoundStopDecision(
                 active_status=active_status,
                 stopped_status=stopped_status,
-                required_score=config.SCREENER_2_THRESHOLD,
+                required_score=policy.screener_2_threshold,
                 required_score_label="screener 2 threshold",
             )
 
@@ -660,7 +688,7 @@ async def _get_score_bound_stop_decision(
             leader_score = await get_approved_validator_leader_score_for_set(
                 evaluation.set_id,
                 evaluation.agent_id,
-                config.NUM_EVALS_PER_AGENT,
+                policy.required_validator_count,
             )
             if leader_score is None:
                 return None
@@ -1229,35 +1257,50 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
 
     hydrated_evaluation = await get_hydrated_evaluation_by_id(evaluation_id)
 
+    if hydrated_evaluation is None:
+        return
+
     # Transition agent state if this evaluation was successful
     if hydrated_evaluation.status == EvaluationStatus.success:
         agent = await get_agent_by_id(hydrated_evaluation.agent_id)
+        if agent is None or agent.set_id != hydrated_evaluation.set_id:
+            logger.error(
+                f"Cannot advance evaluation {evaluation_id}: agent membership does not match "
+                f"set {hydrated_evaluation.set_id}"
+            )
+            return
+
+        policy = await get_competition_policy(hydrated_evaluation.set_id)
+        if policy is None:
+            logger.error(
+                f"Cannot advance evaluation {evaluation_id}: competition {hydrated_evaluation.set_id} has no policy"
+            )
+            return
+
         new_agent_status = None
 
         match agent.status:
             case AgentStatus.screening_1:
-                if hydrated_evaluation.score >= config.SCREENER_1_THRESHOLD:
+                if hydrated_evaluation.score >= policy.screener_1_threshold:
                     new_agent_status = AgentStatus.screening_2
                 else:
                     new_agent_status = AgentStatus.failed_screening_1
 
             case AgentStatus.screening_2:
-                top_agents = await get_top_agents(number_of_agents=1)
-                top_score = (
-                    top_agents[0].competition_state.final_score
-                    if top_agents and top_agents[0].competition_state is not None
-                    else 0
-                )
-                pruning_threshold_score = top_score * config.PRUNE_THRESHOLD
+                top_score = await get_top_agent_score_for_set(hydrated_evaluation.set_id) or 0
+                pruning_threshold_score = top_score * policy.prune_threshold
 
-                if hydrated_evaluation.score >= max(config.SCREENER_2_THRESHOLD, pruning_threshold_score):
+                if hydrated_evaluation.score >= max(policy.screener_2_threshold, pruning_threshold_score):
                     new_agent_status = AgentStatus.evaluating
                 else:
                     new_agent_status = AgentStatus.failed_screening_2
 
             case AgentStatus.evaluating:
-                num_validator_evaluations = await get_num_successful_validator_evaluations_for_agent_id(agent.agent_id)
-                if num_validator_evaluations >= config.NUM_EVALS_PER_AGENT:
+                num_validator_evaluations = await get_num_successful_validator_evaluations_for_agent_in_set(
+                    agent.agent_id,
+                    hydrated_evaluation.set_id,
+                )
+                if num_validator_evaluations >= policy.required_validator_count:
                     new_agent_status = AgentStatus.finished
                 else:
                     new_agent_status = AgentStatus.evaluating
@@ -1269,10 +1312,11 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
 
         if (
             new_agent_status == AgentStatus.finished
-            and config.AUTO_APPROVAL_ENABLED
+            and policy.auto_approval_enabled
             and await _should_run_auto_approval_judge(
                 agent_id=hydrated_evaluation.agent_id,
                 set_id=hydrated_evaluation.set_id,
+                policy=policy,
             )
         ):
             await finish_agent_and_enqueue_approval(
@@ -1287,7 +1331,12 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
             )
 
 
-async def _should_run_auto_approval_judge(*, agent_id: UUID, set_id: int) -> bool:
+async def _should_run_auto_approval_judge(
+    *,
+    agent_id: UUID,
+    set_id: int,
+    policy: CompetitionPolicy,
+) -> bool:
     if await is_agent_coldkey_banned(agent_id):
         logger.info(f"Skipping auto approval for agent_id={agent_id}: miner coldkey is banned")
         return False
@@ -1295,7 +1344,7 @@ async def _should_run_auto_approval_judge(*, agent_id: UUID, set_id: int) -> boo
     candidate = await get_validator_agent_score_for_set(
         agent_id,
         set_id,
-        config.NUM_EVALS_PER_AGENT,
+        policy.required_validator_count,
     )
     if candidate is None:
         logger.warning(
@@ -1306,19 +1355,19 @@ async def _should_run_auto_approval_judge(*, agent_id: UUID, set_id: int) -> boo
     leader = await get_approved_leader_ranking_for_set(
         set_id,
         agent_id,
-        config.NUM_EVALS_PER_AGENT,
+        policy.required_validator_count,
     )
     if leader is None:
         return True
 
-    if set_id >= config.INCENTIVE_START_SET_ID:
+    if policy.incentive_enabled:
         return calculate_relative_improvement(
             candidate_score=candidate.final_score,
             candidate_cost=candidate.avg_cost_usd,
             leader_score=leader.final_score,
             leader_cost=leader.avg_cost_usd,
-            performance_threshold=config.INCENTIVE_PERFORMANCE_THRESHOLD,
-            cost_threshold=config.INCENTIVE_COST_THRESHOLD,
+            performance_threshold=policy.incentive_performance_threshold,
+            cost_threshold=policy.incentive_cost_threshold,
         ).qualified
 
     return candidate.beats(leader)

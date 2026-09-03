@@ -97,6 +97,7 @@ async def test_burn_prepare_issues_quote_with_real_signature():
     assert response.amount_alpha_rao == FAKE_AMOUNT_ALPHA_RAO
     assert response.payment_netuid == upload_module.config.NETUID
     assert response.expires_at is not None
+    assert "set_id" not in response.model_dump()
     async with _db.pool.acquire() as conn:
         row = await conn.fetchrow(
             "SELECT miner_hotkey FROM upload_payment_quotes WHERE quote_id = $1", response.quote_id
@@ -124,15 +125,19 @@ async def test_prepare_rejects_when_frozen(monkeypatch):
     assert exc.value.status_code == 503
 
 
-async def test_burn_prepare_enforces_rate_limit(monkeypatch):
+async def test_burn_prepare_does_not_enforce_competition_rate_limit(monkeypatch):
     monkeypatch.setattr(
         upload_module,
-        "get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id",
-        AsyncMock(return_value=datetime.now(timezone.utc)),
+        "get_latest_agent_created_at_for_miner_hotkey_in_competition",
+        AsyncMock(side_effect=AssertionError("prepare-upload must remain competition-free")),
     )
-    with pytest.raises(HTTPException) as exc:
-        await upload_module.prepare_upload(_request())
-    assert exc.value.status_code == 429
+    monkeypatch.setattr(
+        upload_module,
+        "_resolve_upload_set_id",
+        AsyncMock(side_effect=AssertionError("prepare-upload must not resolve a competition")),
+    )
+    response = await upload_module.prepare_upload(_request())
+    assert response.payment_method == "burn"
 
 
 async def test_burn_prepare_rejects_insufficient_stake(monkeypatch):
@@ -150,8 +155,8 @@ async def test_credit_prepare_returns_credit_and_skips_rate_limit(monkeypatch):
     credit_id = await _insert_credit()
     monkeypatch.setattr(
         upload_module,
-        "get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id",
-        AsyncMock(return_value=datetime.now(timezone.utc)),
+        "get_latest_agent_created_at_for_miner_hotkey_in_competition",
+        AsyncMock(side_effect=AssertionError("prepare-upload must remain competition-free")),
     )
     monkeypatch.setattr(
         upload_module,

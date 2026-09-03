@@ -33,7 +33,7 @@ async def clean_tables(postgres_db):
     async with _db.pool.acquire() as conn:
         await conn.execute(
             "TRUNCATE evaluation_run_logs, evaluation_run_attempts, evaluation_runs, evaluations,"
-            " agents, evaluation_sets RESTART IDENTITY CASCADE"
+            " agents, evaluation_sets, competitions RESTART IDENTITY CASCADE"
         )
 
 
@@ -46,8 +46,8 @@ async def _seed_evaluation(conn, *, agent_status: str = "evaluating"):
         datetime(2026, 7, 1, tzinfo=timezone.utc),
     )
     await conn.execute(
-        "INSERT INTO agents (agent_id, miner_hotkey, name, version_num, status, created_at, ip_address)"
-        " VALUES ($1, '5FakeHotkey', 'agent-a', 1, $2, NOW(), '127.0.0.1')",
+        "INSERT INTO agents (agent_id, miner_hotkey, name, version_num, status, created_at, ip_address, set_id)"
+        " VALUES ($1, '5FakeHotkey', 'agent-a', 1, $2, NOW(), '127.0.0.1', 1)",
         agent_id,
         agent_status,
     )

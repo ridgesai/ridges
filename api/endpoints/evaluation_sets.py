@@ -4,8 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.config import EARLIEST_SET_ID_WITH_GOOD_DATA
-from api.incentives import CurrentAllocations, get_current_allocations, get_subnet_hotkey_info
+from api.incentives import CurrentAllocations, get_current_allocations
 from models.agent import AgentStatus, PublicAgent
 from models.evaluation_set import (
     EvaluationSet,
@@ -17,7 +16,6 @@ from models.evaluation_set import (
     EvaluationSetDetailScores,
     EvaluationSetDetailSubmissions,
     EvaluationSetDetailTopAgent,
-    EvaluationSetDetailVsPreviousSet,
     EvaluationSetOverview,
     EvaluationSetOverviewPerformanceDistribution,
     EvaluationSetOverviewPerformanceImprovementPoint,
@@ -25,7 +23,12 @@ from models.evaluation_set import (
     EvaluationSetOverviewScoreBucket,
     EvaluationSetProblem,
 )
-from queries.competition import get_competition_for_set
+from queries.competition import (
+    PublicEvaluationSetContext,
+    get_competition_for_set,
+    get_public_evaluation_set_context,
+    resolve_compatibility_competition_set_id,
+)
 from queries.evaluation_set import (
     get_all_evaluation_set_problems_for_set_id,
     get_all_evaluation_sets,
@@ -37,8 +40,6 @@ from queries.evaluation_set import (
     get_evaluation_set_score_distribution,
     get_evaluation_set_score_stats,
     get_evaluation_set_submission_stats,
-    get_latest_set_id,
-    get_set_created_at,
 )
 from utils.ttl import ttl_cache
 
@@ -47,36 +48,32 @@ logger = logging.getLogger(__name__)
 CACHE_PAST_SET_DATA_TTL_SECONDS = 24 * 60 * 60  # Cache past set data for 24 hours, since it won't change
 CACHE_LIVE_SET_OVERVIEW_TTL_SECONDS = 5 * 60
 
-# Retrieve the latest set ID once and cache it for 30 seconds, since it's used in multiple places in the detail and leaderboard endpoints.
-_get_latest_set_id = ttl_cache(ttl_seconds=30)(get_latest_set_id)
-
 
 async def resolve_set_id(set_id: int) -> int:
-    """Parse the set_id path parameter, resolving -1 to the latest set ID. Validates that the resolved set ID exists.
-
-    Parameters
-    ----------
-    set_id : int
-        Original set_id from the path parameter, where -1 indicates the latest set.
-
-    Returns
-    -------
-    int
-        Parsed and validated set ID, with -1 resolved to the latest set ID.
-    """
-    if set_id != -1 and set_id < EARLIEST_SET_ID_WITH_GOOD_DATA:
-        raise HTTPException(status_code=404, detail="No evaluation sets found.")
-
-    resolved_set_id = None
+    """Resolve the old -1 alias, or validate one public evaluation-set context."""
     if set_id == -1:
-        resolved_set_id = await _get_latest_set_id()
+        resolved_set_id = await resolve_compatibility_competition_set_id()
     else:
-        if await get_set_created_at(set_id) is not None:
-            resolved_set_id = set_id
-
+        context = await get_public_evaluation_set_context(set_id)
+        resolved_set_id = None if context is None else context.set_id
     if resolved_set_id is None:
         raise HTTPException(status_code=404, detail="No evaluation sets found.")
     return resolved_set_id
+
+
+async def resolve_explicit_set_id(set_id: int) -> int:
+    """Validate a new explicit route without applying compatibility fallback."""
+    context = None if set_id == -1 else await get_public_evaluation_set_context(set_id)
+    if context is None:
+        raise HTTPException(status_code=404, detail="No evaluation sets found.")
+    return context.set_id
+
+
+async def _public_evaluation_set_or_404(set_id: int) -> PublicEvaluationSetContext:
+    context = await get_public_evaluation_set_context(set_id)
+    if context is None:
+        raise HTTPException(status_code=404, detail="No evaluation sets found.")
+    return context
 
 
 @router.get("/")
@@ -88,16 +85,32 @@ async def evaluation_sets_list() -> list[EvaluationSet]:
 # /evaluation-sets/all-latest-set-problems
 @router.get("/all-latest-set-problems")
 async def evaluation_sets_all_latest_set_problems() -> list[EvaluationSetProblem]:
-    latest_set_id = await get_latest_set_id()
-    if latest_set_id is None:
-        return []
-    return await get_all_evaluation_set_problems_for_set_id(latest_set_id)
+    set_id = await resolve_set_id(-1)
+    return await get_all_evaluation_set_problems_for_set_id(set_id)
+
+
+async def _build_problems(set_id: int) -> list[EvaluationSetProblem]:
+    return await get_all_evaluation_set_problems_for_set_id(set_id)
+
+
+_cached_build_live_problems = ttl_cache(ttl_seconds=CACHE_LIVE_SET_OVERVIEW_TTL_SECONDS)(_build_problems)
+_cached_build_past_problems = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECONDS)(_build_problems)
+
+
+@router.get("/{set_id}/problems")
+async def evaluation_set_problems(
+    set_id: Annotated[int, Depends(resolve_explicit_set_id)],
+) -> list[EvaluationSetProblem]:
+    context = await _public_evaluation_set_or_404(set_id)
+    if context.use_historical_cache:
+        return await _cached_build_past_problems(set_id)
+    return await _cached_build_live_problems(set_id)
 
 
 #
 # GET evaluation-sets/{set_id}/
 #
-async def _build_detail(set_id: int) -> EvaluationSetDetail:
+async def _build_detail(set_id: int, required_validator_count: int | None) -> EvaluationSetDetail:
     def _pass_rate(count: int, total: int) -> float:
         """Calculates the pass rate for a given count of agents at a pipeline stage, relative to the total number of agents that entered the pipeline.
 
@@ -119,7 +132,7 @@ async def _build_detail(set_id: int) -> EvaluationSetDetail:
         get_evaluation_set_submission_stats(set_id),
         get_evaluation_set_score_stats(set_id),
         get_competition_for_set(set_id),
-        get_evaluation_set_leaderboard_summary(set_id),
+        get_evaluation_set_leaderboard_summary(set_id, required_validator_count),
     )
 
     competition_name = competition_row["competition_name"] if competition_row else None
@@ -184,15 +197,6 @@ async def _build_detail(set_id: int) -> EvaluationSetDetail:
         ],
     )
 
-    vs_previous_set = None
-    if score_row["best"] is not None and score_row["prev_best_score"] is not None:
-        delta = score_row["best"] - score_row["prev_best_score"]
-        top_score_delta = f"+{delta:.2f}" if delta >= 0 else f"{delta:.2f}"
-        vs_previous_set = EvaluationSetDetailVsPreviousSet(
-            top_score_delta=top_score_delta,
-            agents_beating_previous_best=score_row["agents_beating_previous_best"],
-        )
-
     top_agent = (
         EvaluationSetDetailTopAgent(
             agent_id=leaderboard_summary_row["top_agent_id"],
@@ -235,7 +239,7 @@ async def _build_detail(set_id: int) -> EvaluationSetDetail:
         competition_end_date=competition_end_date,
         submissions=submissions,
         scores=scores,
-        vs_previous_set=vs_previous_set,
+        vs_previous_set=None,
         top_agent=top_agent,
         efficiency=efficiency,
     )
@@ -251,19 +255,19 @@ async def evaluation_set_detail(
     """Returns detailed information about a specific evaluation set, including:
     - Submission statistics at each stage of the evaluation pipeline
     - Score statistics (best, average, and benchmark thresholds)
-    - Comparison against the previous evaluation set's best score (if available)
+    - Reserved nullable previous-competition comparison field
     """
-    latest = await _get_latest_set_id()
-    if set_id != latest:
-        return await _cached_build_detail(set_id)
-    return await _build_detail(set_id)
+    context = await _public_evaluation_set_or_404(set_id)
+    if context.use_historical_cache:
+        return await _cached_build_detail(set_id, context.required_validator_count)
+    return await _build_detail(set_id, context.required_validator_count)
 
 
 # GET evaluation-sets/{set_id}/overview
-async def _build_overview(set_id: int) -> EvaluationSetOverview:
+async def _build_overview(set_id: int, required_validator_count: int | None) -> EvaluationSetOverview:
     pre_screening_row, score_rows, improvement_rows = await asyncio.gather(
         get_evaluation_set_pre_screening_distribution(set_id),
-        get_evaluation_set_score_distribution(set_id),
+        get_evaluation_set_score_distribution(set_id, required_validator_count),
         get_evaluation_set_performance_improvement(set_id),
     )
 
@@ -311,17 +315,17 @@ _cached_build_past_overview = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECO
 async def evaluation_set_overview(
     set_id: Annotated[int, Depends(resolve_set_id)],
 ) -> EvaluationSetOverview:
-    latest = await _get_latest_set_id()
-    if set_id != latest:
-        return await _cached_build_past_overview(set_id)
-    return await _cached_build_live_overview(set_id)
+    context = await _public_evaluation_set_or_404(set_id)
+    if context.use_historical_cache:
+        return await _cached_build_past_overview(set_id, context.required_validator_count)
+    return await _cached_build_live_overview(set_id, context.required_validator_count)
 
 
 #
 # GET evaluation-sets/{set_id}/leaderboard
 #
-async def _build_leaderboard(set_id: int) -> list[PublicAgent]:
-    agent_rows = await get_evaluation_set_leaderboard_agents(set_id)
+async def _build_leaderboard(set_id: int, required_validator_count: int | None) -> list[PublicAgent]:
+    agent_rows = await get_evaluation_set_leaderboard_agents(set_id, required_validator_count)
     return [PublicAgent(**dict(row), set_id=set_id) for row in agent_rows]
 
 
@@ -332,10 +336,10 @@ _cached_build_leaderboard = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECOND
 async def evaluation_set_leaderboard(
     set_id: Annotated[int, Depends(resolve_set_id)],
 ) -> list[PublicAgent]:
-    latest = await _get_latest_set_id()
-    if set_id != latest:
-        return await _cached_build_leaderboard(set_id)
-    return await _build_leaderboard(set_id)
+    context = await _public_evaluation_set_or_404(set_id)
+    if context.use_historical_cache:
+        return await _cached_build_leaderboard(set_id, context.required_validator_count)
+    return await _build_leaderboard(set_id, context.required_validator_count)
 
 
 #
@@ -345,8 +349,9 @@ async def evaluation_set_leaderboard(
 
 async def _build_approved_agents(
     set_id: int,
+    required_validator_count: int | None,
 ) -> list[PublicAgent]:
-    agent_rows = await get_approved_agents_for_set(set_id)
+    agent_rows = await get_approved_agents_for_set(set_id, required_validator_count)
     return [
         PublicAgent(
             **dict(row),
@@ -361,32 +366,20 @@ async def _build_approved_agents(
 _cached_build_approved_agents = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECONDS)(_build_approved_agents)
 
 
-async def _add_onchain_approved_agent_data(
+def _add_approved_agent_weights(
     agents: list[PublicAgent],
     allocations: CurrentAllocations | None,
 ) -> list[PublicAgent]:
-    if not agents:
-        return []
-
-    try:
-        subnet_info = await get_subnet_hotkey_info()
-    except Exception:
-        logger.exception("Could not retrieve approved-agent emissions from Subtensor")
-        subnet_info = {}
-
-    reward_weights = allocations.agent_weights if allocations is not None and allocations.agent_weights else None
-    result = []
-    for agent in agents:
-        hotkey_info = subnet_info.get(agent.miner_hotkey)
-        result.append(
-            agent.model_copy(
-                update={
-                    "emission": None if hotkey_info is None else hotkey_info.emission,
-                    "reward_weight": None if reward_weights is None else reward_weights.get(agent.agent_id, 0.0),
-                }
-            )
+    reward_weights = None if allocations is None else allocations.agent_weights
+    return [
+        agent.model_copy(
+            update={
+                "emission": None,
+                "reward_weight": None if reward_weights is None else reward_weights.get(agent.agent_id, 0.0),
+            }
         )
-    return result
+        for agent in agents
+    ]
 
 
 async def _safe_current_allocations() -> CurrentAllocations | None:
@@ -399,13 +392,13 @@ async def _safe_current_allocations() -> CurrentAllocations | None:
 
 @router.get("/{set_id}/approved-agents")
 async def evaluation_set_approved_agents(set_id: Annotated[int, Depends(resolve_set_id)]) -> list[PublicAgent]:
-    latest = await _get_latest_set_id()
-    if set_id != latest:
-        agents = await _cached_build_approved_agents(set_id)
-        return await _add_onchain_approved_agent_data(agents, None)
+    context = await _public_evaluation_set_or_404(set_id)
+    if context.use_historical_cache:
+        agents = await _cached_build_approved_agents(set_id, context.required_validator_count)
+        return _add_approved_agent_weights(agents, None)
 
     agents, allocations = await asyncio.gather(
-        _build_approved_agents(set_id),
+        _build_approved_agents(set_id, context.required_validator_count),
         _safe_current_allocations(),
     )
-    return await _add_onchain_approved_agent_data(agents, allocations)
+    return _add_approved_agent_weights(agents, allocations)

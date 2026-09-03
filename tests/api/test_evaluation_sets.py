@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -7,7 +8,8 @@ from fastapi import HTTPException
 import api.endpoints.evaluation_sets as evaluation_sets_endpoint
 import utils.database as _db
 from models.agent import AgentStatus
-from utils.bittensor import HotkeySubnetInfo
+from queries.evaluation_set import get_evaluation_set_performance_improvement
+from utils.ttl import clear_all_ttl_caches
 
 
 @pytest.fixture(autouse=True)
@@ -22,9 +24,7 @@ async def clean_tables(postgres_db):
 
 @pytest.fixture(autouse=True)
 async def remove_caching(monkeypatch):
-    clear_hotkey_chain_cache = evaluation_sets_endpoint.get_subnet_hotkey_info.cache_clear
-    clear_hotkey_chain_cache()
-    monkeypatch.setattr(evaluation_sets_endpoint, "_get_latest_set_id", evaluation_sets_endpoint.get_latest_set_id)
+    clear_all_ttl_caches()
     monkeypatch.setattr(evaluation_sets_endpoint, "_cached_build_detail", evaluation_sets_endpoint._build_detail)
     monkeypatch.setattr(
         evaluation_sets_endpoint, "_cached_build_leaderboard", evaluation_sets_endpoint._build_leaderboard
@@ -38,8 +38,14 @@ async def remove_caching(monkeypatch):
     monkeypatch.setattr(
         evaluation_sets_endpoint, "_cached_build_past_overview", evaluation_sets_endpoint._build_overview
     )
+    monkeypatch.setattr(
+        evaluation_sets_endpoint, "_cached_build_live_problems", evaluation_sets_endpoint._build_problems
+    )
+    monkeypatch.setattr(
+        evaluation_sets_endpoint, "_cached_build_past_problems", evaluation_sets_endpoint._build_problems
+    )
     yield
-    clear_hotkey_chain_cache()
+    clear_all_ttl_caches()
 
 
 SET_1_CREATED = datetime(2026, 5, 1, tzinfo=timezone.utc)
@@ -55,6 +61,33 @@ async def _insert_eval_set(conn, set_id: int, created_at: datetime) -> None:
         "screener_1",
         "problem-a",
         created_at,
+    )
+    await _configure_competition(conn, set_id=set_id, start_date=created_at)
+
+
+async def _configure_competition(conn, *, set_id: int, start_date: datetime) -> None:
+    await conn.execute(
+        """
+        UPDATE competitions
+        SET
+            start_date = $2,
+            scoring_mode = 'consensus',
+            screener_1_threshold = 0.4,
+            screener_2_threshold = 0.4,
+            prune_threshold = 0.4,
+            required_validator_count = 1,
+            pre_screening_enabled = FALSE,
+            auto_approval_enabled = FALSE,
+            hardcoding_policy_version = 'hardcoding-v1',
+            incentive_enabled = FALSE,
+            incentive_performance_threshold = 0.03,
+            incentive_cost_threshold = 0.06,
+            incentive_reward_half_life_hours = 336,
+            incentive_time_multiplier_scale_hours = 12
+        WHERE set_id = $1
+        """,
+        set_id,
+        start_date,
     )
 
 
@@ -202,7 +235,17 @@ async def _insert_agent_score(conn, *, agent_id, miner_hotkey: str, set_id: int,
     await conn.execute(
         """INSERT INTO agent_scores
                (agent_id, miner_hotkey, name, version_num, created_at, status, set_id, approved, validator_count, final_score)
-           VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, $8, $9)""",
+           VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, $8, $9)
+           ON CONFLICT (agent_id) DO UPDATE SET
+               miner_hotkey = EXCLUDED.miner_hotkey,
+               name = EXCLUDED.name,
+               version_num = EXCLUDED.version_num,
+               created_at = EXCLUDED.created_at,
+               status = EXCLUDED.status,
+               set_id = EXCLUDED.set_id,
+               approved = EXCLUDED.approved,
+               validator_count = EXCLUDED.validator_count,
+               final_score = EXCLUDED.final_score""",
         agent_id,
         miner_hotkey,
         miner_hotkey,
@@ -229,6 +272,8 @@ async def test_evaluation_sets_list_returns_all_sets():
                 (2, "validator", "problem-b"),
             ],
         )
+        await _configure_competition(conn, set_id=1, start_date=SET_1_CREATED)
+        await _configure_competition(conn, set_id=2, start_date=SET_2_CREATED)
 
     result = await evaluation_sets_endpoint.evaluation_sets_list()
     assert len(result) == 2
@@ -268,6 +313,7 @@ async def test_evaluation_set_overview_returns_distributions_and_improvement_fro
                 for problem_index in range(4)
             ],
         )
+        await _configure_competition(conn, set_id=2, start_date=SET_2_CREATED)
 
         await _insert_agent(
             conn,
@@ -454,6 +500,119 @@ async def test_evaluation_set_overview_returns_fixed_empty_buckets():
 
 
 @pytest.mark.anyio
+async def test_performance_improvement_binds_snapshot_job_to_agent_and_set():
+    mismatched_target_id = uuid4()
+    foreign_job_owner_id = uuid4()
+    valid_agent_id = uuid4()
+    legacy_agent_id = uuid4()
+    foreign_job_id = uuid4()
+    valid_job_id = uuid4()
+    legacy_job_id = uuid4()
+
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+        await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
+        for agent_id, hotkey, created_at, set_id in (
+            (mismatched_target_id, "mismatched-target", AGENT_TS_SET_1, 1),
+            (foreign_job_owner_id, "foreign-job-owner", AGENT_TS_SET_2, 2),
+            (valid_agent_id, "valid-frontier", AGENT_TS_SET_1 + timedelta(minutes=1), 1),
+        ):
+            await _insert_agent(
+                conn,
+                agent_id=agent_id,
+                miner_hotkey=hotkey,
+                status="finished",
+                created_at=created_at,
+                set_id=set_id,
+            )
+
+        async with conn.transaction():
+            await conn.execute("ALTER TABLE agents DISABLE TRIGGER ALL")
+            try:
+                await _insert_agent(
+                    conn,
+                    agent_id=legacy_agent_id,
+                    miner_hotkey="legacy-frontier",
+                    status="finished",
+                    created_at=AGENT_TS_SET_1 + timedelta(minutes=2),
+                    set_id=None,
+                )
+            finally:
+                await conn.execute("ALTER TABLE agents ENABLE TRIGGER ALL")
+
+        await conn.executemany(
+            """
+            INSERT INTO approval_jobs (
+                job_id, agent_id, set_id, status, policy_version, input_snapshot
+            ) VALUES ($1, $2, $3, 'completed', 'policy-v1', $4::jsonb)
+            """,
+            [
+                (
+                    foreign_job_id,
+                    foreign_job_owner_id,
+                    2,
+                    json.dumps({"evaluation_context": {"final_validator_score": 0.99}}),
+                ),
+                (
+                    valid_job_id,
+                    valid_agent_id,
+                    1,
+                    json.dumps({"evaluation_context": {"final_validator_score": 0.6}}),
+                ),
+            ],
+        )
+        async with conn.transaction():
+            await conn.execute("ALTER TABLE approved_agents DISABLE TRIGGER ALL")
+            await conn.execute("ALTER TABLE approval_jobs DISABLE TRIGGER ALL")
+            await conn.execute("ALTER TABLE agent_approval_states DISABLE TRIGGER ALL")
+            try:
+                await conn.executemany(
+                    """
+                    INSERT INTO approved_agents (agent_id, set_id, approved_at)
+                    VALUES ($1, 1, $2)
+                    """,
+                    [
+                        (mismatched_target_id, SET_1_CREATED + timedelta(hours=1)),
+                        (valid_agent_id, SET_1_CREATED + timedelta(hours=2)),
+                        (legacy_agent_id, SET_1_CREATED + timedelta(hours=3)),
+                    ],
+                )
+                await conn.execute(
+                    """
+                    INSERT INTO approval_jobs (
+                        job_id, agent_id, set_id, status, policy_version, input_snapshot
+                    ) VALUES ($1, $2, 1, 'completed', 'policy-v1', $3::jsonb)
+                    """,
+                    legacy_job_id,
+                    legacy_agent_id,
+                    json.dumps({"evaluation_context": {"final_validator_score": 0.7}}),
+                )
+                await conn.executemany(
+                    """
+                    INSERT INTO agent_approval_states (
+                        agent_id, set_id, latest_job_id, processing_status
+                    ) VALUES ($1, 1, $2, 'completed')
+                    """,
+                    [
+                        (mismatched_target_id, foreign_job_id),
+                        (valid_agent_id, valid_job_id),
+                        (legacy_agent_id, legacy_job_id),
+                    ],
+                )
+            finally:
+                await conn.execute("ALTER TABLE agent_approval_states ENABLE TRIGGER ALL")
+                await conn.execute("ALTER TABLE approval_jobs ENABLE TRIGGER ALL")
+                await conn.execute("ALTER TABLE approved_agents ENABLE TRIGGER ALL")
+
+    frontier = await get_evaluation_set_performance_improvement(1)
+
+    assert [(row["agent_id"], row["score"]) for row in frontier] == [
+        (valid_agent_id, pytest.approx(0.6)),
+        (legacy_agent_id, pytest.approx(0.7)),
+    ]
+
+
+@pytest.mark.anyio
 async def test_evaluation_set_detail_happy_path():
     agent_a = uuid4()
     agent_b = uuid4()
@@ -593,10 +752,7 @@ async def test_evaluation_set_detail_happy_path():
     assert thresholds[75] == 1
     assert thresholds[90] == 0
 
-    # vs previous set
-    assert result.vs_previous_set is not None
-    assert result.vs_previous_set.top_score_delta == "+0.05"
-    assert result.vs_previous_set.agents_beating_previous_best == 1
+    assert result.vs_previous_set is None
 
     # Enriched summary payload
     assert result.top_agent is not None
@@ -907,6 +1063,7 @@ async def test_evaluation_set_detail_returns_404_for_unknown_set():
 @pytest.mark.anyio
 async def test_evaluation_set_detail_no_previous_set_returns_null_vs_previous():
     agent_a = uuid4()
+    agent_b = uuid4()
 
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
@@ -919,9 +1076,17 @@ async def test_evaluation_set_detail_no_previous_set_returns_null_vs_previous():
             created_at=AGENT_TS_SET_2,
             set_id=1,
         )
+        await _insert_agent(
+            conn,
+            agent_id=agent_b,
+            miner_hotkey="miner-b",
+            status="finished",
+            created_at=AGENT_TS_SET_2,
+            set_id=2,
+        )
         await _insert_evaluation(conn, agent_id=agent_a, set_id=1, set_group="screener_1")
-        await _insert_evaluation(conn, agent_id=agent_a, set_id=2, set_group="screener_2")
-        await _insert_evaluation(conn, agent_id=agent_a, set_id=2, set_group="validator")
+        await _insert_evaluation(conn, agent_id=agent_b, set_id=2, set_group="screener_2")
+        await _insert_evaluation(conn, agent_id=agent_b, set_id=2, set_group="validator")
         await _insert_agent_score(
             conn,
             agent_id=agent_a,
@@ -998,14 +1163,7 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
             agent_weights={agent_id_a: 0.7, agent_id_b: 0.3},
         )
 
-    async def subnet_info():
-        return {
-            "hotkey-a": HotkeySubnetInfo(uid=1, emission=147.600823658),
-            "hotkey-b": HotkeySubnetInfo(uid=2, emission=2.037068052),
-        }
-
     monkeypatch.setattr(evaluation_sets_endpoint, "get_current_allocations", current_allocations)
-    monkeypatch.setattr(evaluation_sets_endpoint, "get_subnet_hotkey_info", subnet_info)
 
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
@@ -1074,7 +1232,7 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     # Ordered by approved_at DESC (agent_a was the latest approved)
     assert result[0].agent_id == agent_id_a
     assert result[0].miner_hotkey == "hotkey-a"
-    assert result[0].emission == pytest.approx(147.600823658)
+    assert result[0].emission is None
     assert result[0].reward_weight == pytest.approx(0.7)
     first_state = result[0].competition_state
     assert first_state is not None
@@ -1096,7 +1254,7 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
 
     assert result[1].agent_id == agent_id_b
     assert result[1].miner_hotkey == "hotkey-b"
-    assert result[1].emission == pytest.approx(2.037068052)
+    assert result[1].emission is None
     assert result[1].reward_weight == pytest.approx(0.3)
     second_state = result[1].competition_state
     assert second_state is not None
@@ -1115,6 +1273,88 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     assert second_state.average_runtime_seconds == 60
     assert second_state.status == "approved"
     assert second_state.set_id == 1
+
+
+@pytest.mark.anyio
+async def test_approved_agents_exclude_assigned_mismatches_and_hide_mismatched_baselines(monkeypatch):
+    valid_agent_id = uuid4()
+    mismatched_agent_id = uuid4()
+    mismatched_baseline_id = uuid4()
+    legacy_agent_id = uuid4()
+
+    async def current_allocations():
+        return evaluation_sets_endpoint.CurrentAllocations(hotkey_weights={}, agent_weights={})
+
+    monkeypatch.setattr(evaluation_sets_endpoint, "get_current_allocations", current_allocations)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+        await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
+        for agent_id, hotkey, set_id in (
+            (valid_agent_id, "valid", 1),
+            (mismatched_agent_id, "mismatched", 2),
+            (mismatched_baseline_id, "wrong-baseline", 2),
+        ):
+            await _insert_agent(
+                conn,
+                agent_id=agent_id,
+                miner_hotkey=hotkey,
+                status="finished",
+                created_at=AGENT_TS_SET_1,
+                set_id=set_id,
+            )
+
+        async with conn.transaction():
+            await conn.execute("ALTER TABLE agents DISABLE TRIGGER ALL")
+            await conn.execute("ALTER TABLE agent_scores DISABLE TRIGGER ALL")
+            await conn.execute("ALTER TABLE approved_agents DISABLE TRIGGER ALL")
+            try:
+                await _insert_agent(
+                    conn,
+                    agent_id=legacy_agent_id,
+                    miner_hotkey="legacy",
+                    status="finished",
+                    created_at=AGENT_TS_SET_1,
+                    set_id=None,
+                )
+                for agent_id, hotkey, score in (
+                    (valid_agent_id, "valid", 0.8),
+                    (mismatched_agent_id, "mismatched", 0.99),
+                    (legacy_agent_id, "legacy", 0.7),
+                ):
+                    await _insert_agent_score(
+                        conn,
+                        agent_id=agent_id,
+                        miner_hotkey=hotkey,
+                        set_id=1,
+                        final_score=score,
+                    )
+                    await _insert_approved_agent(
+                        conn,
+                        agent_id=agent_id,
+                        set_id=1,
+                        approved_at=AGENT_TS_SET_1,
+                    )
+                await conn.execute(
+                    "UPDATE approved_agents SET baseline_agent_id = $1 WHERE agent_id = $2 AND set_id = 1",
+                    mismatched_baseline_id,
+                    valid_agent_id,
+                )
+            finally:
+                await conn.execute("ALTER TABLE approved_agents ENABLE TRIGGER ALL")
+                await conn.execute("ALTER TABLE agent_scores ENABLE TRIGGER ALL")
+                await conn.execute("ALTER TABLE agents ENABLE TRIGGER ALL")
+
+    result = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=1)
+
+    assert {agent.agent_id for agent in result} == {valid_agent_id, legacy_agent_id}
+    legacy = next(agent for agent in result if agent.agent_id == legacy_agent_id)
+    valid = next(agent for agent in result if agent.agent_id == valid_agent_id)
+    assert legacy.legacy_membership is True
+    assert valid.legacy_membership is False
+    assert valid.competition_state is not None
+    assert valid.competition_state.baseline_agent_id is None
+    assert valid.competition_state.baseline_agent_name is None
+    assert valid.competition_state.baseline_agent_version_num is None
 
 
 @pytest.mark.anyio
@@ -1141,26 +1381,22 @@ async def test_live_approved_agents_show_individual_weights_for_shared_hotkey(mo
         }
     )
 
-    async def subnet_info():
-        return {"shared-hotkey": HotkeySubnetInfo(uid=1, emission=12.5)}
-
-    monkeypatch.setattr(evaluation_sets_endpoint, "get_subnet_hotkey_info", subnet_info)
     allocations = evaluation_sets_endpoint.CurrentAllocations(
         hotkey_weights={"shared-hotkey": 1.0},
         agent_weights={first_agent_id: 0.25, second_agent_id: 0.75},
     )
 
-    result = await evaluation_sets_endpoint._add_onchain_approved_agent_data(
+    result = evaluation_sets_endpoint._add_approved_agent_weights(
         [first_agent, second_agent],
         allocations,
     )
 
     assert [agent.reward_weight for agent in result] == pytest.approx([0.25, 0.75])
-    assert [agent.emission for agent in result] == pytest.approx([12.5, 12.5])
+    assert [agent.emission for agent in result] == [None, None]
 
 
 @pytest.mark.anyio
-async def test_live_approved_agent_data_degrades_when_chain_lookup_fails(monkeypatch):
+async def test_approved_agent_weights_distinguish_calculation_failure_from_zero_weight():
     agent_id = uuid4()
     agent = evaluation_sets_endpoint.PublicAgent(
         agent_id=agent_id,
@@ -1175,32 +1411,253 @@ async def test_live_approved_agent_data_degrades_when_chain_lookup_fails(monkeyp
         approved_at=AGENT_TS_SET_1,
     )
 
-    async def fail_chain_lookup():
-        raise RuntimeError("chain unavailable")
-
-    monkeypatch.setattr(evaluation_sets_endpoint, "get_subnet_hotkey_info", fail_chain_lookup)
-
-    historical = await evaluation_sets_endpoint._add_onchain_approved_agent_data([agent], None)
-    current = await evaluation_sets_endpoint._add_onchain_approved_agent_data(
+    failed = evaluation_sets_endpoint._add_approved_agent_weights([agent], None)
+    successful = evaluation_sets_endpoint._add_approved_agent_weights(
         [agent],
         evaluation_sets_endpoint.CurrentAllocations(
-            hotkey_weights={"hotkey": 0.7},
-            agent_weights={agent_id: 0.7},
+            hotkey_weights={"owner": 1.0},
+            agent_weights={},
         ),
     )
 
-    assert historical[0].emission is None
-    assert historical[0].reward_weight is None
-    assert current[0].emission is None
-    assert current[0].reward_weight == pytest.approx(0.7)
+    assert failed[0].emission is None
+    assert failed[0].reward_weight is None
+    assert successful[0].emission is None
+    assert successful[0].reward_weight == 0
 
 
 @pytest.mark.anyio
-async def test_evaluation_set_detail_minus_one_resolves_to_latest_set():
+async def test_two_open_competitions_enrich_only_their_approved_agents(monkeypatch):
+    first_agent_id = uuid4()
+    second_agent_id = uuid4()
+
+    async def current_allocations():
+        return evaluation_sets_endpoint.CurrentAllocations(
+            hotkey_weights={"first-hotkey": 0.2, "second-hotkey": 0.8},
+            agent_weights={first_agent_id: 0.2, second_agent_id: 0.8},
+        )
+
+    monkeypatch.setattr(evaluation_sets_endpoint, "get_current_allocations", current_allocations)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+        await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
+        await _insert_agent(
+            conn,
+            agent_id=first_agent_id,
+            miner_hotkey="first-hotkey",
+            status="finished",
+            created_at=AGENT_TS_SET_1,
+            set_id=1,
+        )
+        await _insert_agent(
+            conn,
+            agent_id=second_agent_id,
+            miner_hotkey="second-hotkey",
+            status="finished",
+            created_at=AGENT_TS_SET_2,
+            set_id=2,
+        )
+        await _insert_approved_agent(conn, agent_id=first_agent_id, set_id=1)
+        await _insert_approved_agent(conn, agent_id=second_agent_id, set_id=2)
+        await _insert_agent_score(
+            conn,
+            agent_id=first_agent_id,
+            miner_hotkey="first-hotkey",
+            set_id=1,
+            final_score=0.4,
+        )
+        await _insert_agent_score(
+            conn,
+            agent_id=second_agent_id,
+            miner_hotkey="second-hotkey",
+            set_id=2,
+            final_score=0.8,
+        )
+
+    first = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=1)
+    second = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=2)
+
+    assert [(agent.agent_id, agent.reward_weight, agent.emission) for agent in first] == [(first_agent_id, 0.2, None)]
+    assert [(agent.agent_id, agent.reward_weight, agent.emission) for agent in second] == [(second_agent_id, 0.8, None)]
+
+
+@pytest.mark.anyio
+async def test_ended_approved_agents_skip_allocation_calculation(monkeypatch):
+    agent_id = uuid4()
+
+    async def unexpected_allocations():
+        pytest.fail("ended competition must not calculate current allocations")
+
+    monkeypatch.setattr(evaluation_sets_endpoint, "get_current_allocations", unexpected_allocations)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+        await _insert_agent(
+            conn,
+            agent_id=agent_id,
+            miner_hotkey="ended-hotkey",
+            status="finished",
+            created_at=AGENT_TS_SET_1,
+            set_id=1,
+        )
+        await _insert_approved_agent(conn, agent_id=agent_id, set_id=1)
+        await _insert_agent_score(
+            conn,
+            agent_id=agent_id,
+            miner_hotkey="ended-hotkey",
+            set_id=1,
+            final_score=0.4,
+        )
+        await conn.execute("UPDATE competitions SET end_date = NOW() WHERE set_id = 1")
+
+    result = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=1)
+
+    assert [(agent.agent_id, agent.reward_weight, agent.emission) for agent in result] == [(agent_id, None, None)]
+
+
+@pytest.mark.anyio
+async def test_open_approved_agents_report_none_when_allocation_calculation_fails(monkeypatch):
+    agent_id = uuid4()
+
+    async def failed_allocations():
+        raise RuntimeError("chain unavailable")
+
+    monkeypatch.setattr(evaluation_sets_endpoint, "get_current_allocations", failed_allocations)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+        await _insert_agent(
+            conn,
+            agent_id=agent_id,
+            miner_hotkey="open-hotkey",
+            status="finished",
+            created_at=AGENT_TS_SET_1,
+            set_id=1,
+        )
+        await _insert_approved_agent(conn, agent_id=agent_id, set_id=1)
+        await _insert_agent_score(
+            conn,
+            agent_id=agent_id,
+            miner_hotkey="open-hotkey",
+            set_id=1,
+            final_score=0.4,
+        )
+
+    result = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=1)
+
+    assert result[0].reward_weight is None
+    assert result[0].emission is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("lifecycle", ["paused", "post_cutoff"])
+async def test_nonended_inactive_competitions_report_authoritative_zero_weight(monkeypatch, lifecycle):
+    agent_id = uuid4()
+    calls = 0
+
+    async def owner_only_allocations():
+        nonlocal calls
+        calls += 1
+        return evaluation_sets_endpoint.CurrentAllocations(
+            hotkey_weights={"owner": 1.0},
+            agent_weights={},
+        )
+
+    monkeypatch.setattr(evaluation_sets_endpoint, "get_current_allocations", owner_only_allocations)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+        await _insert_agent(
+            conn,
+            agent_id=agent_id,
+            miner_hotkey="inactive-hotkey",
+            status="finished",
+            created_at=AGENT_TS_SET_1,
+            set_id=1,
+        )
+        await _insert_approved_agent(conn, agent_id=agent_id, set_id=1)
+        await _insert_agent_score(
+            conn,
+            agent_id=agent_id,
+            miner_hotkey="inactive-hotkey",
+            set_id=1,
+            final_score=0.4,
+        )
+        if lifecycle == "paused":
+            await conn.execute("UPDATE competitions SET is_paused = TRUE WHERE set_id = 1")
+        else:
+            await conn.execute(
+                """
+                UPDATE competitions
+                SET submissions_closed_at = $1, emissions_end_at = $1
+                WHERE set_id = 1
+                """,
+                SET_1_CREATED,
+            )
+
+    result = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=1)
+
+    assert calls == 1
+    assert result[0].reward_weight == 0
+    assert result[0].emission is None
+
+
+@pytest.mark.anyio
+async def test_overview_cache_classification_uses_fresh_competition_lifecycle(monkeypatch):
+    live_result = object()
+    ended_result = object()
+
+    async def live_builder(set_id: int, required_validator_count: int | None):
+        assert set_id == 1
+        assert required_validator_count == 1
+        return live_result
+
+    async def ended_builder(set_id: int, required_validator_count: int | None):
+        assert set_id == 1
+        assert required_validator_count == 1
+        return ended_result
+
+    monkeypatch.setattr(evaluation_sets_endpoint, "_cached_build_live_overview", live_builder)
+    monkeypatch.setattr(evaluation_sets_endpoint, "_cached_build_past_overview", ended_builder)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+
+    assert await evaluation_sets_endpoint.evaluation_set_overview(set_id=1) is live_result
+
+    async with _db.pool.acquire() as conn:
+        await conn.execute("UPDATE competitions SET end_date = NOW() WHERE set_id = 1")
+
+    assert await evaluation_sets_endpoint.evaluation_set_overview(set_id=1) is ended_result
+
+
+@pytest.mark.anyio
+async def test_problem_routes_use_explicit_or_compatibility_competition_without_draft_fallback():
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+        await conn.execute(
+            """
+            INSERT INTO evaluation_sets (set_id, set_group, problem_name, created_at)
+            VALUES (2, 'validator', 'private-draft-problem', $1)
+            """,
+            SET_2_CREATED,
+        )
+
+    explicit = await evaluation_sets_endpoint.evaluation_set_problems(set_id=1)
+    compatibility = await evaluation_sets_endpoint.evaluation_sets_all_latest_set_problems()
+
+    assert [problem.problem_name for problem in explicit] == ["problem-a"]
+    assert compatibility == explicit
+    with pytest.raises(HTTPException) as draft:
+        await evaluation_sets_endpoint.resolve_explicit_set_id(2)
+    assert draft.value.status_code == 404
+    with pytest.raises(HTTPException) as fallback:
+        await evaluation_sets_endpoint.resolve_explicit_set_id(-1)
+    assert fallback.value.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_evaluation_set_detail_minus_one_resolves_to_newest_open_competition():
     agent_a = uuid4()
 
     async with _db.pool.acquire() as conn:
-        # Two sets exist; set 2 is the latest (highest set_id)
+        # Both competitions are open, so compatibility chooses the newest open one.
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
         await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
         await _insert_agent(

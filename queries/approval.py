@@ -5,7 +5,6 @@ from uuid import UUID, uuid4
 
 import asyncpg
 
-import api.config as config
 from models.agent import AgentStatus
 from models.approval import (
     ApprovalEvaluationContext,
@@ -16,9 +15,12 @@ from models.approval import (
     ApprovalValidatorScore,
     ApprovalVerdict,
 )
+from models.competition import CompetitionPolicy
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
 from queries.banned_coldkey import get_banned_coldkey, lock_coldkey_ban_state
+from queries.competition import _get_competition_policy
+from queries.errors import AgentCompetitionMembershipMismatchError
 from queries.evaluation import (
     AgentRankingProfile,
     get_approved_leader_ranking_for_set,
@@ -46,6 +48,47 @@ def _pre_screening_verdict_from_job_status(job_status: str) -> str:
     return "needs_review"
 
 
+async def _lock_agent_for_approval(
+    conn: DatabaseConnection,
+    *,
+    agent_id: UUID,
+    requested_set_id: int,
+    required_status: AgentStatus | None = None,
+) -> asyncpg.Record | None:
+    row = await conn.fetchrow(
+        """
+        SELECT
+            agent.miner_coldkey,
+            agent.status,
+            agent.set_id,
+            competition.hardcoding_policy_version
+        FROM agents agent
+        LEFT JOIN competitions competition ON competition.set_id = agent.set_id
+        WHERE agent.agent_id = $1
+          AND ($2::text IS NULL OR agent.status::text = $2)
+        FOR UPDATE OF agent
+        """,
+        agent_id,
+        None if required_status is None else required_status.value,
+    )
+
+    if row is None or row["set_id"] is None:
+        logger.warning(f"Skipping approval for agent {agent_id}: missing agent or competition membership")
+        return None
+
+    if row["set_id"] != requested_set_id:
+        raise AgentCompetitionMembershipMismatchError(
+            agent_id=agent_id,
+            agent_set_id=row["set_id"],
+            requested_set_id=requested_set_id,
+        )
+
+    if row["hardcoding_policy_version"] is None:
+        logger.error(f"Skipping approval for agent {agent_id}: competition {row['set_id']} has no policy")
+        return None
+    return row
+
+
 @db_operation
 async def enqueue_approval_job(
     conn: DatabaseConnection,
@@ -53,11 +96,18 @@ async def enqueue_approval_job(
     agent_id: UUID,
     set_id: int,
 ) -> UUID | None:
-    """Create one active approval job and pending state row if none already exists. The judge
-    policy is copied from the agent's pre-screening job."""
+    """Create one active approval job using the competition's current judge policy."""
 
     async with conn.conn.transaction():
-        pre_screening_job = await _latest_pre_screening_job(conn, agent_id=agent_id)
+        agent = await _lock_agent_for_approval(
+            conn,
+            agent_id=agent_id,
+            requested_set_id=set_id,
+        )
+        if agent is None:
+            return None
+        set_id = agent["set_id"]
+        pre_screening_job = await _latest_pre_screening_job(conn, agent_id=agent_id, set_id=set_id)
         snapshot = await _build_approval_input_snapshot(
             conn, agent_id=agent_id, set_id=set_id, pre_screening_job=pre_screening_job
         )
@@ -65,7 +115,7 @@ async def enqueue_approval_job(
             conn,
             agent_id=agent_id,
             set_id=set_id,
-            policy_version=_approval_policy_version(pre_screening_job, agent_id=agent_id),
+            policy_version=agent["hardcoding_policy_version"],
             snapshot=snapshot,
         )
 
@@ -77,24 +127,19 @@ async def finish_agent_and_enqueue_approval(
     agent_id: UUID,
     set_id: int,
 ) -> bool:
-    """Finish an agent and enqueue approval unless its coldkey is banned. The judge policy is
-    copied from the agent's pre-screening job."""
+    """Finish an agent and enqueue approval with its competition policy unless banned."""
 
     async with conn.conn.transaction():
-        agent = await conn.fetchrow(
-            """
-            SELECT miner_coldkey
-            FROM agents
-            WHERE agent_id = $1
-              AND status = $2
-            FOR UPDATE
-            """,
-            agent_id,
-            AgentStatus.evaluating.value,
+        agent = await _lock_agent_for_approval(
+            conn,
+            agent_id=agent_id,
+            requested_set_id=set_id,
+            required_status=AgentStatus.evaluating,
         )
         if agent is None:
             return False
 
+        set_id = agent["set_id"]
         miner_coldkey = agent["miner_coldkey"]
         if miner_coldkey is not None:
             await lock_coldkey_ban_state(conn, miner_coldkey)
@@ -108,7 +153,7 @@ async def finish_agent_and_enqueue_approval(
         if miner_coldkey is not None and await get_banned_coldkey(miner_coldkey) is not None:
             return False
 
-        pre_screening_job = await _latest_pre_screening_job(conn, agent_id=agent_id)
+        pre_screening_job = await _latest_pre_screening_job(conn, agent_id=agent_id, set_id=set_id)
         snapshot = await _build_approval_input_snapshot(
             conn, agent_id=agent_id, set_id=set_id, pre_screening_job=pre_screening_job
         )
@@ -116,37 +161,33 @@ async def finish_agent_and_enqueue_approval(
             conn,
             agent_id=agent_id,
             set_id=set_id,
-            policy_version=_approval_policy_version(pre_screening_job, agent_id=agent_id),
+            policy_version=agent["hardcoding_policy_version"],
             snapshot=snapshot,
         )
 
     return True
 
 
-async def _latest_pre_screening_job(conn: DatabaseConnection, *, agent_id: UUID) -> asyncpg.Record | None:
-    """The agent's most recent pre-screening job."""
+async def _latest_pre_screening_job(
+    conn: DatabaseConnection,
+    *,
+    agent_id: UUID,
+    set_id: int,
+) -> asyncpg.Record | None:
+    """The agent's most recent pre-screening job in its competition."""
 
     return await conn.fetchrow(
         """
         SELECT job_id, status, reviewer_id, policy_version
         FROM pre_screening_jobs
         WHERE agent_id = $1
+          AND set_id = $2
         ORDER BY created_at DESC, job_id DESC
         LIMIT 1
         """,
         agent_id,
+        set_id,
     )
-
-
-def _approval_policy_version(pre_screening_job: asyncpg.Record | None, *, agent_id: UUID) -> str:
-    """Approval reuses the judge policy stamped at upload."""
-
-    if pre_screening_job is not None:
-        return pre_screening_job["policy_version"]
-    logger.warning(
-        f"Agent {agent_id} has no pre-screening job; approval uses configured policy {config.HARDCODING_POLICY_VERSION}"
-    )
-    return config.HARDCODING_POLICY_VERSION
 
 
 @db_operation
@@ -156,16 +197,27 @@ async def project_next_approval_job_state(conn: DatabaseConnection) -> bool:
     async with conn.conn.transaction():
         job = await conn.fetchrow(
             """
-            SELECT *
-            FROM approval_jobs
-            WHERE status IN ('needs_review', 'completed')
-              AND projected_at IS NULL
-            ORDER BY created_at ASC
-            FOR UPDATE SKIP LOCKED
+            SELECT job.*
+            FROM approval_jobs job
+            INNER JOIN agents agent
+                ON agent.agent_id = job.agent_id
+               AND agent.set_id = job.set_id
+            INNER JOIN competitions competition
+                ON competition.set_id = job.set_id
+               AND competition.scoring_mode IS NOT NULL
+            WHERE job.status IN ('needs_review', 'completed')
+              AND job.projected_at IS NULL
+            ORDER BY job.created_at ASC
+            FOR UPDATE OF job SKIP LOCKED
             LIMIT 1
             """
         )
         if job is None:
+            return False
+
+        policy = await _get_competition_policy(conn, job["set_id"])
+        if policy is None:
+            logger.error(f"Cannot project approval job {job['job_id']}: competition {job['set_id']} has no policy")
             return False
 
         verdict = ApprovalVerdict(job["aggregate_verdict"]) if job["aggregate_verdict"] is not None else None
@@ -180,9 +232,14 @@ async def project_next_approval_job_state(conn: DatabaseConnection) -> bool:
             published_verdict = verdict
             published_score = job["aggregate_score"]
 
-        incentive_active = job["set_id"] >= config.INCENTIVE_START_SET_ID
+        incentive_active = policy.incentive_enabled
         if job["status"] == "completed" and verdict == ApprovalVerdict.approved and incentive_active:
-            rejection_reason = await _insert_incentive_approval(conn, job["agent_id"], job["set_id"])
+            rejection_reason = await _insert_incentive_approval(
+                conn,
+                job["agent_id"],
+                job["set_id"],
+                policy,
+            )
             if rejection_reason is not None:
                 effective_verdict = ApprovalVerdict.rejected
                 published_verdict = ApprovalVerdict.rejected
@@ -234,6 +291,7 @@ async def _insert_incentive_approval(
     conn: DatabaseConnection,
     agent_id: UUID,
     set_id: int,
+    policy: CompetitionPolicy,
 ) -> str | None:
     await conn.execute(
         "SELECT pg_advisory_xact_lock($1, $2)",
@@ -262,7 +320,11 @@ async def _insert_incentive_approval(
         if await get_banned_coldkey(miner_coldkey) is not None:
             return "Candidate coldkey is banned"
 
-    candidate = await get_validator_agent_score_for_set(agent_id, set_id, config.NUM_EVALS_PER_AGENT)
+    candidate = await get_validator_agent_score_for_set(
+        agent_id,
+        set_id,
+        policy.required_validator_count,
+    )
     if candidate is None:
         return "Candidate no longer has a complete validator score"
 
@@ -270,14 +332,15 @@ async def _insert_incentive_approval(
         conn,
         set_id,
         agent_id,
+        policy.required_validator_count,
     )
     improvement = calculate_relative_improvement(
         candidate_score=candidate.final_score,
         candidate_cost=candidate.avg_cost_usd,
         leader_score=None if leader is None else leader.final_score,
         leader_cost=None if leader is None else leader.avg_cost_usd,
-        performance_threshold=config.INCENTIVE_PERFORMANCE_THRESHOLD,
-        cost_threshold=config.INCENTIVE_COST_THRESHOLD,
+        performance_threshold=policy.incentive_performance_threshold,
+        cost_threshold=policy.incentive_cost_threshold,
     )
     if not improvement.qualified:
         return "Candidate no longer meets the relative improvement threshold"
@@ -287,7 +350,7 @@ async def _insert_incentive_approval(
     competition_elapsed_hours = _elapsed_hours(last_competition_improvement, decision_time)
     time_multiplier = calculate_time_multiplier(
         elapsed_hours=competition_elapsed_hours,
-        scale_hours=config.INCENTIVE_TIME_MULTIPLIER_SCALE_HOURS,
+        scale_hours=policy.incentive_time_multiplier_scale_hours,
     )
 
     initial_reward_score = calculate_initial_reward_score(
@@ -327,6 +390,7 @@ async def _get_ban_stable_leader(
     conn: DatabaseConnection,
     set_id: int,
     excluded_agent_id: UUID,
+    required_validator_count: int,
 ) -> AgentRankingProfile | None:
     """Return a leader whose coldkey ban state cannot change in this transaction."""
 
@@ -334,7 +398,7 @@ async def _get_ban_stable_leader(
         leader = await get_approved_leader_ranking_for_set(
             set_id,
             excluded_agent_id,
-            config.NUM_EVALS_PER_AGENT,
+            required_validator_count,
         )
         if leader is None or leader.miner_coldkey is None:
             return leader
@@ -343,7 +407,7 @@ async def _get_ban_stable_leader(
         current_leader = await get_approved_leader_ranking_for_set(
             set_id,
             excluded_agent_id,
-            config.NUM_EVALS_PER_AGENT,
+            required_validator_count,
         )
         if current_leader is None or current_leader.agent_id == leader.agent_id:
             return current_leader

@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import api.config as config
 from api.endpoints.admin import router as admin_router
 from api.endpoints.agent import router as agent_router
+from api.endpoints.competitions import router as competitions_router
 from api.endpoints.debug import router as debug_router
 from api.endpoints.evaluation_run import router as evaluation_run_router
 from api.endpoints.evaluation_sets import router as evaluation_sets_router
@@ -23,12 +24,14 @@ from api.endpoints.scaling import router as scaling_router
 from api.endpoints.scoring import router as scoring_router
 from api.endpoints.statistics import router as statistics_router
 from api.endpoints.validator import router as validator_router
+from api.exception_handlers import register_exception_handlers
 from api.loops.approval_projector import approval_projector_loop
 from api.loops.pre_screening_judge import pre_screening_projector_loop
 from api.loops.validator_heartbeat_timeout import validator_heartbeat_timeout_loop
 from api.src.endpoints.upload import router as upload_router
 from api.src.middleware.request_interceptor import RequestInterceptorMiddleware
 from api.src.utils.sentry import initialize_sentry
+from queries.competition import initialize_current_competition_policy
 from queries.evaluation import set_all_unfinished_evaluation_runs_to_errored
 from utils.bittensor import subtensor_client
 from utils.database import deinitialize_database, initialize_database
@@ -69,6 +72,7 @@ async def lifespan(app: FastAPI):
         port=config.DATABASE_PORT,
         name=config.DATABASE_NAME,
     )
+    await initialize_current_competition_policy()
     await initialize_s3(
         _bucket=config.S3_BUCKET_NAME,
         region=config.AWS_REGION,
@@ -111,6 +115,7 @@ async def lifespan(app: FastAPI):
 initialize_sentry()
 
 app = FastAPI(lifespan=lifespan)
+register_exception_handlers(app)
 
 # Middleware registration order: last added = outermost (runs first on requests).
 # CorrelationIdMiddleware must be outermost so the ID is set before RequestInterceptorMiddleware reads it.
@@ -126,6 +131,7 @@ app.add_middleware(CorrelationIdMiddleware)
 
 app.include_router(upload_router, prefix="/upload")
 app.include_router(admin_router, prefix="/admin")
+app.include_router(competitions_router, prefix="/competitions")
 app.include_router(retrieval_router, prefix="/retrieval")
 app.include_router(scoring_router, prefix="/scoring")
 app.include_router(validator_router, prefix="/validator")

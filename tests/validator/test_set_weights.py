@@ -21,62 +21,36 @@ def _metagraph(*hotkeys: str) -> SimpleNamespace:
 
 
 @pytest.mark.anyio
-async def test_submits_multiple_normalized_weights_from_one_metagraph_read(mock_subtensor) -> None:
-    mock_subtensor.get_metagraph_info.return_value = _metagraph("hk-1", "hk-2", "hk-3")
+async def test_submits_original_ordered_weights_from_one_fresh_metagraph(mock_subtensor) -> None:
+    mock_subtensor.get_metagraph_info.return_value = _metagraph("hk-2", "unused", "hk-1", "hk-3")
+    mapping = {"hk-1": 0.6, "hk-2": 0.3, "hk-3": 0.1}
 
-    await set_weights_module.set_weights_from_mapping({"hk-1": 0.6, "hk-2": 0.3, "hk-3": 0.1})
+    await set_weights_module.set_weights_from_mapping(mapping)
 
     mock_subtensor.get_metagraph_info.assert_awaited_once_with(
         netuid=set_weights_module.config.NETUID,
         selected_indices=[SelectiveMetagraphIndex.Hotkeys],
     )
     kwargs = mock_subtensor.set_weights.await_args.kwargs
-    assert kwargs["uids"] == [0, 1, 2]
-    assert kwargs["weights"] == pytest.approx([0.6, 0.3, 0.1])
+    assert kwargs["uids"] == [2, 0, 3]
+    assert kwargs["weights"] == [0.6, 0.3, 0.1]
 
 
 @pytest.mark.anyio
-async def test_missing_uid_is_dropped_and_remaining_weights_are_renormalized(mock_subtensor) -> None:
+async def test_any_missing_hotkey_skips_the_whole_tick_without_owner_fallback(mock_subtensor) -> None:
     mock_subtensor.get_metagraph_info.return_value = _metagraph("hk-1", "hk-3")
 
     await set_weights_module.set_weights_from_mapping({"hk-1": 0.6, "missing": 0.3, "hk-3": 0.1})
 
-    kwargs = mock_subtensor.set_weights.await_args.kwargs
-    assert kwargs["uids"] == [0, 1]
-    assert kwargs["weights"] == pytest.approx([6 / 7, 1 / 7])
+    mock_subtensor.set_weights.assert_not_awaited()
+    mock_subtensor.get_subnet_owner_hotkey.assert_not_awaited()
 
 
 @pytest.mark.anyio
-async def test_all_missing_uids_fall_back_to_subnet_owner_from_same_snapshot(mock_subtensor) -> None:
-    mock_subtensor.get_metagraph_info.return_value = _metagraph("other-hk", "owner-hk")
-    mock_subtensor.get_subnet_owner_hotkey.return_value = "owner-hk"
+async def test_unresolvable_metagraph_preserves_previous_weights(mock_subtensor) -> None:
+    mock_subtensor.get_metagraph_info.return_value = None
 
-    await set_weights_module.set_weights_from_mapping({"missing": 1.0})
-
-    mock_subtensor.get_subnet_owner_hotkey.assert_awaited_once_with(netuid=set_weights_module.config.NETUID)
-    kwargs = mock_subtensor.set_weights.await_args.kwargs
-    assert kwargs["uids"] == [1]
-    assert kwargs["weights"] == [1.0]
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize(
-    ("metagraph", "owner_hotkey"),
-    [
-        (None, None),
-        (_metagraph("other-hk"), None),
-        (_metagraph("other-hk"), "owner-hk"),
-    ],
-)
-async def test_unresolvable_metagraph_or_owner_preserves_previous_weights(
-    mock_subtensor,
-    metagraph,
-    owner_hotkey,
-) -> None:
-    mock_subtensor.get_metagraph_info.return_value = metagraph
-    mock_subtensor.get_subnet_owner_hotkey.return_value = owner_hotkey
-
-    await set_weights_module.set_weights_from_mapping({"missing": 1.0})
+    await set_weights_module.set_weights_from_mapping({"hotkey": 1.0})
 
     mock_subtensor.set_weights.assert_not_awaited()
 
@@ -90,9 +64,11 @@ async def test_unresolvable_metagraph_or_owner_preserves_previous_weights(
         {"hk": -1},
         {"hk": float("nan")},
         {"hk": True},
+        {"hk": 0.9},
+        {"hk-1": 0.6, "hk-2": 0.5},
     ],
 )
-async def test_malformed_weights_are_rejected_before_chain_calls(mock_subtensor, mapping) -> None:
+async def test_malformed_or_nonunit_weights_are_rejected_before_chain_calls(mock_subtensor, mapping) -> None:
     with pytest.raises(ValueError):
         await set_weights_module.set_weights_from_mapping(mapping)
 

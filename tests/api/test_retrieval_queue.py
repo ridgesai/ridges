@@ -38,12 +38,13 @@ class _FakeConn:
 async def test_get_agents_in_pre_screening_queue_uses_stage_view() -> None:
     conn = _FakeConn([_agent_row()])
 
-    result = await agent_queries.get_agents_in_queue.__wrapped__(conn, QueueStage.pre_screening)
+    result = await agent_queries.get_agents_in_queue.__wrapped__(conn, QueueStage.pre_screening, 7)
 
     assert [agent.status for agent in result] == [AgentStatus.pre_screening]
     assert "competition_state" not in result[0].model_dump()
     assert "approved" not in result[0].model_dump()
-    assert conn.args == ()
+    assert conn.args == (7,)
     assert conn.query is not None
     assert "join pre_screening_queue q" in conn.query
+    assert "where a.set_id = $1" in conn.query
     assert "order by a.created_at asc" in conn.query

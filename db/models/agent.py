@@ -26,6 +26,7 @@ class Agent(Base):
     set_id: Mapped[Optional[int]] = mapped_column(sa.Integer, sa.ForeignKey("competitions.set_id"), nullable=True)
 
     __table_args__ = (
+        sa.UniqueConstraint("agent_id", "set_id", name="uq_agents_agent_id_set_id"),
         sa.Index("idx_agents_miner_hotkey_version", "miner_hotkey", "agent_id"),
         sa.Index(
             "idx_agents_status",
@@ -111,6 +112,11 @@ class AgentScore(Base):
     final_score: Mapped[float] = mapped_column(sa.Float, nullable=False)
 
     __table_args__ = (
+        sa.ForeignKeyConstraint(
+            ["agent_id", "set_id"],
+            ["agents.agent_id", "agents.set_id"],
+            name="fk_agent_scores_agent_competition",
+        ),
         sa.Index("idx_agent_scores_agent_id", "agent_id", unique=True),
         sa.Index("idx_agent_scores_final_score", "final_score"),
         sa.Index("idx_agent_scores_created_at", "created_at"),

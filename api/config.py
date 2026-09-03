@@ -49,11 +49,6 @@ UPLOAD_SEND_ADDRESS = os.getenv("UPLOAD_SEND_ADDRESS")
 if not UPLOAD_SEND_ADDRESS:
     logger.fatal("UPLOAD_SEND_ADDRESS is not set in .env")
 
-BURN = os.getenv("BURN")
-if not BURN:
-    logger.fatal("BURN is not set in .env")
-BURN = BURN.lower() == "true"
-
 DISALLOW_UPLOADS = os.getenv("DISALLOW_UPLOADS")
 if not DISALLOW_UPLOADS:
     logger.fatal("DISALLOW_UPLOADS is not set in .env")
@@ -226,11 +221,11 @@ if not SHOULD_RUN_LOOPS:
 SHOULD_RUN_LOOPS = SHOULD_RUN_LOOPS.lower() == "true"
 
 PRE_SCREENING_JUDGE_ENABLED = os.getenv("PRE_SCREENING_JUDGE_ENABLED", "false").lower() == "true"
-PRE_SCREENING_PROJECTOR_RUN_LOOP = SHOULD_RUN_LOOPS and PRE_SCREENING_JUDGE_ENABLED
+PRE_SCREENING_PROJECTOR_RUN_LOOP = SHOULD_RUN_LOOPS
 PRE_SCREENING_JUDGE_RUN_LOOP = PRE_SCREENING_PROJECTOR_RUN_LOOP
 PRE_SCREENING_PROJECTOR_POLL_INTERVAL_SECONDS = int(os.getenv("PRE_SCREENING_PROJECTOR_POLL_INTERVAL_SECONDS", "5"))
 AUTO_APPROVAL_ENABLED = os.getenv("AUTO_APPROVAL_ENABLED", "false").lower() == "true"
-AUTO_APPROVAL_RUN_LOOP = SHOULD_RUN_LOOPS and AUTO_APPROVAL_ENABLED
+AUTO_APPROVAL_RUN_LOOP = SHOULD_RUN_LOOPS
 
 HARDCODING_POLICY_VERSION = os.getenv("HARDCODING_POLICY_VERSION", "hardcoding-linting-v1")
 APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS = int(os.getenv("APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS", "5"))
@@ -287,8 +282,6 @@ if ENV == "prod":
 else:
     logger.info("Agent Upload running in development mode.")
 
-if BURN:
-    logger.warning("Burn mode is active — all payments will be burned")
 if DISALLOW_UPLOADS:
     logger.warning(f"Uploads are disallowed: {DISALLOW_UPLOADS_REASON}")
     logger.info("-------------------------")

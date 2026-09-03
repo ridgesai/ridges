@@ -2,16 +2,31 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from models.agent import (
     Agent,
     AgentCompetitionStatus,
+    AgentCreate,
     AgentStatus,
     ApprovalReviewStatus,
     PublicAgent,
     build_agent_competition_state,
     derive_agent_competition_status,
 )
+
+
+def test_agent_create_does_not_accept_pipeline_status() -> None:
+    with pytest.raises(ValidationError, match="status"):
+        AgentCreate(
+            miner_hotkey="miner-hotkey",
+            name="Agent",
+            version_num=1,
+            status=AgentStatus.screening_1,
+            created_at=datetime.now(timezone.utc),
+            payment_block_hash="block",
+            payment_extrinsic_index="0",
+        )
 
 
 @pytest.mark.parametrize("status", [status for status in AgentStatus if status is not AgentStatus.finished])
@@ -41,20 +56,24 @@ def test_core_agent_does_not_expose_competition_payload():
         created_at=datetime.now(timezone.utc),
     )
 
-    assert {
-        "set_id",
-        "approved",
-        "performance_delta",
-        "cost_delta",
-        "relative_improvement_units",
-        "time_multiplier",
-        "initial_reward_score",
-        "approved_at",
-        "baseline_agent_id",
-        "baseline_agent_name",
-        "baseline_agent_version_num",
-        "competition_state",
-    }.isdisjoint(agent.model_dump())
+    assert (
+        {
+            "set_id",
+            "approved",
+            "performance_delta",
+            "cost_delta",
+            "relative_improvement_units",
+            "time_multiplier",
+            "initial_reward_score",
+            "approved_at",
+            "baseline_agent_id",
+            "baseline_agent_name",
+            "baseline_agent_version_num",
+            "competition_state",
+        }
+        - {"set_id"}
+    ).isdisjoint(agent.model_dump())
+    assert agent.model_dump()["set_id"] is None
 
 
 def test_rejection_takes_precedence_over_published_approval():
@@ -228,6 +247,7 @@ def test_public_agent_populates_complete_competition_state():
     assert agent.competition_state.final_score == 0.5
     assert agent.emission == 0.25
     assert agent.reward_weight == 0.75
+    assert agent.legacy_membership is False
     assert agent.status is AgentStatus.finished
     serialized = agent.model_dump()
     assert serialized["id"] == agent.agent_id
@@ -253,10 +273,12 @@ def test_public_agent_populates_complete_competition_state():
     assert set(serialized) == {
         "agent_id",
         "miner_hotkey",
+        "miner_coldkey",
         "name",
         "version_num",
         "status",
         "created_at",
+        "legacy_membership",
         "emission",
         "reward_weight",
         "competition_state",

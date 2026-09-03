@@ -65,6 +65,92 @@ class _FakeClient:
         return self.response
 
 
+def _competition_client(competitions: list[dict]) -> MagicMock:
+    response = MagicMock(status_code=200, text="ok")
+    response.json.return_value = competitions
+    client = MagicMock()
+    client.get.return_value = response
+    return client
+
+
+def test_select_upload_competition_requires_deliberate_choice(monkeypatch) -> None:
+    with pytest.raises(upload_module.click.ClickException, match="No competition"):
+        upload_module._select_upload_competition(
+            _competition_client([]),
+            api_url="https://example.test",
+            requested_set_id=None,
+        )
+
+    assert (
+        upload_module._select_upload_competition(
+            _competition_client([{"set_id": 2, "name": "Two"}, {"set_id": 9, "name": "Nine"}]),
+            api_url="https://example.test",
+            requested_set_id=9,
+        )
+        == 9
+    )
+    with pytest.raises(upload_module.click.ClickException, match="not accepting"):
+        upload_module._select_upload_competition(
+            _competition_client([{"set_id": 2, "name": "Two"}]),
+            api_url="https://example.test",
+            requested_set_id=9,
+        )
+
+    # Without --competition and without a TTY, fail fast
+    monkeypatch.setattr(upload_module.sys, "stdin", MagicMock(isatty=MagicMock(return_value=False)))
+    with pytest.raises(upload_module.click.ClickException) as exc_info:
+        upload_module._select_upload_competition(
+            _competition_client([{"set_id": 7, "name": "Seven"}]),
+            api_url="https://example.test",
+            requested_set_id=None,
+        )
+    assert "7 (Seven)" in str(exc_info.value)
+    assert "--competition INTEGER" in str(exc_info.value)
+
+    # Interactive sessions prompt for an explicit choice, even with a single competition.
+    monkeypatch.setattr(upload_module.sys, "stdin", MagicMock(isatty=MagicMock(return_value=True)))
+    prompt = MagicMock(return_value="7")
+    monkeypatch.setattr(upload_module.Prompt, "ask", prompt)
+    assert (
+        upload_module._select_upload_competition(
+            _competition_client([{"set_id": 7, "name": "Seven"}]),
+            api_url="https://example.test",
+            requested_set_id=None,
+        )
+        == 7
+    )
+    assert prompt.call_args.kwargs["choices"] == ["7"]
+
+    prompt.return_value = "9"
+    assert (
+        upload_module._select_upload_competition(
+            _competition_client([{"set_id": 2, "name": "Two"}, {"set_id": 9, "name": "Nine"}]),
+            api_url="https://example.test",
+            requested_set_id=None,
+        )
+        == 9
+    )
+    assert prompt.call_args.kwargs["choices"] == ["2", "9"]
+
+
+def test_latest_agent_preview_is_filtered_to_selected_set() -> None:
+    client = _competition_client([])
+    client.get.return_value.json.return_value = [
+        {"set_id": 1, "name": "Set One", "version_num": 8},
+        {"set_id": 2, "name": "Old", "version_num": 1},
+        {"set_id": 2, "name": "Current", "version_num": 3},
+    ]
+
+    name, version = upload_module._resolve_upload_name_and_version(
+        client,
+        api_url="https://example.test",
+        hotkey="hotkey",
+        set_id=2,
+    )
+
+    assert (name, version) == ("Current", 4)
+
+
 def test_check_upload_allowed_sends_both_openrouter_keys(tmp_path: Path) -> None:
     quote_response = {
         "quote_id": "quote-123",
@@ -230,11 +316,14 @@ def test_upload_command_credit_path_never_attempts_burn(monkeypatch, tmp_path: P
     monkeypatch.setattr(upload_module, "_resolve_wallet_and_target", MagicMock(return_value=(wallet, target)))
     monkeypatch.setattr(upload_module, "_resolve_openrouter_upload_credentials", MagicMock(return_value=credentials))
     monkeypatch.setattr(upload_module, "_print_upload_preview", MagicMock())
+    monkeypatch.setattr(upload_module, "_select_upload_competition", MagicMock(return_value=1))
     monkeypatch.setattr(upload_module, "_prepare_pending_upload", MagicMock(return_value=pending))
     monkeypatch.setattr(
         upload_module,
         "_check_upload_allowed",
-        MagicMock(return_value={"payment_method": "credit", "credit_id": credit_id, "amount_alpha_rao": 0}),
+        MagicMock(
+            return_value={"payment_method": "credit", "credit_id": credit_id, "amount_alpha_rao": 0, "set_id": 1}
+        ),
     )
     monkeypatch.setattr(upload_module.httpx, "Client", MagicMock(return_value=client_context))
     unlock = MagicMock(side_effect=AssertionError("credit path must not unlock the coldkey"))
@@ -320,3 +409,172 @@ def test_submit_eval_payment_surfaces_failed_extrinsic(monkeypatch):
         match="Alpha burn failed on-chain: NotEnoughBalanceToPayFees",
     ):
         upload_module._submit_eval_payment(wallet=wallet, payment_method_details=details)
+
+
+def test_upload_selects_before_name_keys_or_payment(monkeypatch, tmp_path: Path) -> None:
+    wallet = MagicMock()
+    wallet.hotkey.ss58_address = "hotkey"
+    target = upload_module.UploadTarget(
+        api_url="https://example.test",
+        agent_path=tmp_path / "agent.py",
+        file_content=b"print('hi')\n",
+        content_hash="source",
+    )
+    client_context = MagicMock()
+    client_context.__enter__.return_value = MagicMock()
+    monkeypatch.setattr(upload_module, "_resolve_wallet_and_target", MagicMock(return_value=(wallet, target)))
+    monkeypatch.setattr(upload_module.httpx, "Client", MagicMock(return_value=client_context))
+    monkeypatch.setattr(
+        upload_module,
+        "_select_upload_competition",
+        MagicMock(side_effect=upload_module.click.ClickException("No competition is accepting uploads")),
+    )
+    prepare = MagicMock(side_effect=AssertionError("name/signing must happen after selection"))
+    credentials = MagicMock(side_effect=AssertionError("keys must happen after selection"))
+    unlock = MagicMock(side_effect=AssertionError("payment must happen after selection"))
+    submit = MagicMock(side_effect=AssertionError("payment must happen after selection"))
+    monkeypatch.setattr(upload_module, "_prepare_pending_upload", prepare)
+    monkeypatch.setattr(upload_module, "_resolve_openrouter_upload_credentials", credentials)
+    monkeypatch.setattr(upload_module, "_unlock_coldkey", unlock)
+    monkeypatch.setattr(upload_module, "_submit_eval_payment", submit)
+
+    result = CliRunner().invoke(upload_module.upload, [], obj={})
+
+    assert result.exit_code != 0
+    assert "No competition" in result.output
+    prepare.assert_not_called()
+    credentials.assert_not_called()
+    unlock.assert_not_called()
+    submit.assert_not_called()
+
+
+def test_upload_pins_preflight_set_for_final_submission(monkeypatch, tmp_path: Path) -> None:
+    wallet = MagicMock()
+    wallet.hotkey.ss58_address = "hotkey"
+    target = upload_module.UploadTarget(
+        api_url="https://example.test",
+        agent_path=tmp_path / "agent.py",
+        file_content=b"print('hi')\n",
+        content_hash="source",
+    )
+    pending = upload_module.PendingUpload("Agent", 0, "file-info", "public", "signature")
+    credentials = upload_module.OpenRouterUploadCredentials("runtime", "management")
+    client = MagicMock()
+    client_context = MagicMock()
+    client_context.__enter__.return_value = client
+    preflight = MagicMock(
+        return_value={
+            "payment_method": "credit",
+            "credit_id": "credit-id",
+            "amount_alpha_rao": 0,
+            "set_id": 12,
+        }
+    )
+    execute = MagicMock()
+    monkeypatch.setattr(upload_module, "_resolve_wallet_and_target", MagicMock(return_value=(wallet, target)))
+    monkeypatch.setattr(upload_module.httpx, "Client", MagicMock(return_value=client_context))
+    monkeypatch.setattr(upload_module, "_select_upload_competition", MagicMock(return_value=12))
+    monkeypatch.setattr(upload_module, "_prepare_pending_upload", MagicMock(return_value=pending))
+    monkeypatch.setattr(upload_module, "_resolve_openrouter_upload_credentials", MagicMock(return_value=credentials))
+    monkeypatch.setattr(upload_module, "_print_upload_preview", MagicMock())
+    monkeypatch.setattr(upload_module, "_print_credit_receipt", MagicMock())
+    monkeypatch.setattr(upload_module, "_check_upload_allowed", preflight)
+    monkeypatch.setattr(upload_module, "_execute_upload", execute)
+
+    result = CliRunner().invoke(upload_module.upload, ["--competition", "12", "--use-credit"], obj={})
+
+    assert result.exit_code == 0, result.output
+    assert preflight.call_args.kwargs["set_id"] == 12
+    assert execute.call_args.kwargs["set_id"] == 12
+
+
+@pytest.mark.parametrize(
+    ("returned_set_id", "expected_message"),
+    [
+        (13, "changed the selected competition"),
+        (None, "did not return the selected competition"),
+        ("12", "did not return the selected competition"),
+    ],
+)
+def test_upload_rejects_invalid_preflight_set_before_payment(
+    monkeypatch,
+    tmp_path: Path,
+    returned_set_id,
+    expected_message: str,
+) -> None:
+    wallet = MagicMock()
+    wallet.hotkey.ss58_address = "hotkey"
+    target = upload_module.UploadTarget(
+        api_url="https://example.test",
+        agent_path=tmp_path / "agent.py",
+        file_content=b"print('hi')\n",
+        content_hash="source",
+    )
+    pending = upload_module.PendingUpload("Agent", 0, "file-info", "public", "signature")
+    credentials = upload_module.OpenRouterUploadCredentials("runtime", "management")
+    client_context = MagicMock()
+    client_context.__enter__.return_value = MagicMock()
+    monkeypatch.setattr(upload_module, "_resolve_wallet_and_target", MagicMock(return_value=(wallet, target)))
+    monkeypatch.setattr(upload_module.httpx, "Client", MagicMock(return_value=client_context))
+    monkeypatch.setattr(upload_module, "_select_upload_competition", MagicMock(return_value=12))
+    monkeypatch.setattr(upload_module, "_prepare_pending_upload", MagicMock(return_value=pending))
+    monkeypatch.setattr(upload_module, "_resolve_openrouter_upload_credentials", MagicMock(return_value=credentials))
+    monkeypatch.setattr(upload_module, "_print_upload_preview", MagicMock())
+    monkeypatch.setattr(
+        upload_module,
+        "_check_upload_allowed",
+        MagicMock(return_value={"payment_method": "burn", "set_id": returned_set_id}),
+    )
+    unlock = MagicMock(side_effect=AssertionError("changed set must stop before payment"))
+    submit = MagicMock(side_effect=AssertionError("changed set must stop before payment"))
+    monkeypatch.setattr(upload_module, "_unlock_coldkey", unlock)
+    monkeypatch.setattr(upload_module, "_submit_eval_payment", submit)
+
+    result = CliRunner().invoke(upload_module.upload, [], obj={})
+
+    assert result.exit_code != 0
+    assert expected_message in result.output
+    unlock.assert_not_called()
+    submit.assert_not_called()
+
+
+def test_resume_upload_passes_selected_set_to_final(monkeypatch, tmp_path: Path) -> None:
+    wallet = MagicMock()
+    wallet.hotkey.ss58_address = "hotkey"
+    target = upload_module.UploadTarget(
+        api_url="https://example.test",
+        agent_path=tmp_path / "agent.py",
+        file_content=b"print('hi')\n",
+        content_hash="source",
+    )
+    pending = upload_module.PendingUpload("Agent", 0, "file-info", "public", "signature")
+    credentials = upload_module.OpenRouterUploadCredentials("runtime", "management")
+    client_context = MagicMock()
+    client_context.__enter__.return_value = MagicMock()
+    execute = MagicMock()
+    monkeypatch.setattr(upload_module, "_resolve_wallet_and_target", MagicMock(return_value=(wallet, target)))
+    monkeypatch.setattr(upload_module.httpx, "Client", MagicMock(return_value=client_context))
+    monkeypatch.setattr(upload_module, "_select_upload_competition", MagicMock(return_value=17))
+    monkeypatch.setattr(upload_module, "_prepare_pending_upload", MagicMock(return_value=pending))
+    monkeypatch.setattr(upload_module, "_resolve_openrouter_upload_credentials", MagicMock(return_value=credentials))
+    monkeypatch.setattr(upload_module, "_print_upload_preview", MagicMock())
+    monkeypatch.setattr(upload_module, "_execute_upload", execute)
+
+    result = CliRunner().invoke(
+        upload_module.resume_upload,
+        [
+            "--competition",
+            "17",
+            "--quote-id",
+            "quote",
+            "--payment-block-hash",
+            "block",
+            "--payment-extrinsic-index",
+            "3",
+        ],
+        obj={},
+    )
+
+    assert result.exit_code == 0, result.output
+    assert execute.call_args.kwargs["set_id"] == 17
+    assert execute.call_args.kwargs["run_check"] is False

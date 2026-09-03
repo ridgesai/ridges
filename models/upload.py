@@ -5,11 +5,19 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-class AgentUploadResponse(BaseModel):
-    """Response model for successful agent upload"""
+class UploadStatusResponse(BaseModel):
+    """Common status/message shape for upload flows."""
 
     status: str = Field(..., description="Status of the upload operation")
     message: str = Field(..., description="Detailed message about the upload result")
+
+
+class AgentUploadResponse(UploadStatusResponse):
+    """Response model for successful agent upload"""
+
+    agent_id: UUID = Field(..., description="Admitted (or replayed) agent ID")
+    miner_hotkey: str = Field(..., description="Miner hotkey the agent was admitted for")
+    miner_coldkey: Optional[str] = Field(None, description="Owning coldkey when known at admission time")
 
 
 class UploadPriceResponse(BaseModel):
@@ -19,7 +27,7 @@ class UploadPriceResponse(BaseModel):
     payment_netuid: int = Field(..., description="Subnet whose alpha must be burned")
 
 
-class AgentCheckResponse(AgentUploadResponse):
+class AgentCheckResponse(UploadStatusResponse):
     """Response model for successful agent upload preflight checks"""
 
     payment_method: Literal["burn", "credit"] = Field("burn", description="Payment method selected for this upload")
@@ -28,6 +36,12 @@ class AgentCheckResponse(AgentUploadResponse):
     amount_alpha_rao: int = Field(..., description="Amount of SN62 alpha to burn (in rao)")
     payment_netuid: Optional[int] = Field(None, description="Subnet whose alpha must be burned")
     expires_at: Optional[datetime] = Field(None, description="Latest on-chain burn timestamp accepted for this quote")
+
+
+class AgentDirectCheckResponse(AgentCheckResponse):
+    """Direct upload preflight response with its authoritative competition."""
+
+    set_id: int = Field(..., description="Competition selected for direct agent admission")
 
 
 class ErrorResponse(BaseModel):

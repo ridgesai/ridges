@@ -266,6 +266,7 @@ def test_upload_failure_prints_ticket(monkeypatch):
             target=target,
             credentials=upload_module.OpenRouterUploadCredentials(runtime_api_key="r", management_key="m"),
             receipt=receipt,
+            set_id=1,
             pending=pending,
             run_check=False,
             emit_ticket_on_failure=True,
@@ -301,6 +302,7 @@ def test_upload_transport_failure_prints_ticket(monkeypatch):
             target=MagicMock(),
             credentials=upload_module.OpenRouterUploadCredentials(runtime_api_key="r", management_key="m"),
             receipt=receipt,
+            set_id=1,
             pending=pending,
             run_check=False,
             emit_ticket_on_failure=True,
@@ -340,6 +342,7 @@ def test_upload_failure_with_credit_receipt_prints_credit_ticket(monkeypatch):
             target=MagicMock(),
             credentials=upload_module.OpenRouterUploadCredentials(runtime_api_key="r", management_key="m"),
             receipt=receipt,
+            set_id=1,
             pending=pending,
             run_check=False,
             emit_ticket_on_failure=True,
@@ -349,3 +352,15 @@ def test_upload_failure_with_credit_receipt_prints_credit_ticket(monkeypatch):
     assert ticket.funding == FUNDING_CREDIT
     assert ticket.credit_id == CREDIT_ID
     assert verify_ticket_signature(ticket)
+
+
+def test_prepare_upload_remains_competition_free() -> None:
+    result = CliRunner().invoke(
+        prepare_module.prepare_upload,
+        ["--competition", "7"],
+        obj={"url": None},
+    )
+
+    assert result.exit_code != 0
+    assert "No such option" in result.output
+    assert "--competition" in result.output
