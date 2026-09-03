@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID, uuid5
 
+import asyncpg
+
 import api.config as config
 from models.agent import (
     Agent,
@@ -1396,13 +1398,13 @@ async def get_pending_work_counts(conn: DatabaseConnection) -> dict[str, int]:
 
 
 @db_operation
-async def get_all_public_agents_by_miner_coldkey(conn: DatabaseConnection, miner_coldkey: str) -> list[PublicAgent]:
-    """All agents stamped with this coldkey at upload time.
+async def get_public_agent_rows_by_miner_coldkey(conn: DatabaseConnection, miner_coldkey: str) -> list[asyncpg.Record]:
+    """All agents stamped with this coldkey at upload time, as raw rows.
 
     Rows with a NULL coldkey are excluded — miner_coldkey was added 2026-07-10
     without backfill, so agents uploaded before then (and dev uploads) won't appear.
     """
-    result = await conn.fetch(
+    return await conn.fetch(
         f"""
         SELECT
             {AGENT_PUBLIC_SELECT_COLUMNS}
@@ -1413,4 +1415,3 @@ async def get_all_public_agents_by_miner_coldkey(conn: DatabaseConnection, miner
         """,
         miner_coldkey,
     )
-    return [PublicAgent(**agent) for agent in result]

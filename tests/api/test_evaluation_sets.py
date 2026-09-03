@@ -27,9 +27,6 @@ async def remove_caching(monkeypatch):
     clear_all_ttl_caches()
     monkeypatch.setattr(evaluation_sets_endpoint, "_cached_build_detail", evaluation_sets_endpoint._build_detail)
     monkeypatch.setattr(
-        evaluation_sets_endpoint, "_cached_build_leaderboard", evaluation_sets_endpoint._build_leaderboard
-    )
-    monkeypatch.setattr(
         evaluation_sets_endpoint, "_cached_build_approved_agents", evaluation_sets_endpoint._build_approved_agents
     )
     monkeypatch.setattr(
