@@ -48,7 +48,7 @@ async def test_malformed_verifier_json_becomes_validator_internal_error(tmp_path
 
     monkeypatch.setattr(engine_module, "run_task", fake_run_task)
     task_dir = tmp_path / "task"
-    task_dir.mkdir()
+    task_dir.mkdir(exist_ok=True)
 
     async def fake_resolve_task_dir(self, execution_spec, problem_name, fetch_task_url):
         return task_dir
@@ -172,7 +172,7 @@ async def test_evaluate_attaches_job_dir_from_resolved_request(tmp_path: Path, m
     monkeypatch.setattr(engine_module, "run_task", fake_run_task)
 
     task_dir = tmp_path / "task"
-    task_dir.mkdir()
+    task_dir.mkdir(exist_ok=True)
 
     async def fake_resolve_task_dir(self, execution_spec, problem_name, fetch_task_url):
         return task_dir
@@ -285,7 +285,8 @@ async def test_evaluate_translates_harbor_hooks_into_domain_callbacks(tmp_path: 
             "VerificationEvent",
             (),
             {
-                "trial_id": "trial-1",
+                "trial_id": "opaque-id",
+                "trial_name": "trial-1",
                 "config": type("Config", (), {"trials_dir": tmp_path})(),
             },
         )()
@@ -339,7 +340,8 @@ async def test_evaluate_swallows_domain_callback_failures(tmp_path: Path, monkey
             "VerificationEvent",
             (),
             {
-                "trial_id": "trial-1",
+                "trial_id": "opaque-id",
+                "trial_name": "trial-1",
                 "config": type("Config", (), {"trials_dir": tmp_path})(),
             },
         )()

@@ -11,19 +11,106 @@ from typing import Any
 from uuid import uuid4
 
 from models.openrouter import OpenRouterRuntimeConfig
-from ridges_harbor._stdlib_contract import HARBOR_RUNNER_ERROR_FILENAME
+from ridges_harbor._stdlib_contract import HARBOR_RUNNER_ERROR_FILENAME, PATCH_FILENAME
 from ridges_harbor.digest import compute_task_digest
 from ridges_harbor.docker_runtime import (
     TrialHook,
     build_enable_verifier_egress_hook,
     docker_environment_env,
 )
+from ridges_harbor.k8s_compose import parse_kubernetes_compose
 from ridges_harbor.progress_logging import install_logging_harbor_progress
 from ridges_harbor.shared import DEFAULT_RESULTS_DIR, HarborRunSummary, resolve_inference_gateway
 
 install_logging_harbor_progress()
 
 DEFAULT_AGENT_SANDBOX_PROXY_URL = "http://sandbox-proxy:80"
+
+
+def _load_single_step_task(task_dir: Path) -> Any:
+    """Parse a materialized task archive, rejecting multi-step configs."""
+    from harbor.models.task.task import Task
+
+    task = Task(task_dir)
+    if task.config.steps:
+        raise RuntimeError("Ridges Harbor 0.20 execution currently supports only single-step tasks")
+    return task
+
+
+def _uses_separate_verifier(task_dir: Path) -> bool:
+    """Resolve the task's native verifier mode using Harbor's own rules."""
+    from harbor.models.task.verifier_mode import task_has_any_separate_verifier
+
+    return task_has_any_separate_verifier(_load_single_step_task(task_dir).config)
+
+
+def _resolve_separate_verifier(task_dir: Path) -> bool:
+    """Resolve separate mode and preflight the archive its verifier image needs.
+
+    Docker rejects a verifier environment without a build definition deep inside
+    Harbor, while Kubernetes only notices in a BuildKit init container. Checking
+    on the host makes both backends refuse the same archives. Separate tasks must
+    also declare the published patch as their sole task-level artifact.
+    """
+    from harbor.constants import MAIN_SERVICE_NAME
+    from harbor.environments.definition import has_agent_environment_definition
+    from harbor.models.task.artifacts import effective_artifact_service, normalize_artifact_entries
+    from harbor.models.task.verifier_mode import (
+        resolve_effective_verifier_env_config,
+        task_has_any_separate_verifier,
+    )
+    from harbor.models.trial.paths import EnvironmentPaths
+
+    task = _load_single_step_task(task_dir)
+    if not task_has_any_separate_verifier(task.config):
+        return False
+
+    patch_artifact = (EnvironmentPaths.agent_dir / PATCH_FILENAME).as_posix()
+    artifacts = normalize_artifact_entries(task.config.artifacts)
+    if (
+        len(artifacts) != 1
+        or artifacts[0].source != patch_artifact
+        or effective_artifact_service(artifacts[0]) != MAIN_SERVICE_NAME
+    ):
+        raise RuntimeError(
+            f"Separate-verifier task {task_dir} must declare exactly one task-level artifact: "
+            f"{patch_artifact!r} from the main service"
+        )
+
+    verifier_env = resolve_effective_verifier_env_config(task.config, None)
+    docker_image = verifier_env.docker_image if verifier_env is not None else None
+    if not has_agent_environment_definition(task.paths.tests_dir, docker_image=docker_image):
+        raise RuntimeError(
+            f"Separate-verifier task {task_dir} has no verifier environment definition: add "
+            "tests/Dockerfile, tests/docker-compose.yaml, or set the verifier "
+            "[environment].docker_image"
+        )
+    if not task.paths.test_path.exists():
+        raise RuntimeError(
+            f"Separate-verifier task {task_dir} is missing tests/test.sh; Ridges bakes the test "
+            "scripts into the verifier image instead of uploading them at verification time"
+        )
+    return True
+
+
+def _validate_kubernetes_compose_file(compose_path: Path) -> None:
+    """Parse one Compose file; leftover names may skip sidecar validation."""
+    if not compose_path.exists():
+        return
+    parse_kubernetes_compose(compose_path)
+
+
+def _validate_kubernetes_task_services(task_dir: Path, *, separate_verifier: bool = False) -> None:
+    """Reject Compose features the Kubernetes adapter cannot translate."""
+    _validate_kubernetes_compose_file(task_dir / "environment" / "docker-compose.yaml")
+    tests_compose = task_dir / "tests" / "docker-compose.yaml"
+    _validate_kubernetes_compose_file(tests_compose)
+    if not separate_verifier and parse_kubernetes_compose(tests_compose):
+        raise RuntimeError(
+            "Kubernetes shared mode only runs environment/ sidecars; "
+            "tests/docker-compose.yaml defines extra services. "
+            'Set environment_mode = "separate" or use Docker.'
+        )
 
 
 def _write_runner_exception(job_dir: Path) -> Path:
@@ -157,6 +244,9 @@ async def _run_task_dir(
     from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig, VerifierConfig
 
     ridges_environment_type = os.getenv("RIDGES_ENVIRONMENT_TYPE", "docker")
+    separate_verifier = _resolve_separate_verifier(task_dir)
+    if ridges_environment_type == "kubernetes":
+        _validate_kubernetes_task_services(task_dir, separate_verifier=separate_verifier)
 
     resolved_job_name = job_name or f"{task_name}__{uuid4().hex[:8]}"
     job_dir = results_dir / resolved_job_name
@@ -170,6 +260,7 @@ async def _run_task_dir(
 
     agent_kwargs: dict[str, Any] = {
         "agent_path": str(agent_path),
+        "separate_verifier": separate_verifier,
     }
     effective_max_cost_usd = str(max_cost_usd) if max_cost_usd is not None else "9"
     agent_env = _harbor_agent_env(
@@ -182,9 +273,6 @@ async def _run_task_dir(
     if ridges_environment_type == "kubernetes":
         # The proxy sidecar shares the pod network namespace and listens on 8080.
         agent_env["SANDBOX_PROXY_URL"] = "http://127.0.0.1:8080"
-
-        from kubernetes import client as k8s_client_mod
-        from kubernetes import config as k8s_config_mod
 
         from validator.config import (
             K8S_BUILD_REGISTRY,
@@ -199,12 +287,15 @@ async def _run_task_dir(
             K8S_REGISTRY_INSECURE,
             K8S_REGISTRY_PASSWORD,
             K8S_REGISTRY_SECRET,
+            K8S_SIDECAR_MEMORY_LIMIT_MI,
+            K8S_SIDECAR_MEMORY_REQUEST_MI,
             PROXY_IMAGE,
         )
 
         K8S_OWNER_POD_NAME = os.getenv("MY_POD_NAME")
         K8S_OWNER_POD_UID = os.getenv("MY_POD_UID")
 
+        from ridges_harbor.k8s_environment import build_isolated_k8s_apis
         from ridges_harbor.k8s_runtime import build_k8s_verifier_egress_hook
 
         digest_tag = task_digest.split(":")[1][:12]
@@ -229,6 +320,10 @@ async def _run_task_dir(
                 "inference_seed": inference_seed,
                 "openrouter_sidecar_env": openrouter_config.sidecar_env_vars() if openrouter_config else {},
                 "proxy_data_dir": str(proxy_data_dir),
+                "task_dir": str(task_dir),
+                "verifier_image_required": separate_verifier,
+                "sidecar_memory_request_mi": K8S_SIDECAR_MEMORY_REQUEST_MI,
+                "sidecar_memory_limit_mi": K8S_SIDECAR_MEMORY_LIMIT_MI,
                 "kubeconfig_context": K8S_CONTEXT,
                 "node_selector": K8S_NODE_SELECTOR,
                 "labels": {"ridges.ai/trial-id": ridges_trial_id},
@@ -245,12 +340,7 @@ async def _run_task_dir(
             },
         )
 
-        # Build k8s client for the egress hook
-        try:
-            k8s_config_mod.load_incluster_config()
-        except k8s_config_mod.ConfigException:
-            k8s_config_mod.load_kube_config(context=K8S_CONTEXT)
-        core_api = k8s_client_mod.CoreV1Api()
+        core_api, _batch_api = build_isolated_k8s_apis(K8S_CONTEXT)
 
         enable_verifier_egress = build_k8s_verifier_egress_hook(
             namespace=K8S_NAMESPACE,
@@ -281,6 +371,7 @@ async def _run_task_dir(
         retry=RetryConfig(max_retries=0),
         environment=environment_config,
         verifier=VerifierConfig(max_timeout_sec=effective_verifier_timeout),
+        artifacts=[],
         environment_build_timeout_multiplier=environment_build_timeout_multiplier,
         tasks=[TaskConfig(path=task_dir)],
         agents=[
@@ -303,7 +394,8 @@ async def _run_task_dir(
         if on_agent_started is not None:
             job.on_agent_started(on_agent_started)
 
-        job.on_verification_started(enable_verifier_egress)
+        if not separate_verifier:
+            job.on_verification_started(enable_verifier_egress)
 
         if on_verification_started is not None:
             job.on_verification_started(on_verification_started)

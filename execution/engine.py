@@ -137,7 +137,7 @@ class ExecutionEngine:
 
             async def harbor_on_verification_started(event: Any) -> None:
                 try:
-                    trial_dir = Path(event.config.trials_dir) / event.trial_id
+                    trial_dir = Path(event.config.trials_dir) / event.trial_name
                     await on_verification_started(read_trial_snapshot(trial_dir))
                 except Exception as exception:
                     logger.warning(f"Harbor on_verification_started callback failed: {exception}")

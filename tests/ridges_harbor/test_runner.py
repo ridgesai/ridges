@@ -16,6 +16,8 @@ from ridges_harbor._stdlib_contract import (
     GIT_BASELINE_LOG_FILENAME,
     PATCH_APPLY_LOG_FILENAME,
     PATCH_CHECK_LOG_FILENAME,
+    PATCH_PUBLISH_LOG_FILENAME,
+    PATCH_PUBLISHED_METADATA_KEY,
     RUN_LOG_FILENAME,
     SETUP_LOG_FILENAME,
 )
@@ -89,10 +91,14 @@ class FakeVerifierConfig:
         max_timeout_sec: float | None = None,
         override_timeout_sec: float | None = None,
         disable: bool = False,
+        import_path: str | None = None,
+        kwargs: dict | None = None,
     ):
         self.max_timeout_sec = max_timeout_sec
         self.override_timeout_sec = override_timeout_sec
         self.disable = disable
+        self.import_path = import_path
+        self.kwargs = kwargs or {}
 
 
 class FakeJobConfig:
@@ -203,6 +209,7 @@ def _install_fake_harbor(monkeypatch) -> None:
     monkeypatch.setitem(sys.modules, "harbor.models.job.config", job_config_module)
     monkeypatch.setitem(sys.modules, "harbor.models.trial", trial_package_module)
     monkeypatch.setitem(sys.modules, "harbor.models.trial.config", trial_config_module)
+    monkeypatch.setattr(runner_module, "_resolve_separate_verifier", lambda _task_dir: False)
 
 
 @pytest.mark.anyio
@@ -231,9 +238,12 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
     assert FakeEnvironmentFactory.calls == [("docker", None)]
     assert FakeJob.created_configs[0].tasks[0].path == task_dir
     assert FakeJob.created_configs[0].verifier.max_timeout_sec == 60.0
+    assert FakeJob.created_configs[0].verifier.import_path is None
+    assert FakeJob.created_configs[0].artifacts == []
     assert FakeJob.created_configs[0].agents[0].override_timeout_sec == 30.0
     assert FakeJob.created_configs[0].agents[0].kwargs == {
         "agent_path": str(tmp_path / "agent.py"),
+        "separate_verifier": False,
     }
     assert FakeJob.created_configs[0].agents[0].env == {
         "EVALUATION_RUN_ID": "eval-run-1",
@@ -267,15 +277,14 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
 
 @pytest.mark.anyio
 async def test_run_task_dir_uses_loopback_proxy_in_kubernetes(tmp_path: Path, monkeypatch) -> None:
-    from kubernetes import client as k8s_client
-    from kubernetes import config as k8s_config
-
     from validator import config as validator_config
 
     _install_fake_harbor(monkeypatch)
     monkeypatch.setenv("RIDGES_ENVIRONMENT_TYPE", "kubernetes")
-    monkeypatch.setattr(k8s_config, "load_incluster_config", lambda: None)
-    monkeypatch.setattr(k8s_client, "CoreV1Api", lambda: object())
+    monkeypatch.setattr(
+        "ridges_harbor.k8s_environment.build_isolated_k8s_apis",
+        lambda _context=None: (object(), object()),
+    )
     # These are absent if another test imported validator.config in Docker mode.
     monkeypatch.setattr(validator_config, "K8S_MEMORY_REQUEST_FRACTION", 0.25, raising=False)
     monkeypatch.setattr(validator_config, "K8S_CPU_REQUEST_FRACTION", 0.25, raising=False)
@@ -309,7 +318,58 @@ async def test_run_task_dir_uses_loopback_proxy_in_kubernetes(tmp_path: Path, mo
     assert config.agents[0].env["SANDBOX_PROXY_URL"] == "http://127.0.0.1:8080"
     assert config.environment.import_path == "ridges_harbor.k8s_environment:RidgesKubernetesEnvironment"
     assert config.environment.kwargs["inference_seed"] == 123
+    assert config.environment.kwargs["verifier_image_required"] is False
+    assert config.environment.kwargs["task_dir"] == str(task_dir)
     assert runner_module.DEFAULT_AGENT_SANDBOX_PROXY_URL == "http://sandbox-proxy:80"
+
+
+@pytest.mark.anyio
+async def test_run_task_dir_prebuilds_kubernetes_verifier_image_for_separate_mode(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from validator import config as validator_config
+
+    _install_fake_harbor(monkeypatch)
+    monkeypatch.setattr(runner_module, "_resolve_separate_verifier", lambda _task_dir: True)
+    monkeypatch.setenv("RIDGES_ENVIRONMENT_TYPE", "kubernetes")
+    monkeypatch.setattr(
+        "ridges_harbor.k8s_environment.build_isolated_k8s_apis",
+        lambda _context=None: (object(), object()),
+    )
+    monkeypatch.setattr(validator_config, "K8S_MEMORY_REQUEST_FRACTION", 0.25, raising=False)
+    monkeypatch.setattr(validator_config, "K8S_CPU_REQUEST_FRACTION", 0.25, raising=False)
+    monkeypatch.setattr(validator_config, "K8S_MEMORY_LIMIT_MULTIPLIER", 1.0, raising=False)
+
+    task_dir = tmp_path / "dataset" / "native-separate-task"
+    task_dir.mkdir(parents=True)
+
+    async def fetch_task_url(_task_digest: str) -> str:
+        return "https://tasks.example.test/task.tar.gz"
+
+    await _run_task_dir(
+        task_dir=task_dir,
+        task_name="native-separate-task",
+        task_digest=f"sha256:{'b' * 64}",
+        evaluation_run_id="eval-run-k8s-separate",
+        agent_path=tmp_path / "agent.py",
+        agent_timeout_sec=30.0,
+        verifier_timeout_sec=None,
+        upstream_url="http://127.0.0.1:1234",
+        upstream_host="127.0.0.1",
+        results_dir=tmp_path / "results",
+        debug=False,
+        job_name="job-k8s-separate",
+        fetch_task_url=fetch_task_url,
+    )
+
+    config = FakeJob.created_configs[0]
+    assert config.agents[0].kwargs["separate_verifier"] is True
+    assert config.environment.kwargs["verifier_image_required"] is True
+    assert config.environment.kwargs["task_dir"] == str(task_dir)
+    assert config.artifacts == []
+    assert config.verifier.import_path is None
+    assert FakeJob.last_instance.verification_started_hooks == []
 
 
 @pytest.mark.anyio
@@ -384,6 +444,38 @@ async def test_run_task_dir_registers_lifecycle_hooks_in_expected_order(tmp_path
     assert FakeJob.last_instance.agent_started_hooks == [on_agent_started]
     assert len(FakeJob.last_instance.verification_started_hooks) == 2
     assert FakeJob.last_instance.verification_started_hooks[1] is on_verification_started
+
+
+@pytest.mark.anyio
+async def test_run_task_dir_leaves_separate_verifier_egress_to_harbor(tmp_path: Path, monkeypatch) -> None:
+    _install_fake_harbor(monkeypatch)
+    monkeypatch.setattr(runner_module, "_resolve_separate_verifier", lambda _task_dir: True)
+
+    task_dir = tmp_path / "dataset" / "update-status-file"
+    task_dir.mkdir(parents=True)
+
+    async def on_verification_started(_event) -> None:
+        return None
+
+    await _run_task_dir(
+        task_dir=task_dir,
+        task_name="update-status-file",
+        evaluation_run_id="eval-run-separate",
+        agent_path=tmp_path / "agent.py",
+        agent_timeout_sec=30.0,
+        verifier_timeout_sec=None,
+        upstream_url="http://127.0.0.1:1234",
+        upstream_host="127.0.0.1",
+        results_dir=tmp_path / "results",
+        debug=False,
+        job_name="job-separate",
+        on_verification_started=on_verification_started,
+    )
+
+    assert FakeJob.last_instance.verification_started_hooks == [on_verification_started]
+    config = FakeJob.created_configs[0]
+    assert config.artifacts == []
+    assert config.verifier.import_path is None
 
 
 @pytest.mark.anyio
@@ -565,10 +657,11 @@ async def test_run_ensures_git_baseline_before_runtime_and_patch_apply(tmp_path:
 
     monkeypatch.setattr(miner, "_exec_with_log", fake_exec_with_log)
 
+    context = AgentContext()
     await miner.run(
         "fix the task",
         environment=FakeEnvironment(),
-        context=AgentContext(),
+        context=context,
     )
 
     assert [call["log_filename"] for call in calls] == [
@@ -576,6 +669,7 @@ async def test_run_ensures_git_baseline_before_runtime_and_patch_apply(tmp_path:
         RUN_LOG_FILENAME,
         PATCH_CHECK_LOG_FILENAME,
         PATCH_APPLY_LOG_FILENAME,
+        PATCH_PUBLISH_LOG_FILENAME,
     ]
     assert all(call["cwd"] == "/task-workdir" for call in calls)
 
@@ -588,6 +682,103 @@ async def test_run_ensures_git_baseline_before_runtime_and_patch_apply(tmp_path:
     assert calls[0]["error_summary"] == "Failed to initialize git baseline"
     assert calls[0]["error_type"] is MinerRuntimeError
     assert calls[1]["include_output_body"] is False
+    assert miner._env_raw_patch_path in str(calls[1]["command"])
+    assert miner._env_raw_patch_path in str(calls[2]["command"])
+    assert miner._env_patch_path not in str(calls[2]["command"])
+    assert miner._env_raw_patch_path in str(calls[3]["command"])
+    assert miner._env_patch_path not in str(calls[3]["command"])
+    assert miner._env_raw_patch_path in str(calls[4]["command"])
+    assert miner._env_patch_path in str(calls[4]["command"])
+    assert context.metadata == {PATCH_PUBLISHED_METADATA_KEY: True}
+
+
+@pytest.mark.anyio
+async def test_run_does_not_publish_patch_when_apply_is_cancelled(tmp_path: Path, monkeypatch) -> None:
+    agent_path = tmp_path / "agent.py"
+    agent_path.write_text("def agent_main(input):\n    return ''\n")
+    miner = RidgesMinerAgent(logs_dir=tmp_path / "logs", agent_path=str(agent_path))
+    calls: list[str] = []
+
+    class FakeEnvironment:
+        async def upload_file(self, source: Path, destination: str) -> None:
+            return None
+
+    async def fake_exec_with_log(*args, **kwargs):
+        log_filename = str(kwargs["log_filename"])
+        calls.append(log_filename)
+        if log_filename == PATCH_APPLY_LOG_FILENAME:
+            raise asyncio.CancelledError()
+        return SimpleNamespace(return_code=0, stdout="", stderr="")
+
+    monkeypatch.setattr(miner, "_exec_with_log", fake_exec_with_log)
+
+    context = AgentContext()
+    with pytest.raises(asyncio.CancelledError):
+        await miner.run("fix the task", environment=FakeEnvironment(), context=context)
+
+    assert PATCH_APPLY_LOG_FILENAME in calls
+    assert PATCH_PUBLISH_LOG_FILENAME not in calls
+    assert not context.metadata
+
+
+@pytest.mark.anyio
+async def test_separate_run_publishes_without_applying_in_agent_worktree(tmp_path: Path, monkeypatch) -> None:
+    agent_path = tmp_path / "agent.py"
+    agent_path.write_text("def agent_main(input):\n    return ''\n")
+    miner = RidgesMinerAgent(
+        logs_dir=tmp_path / "logs",
+        agent_path=str(agent_path),
+        separate_verifier=True,
+    )
+    calls: list[str] = []
+
+    class FakeEnvironment:
+        async def upload_file(self, source: Path, destination: str) -> None:
+            return None
+
+    async def fake_exec_with_log(*args, **kwargs):
+        calls.append(str(kwargs["log_filename"]))
+        return SimpleNamespace(return_code=0, stdout="", stderr="")
+
+    monkeypatch.setattr(miner, "_exec_with_log", fake_exec_with_log)
+
+    context = AgentContext()
+    await miner.run("fix the task", environment=FakeEnvironment(), context=context)
+
+    assert calls == [
+        GIT_BASELINE_LOG_FILENAME,
+        RUN_LOG_FILENAME,
+        PATCH_CHECK_LOG_FILENAME,
+        PATCH_PUBLISH_LOG_FILENAME,
+    ]
+    assert context.metadata == {PATCH_PUBLISHED_METADATA_KEY: True}
+
+
+@pytest.mark.anyio
+async def test_run_does_not_mark_patch_published_when_publish_is_cancelled(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    agent_path = tmp_path / "agent.py"
+    agent_path.write_text("def agent_main(input):\n    return ''\n")
+    miner = RidgesMinerAgent(logs_dir=tmp_path / "logs", agent_path=str(agent_path))
+
+    class FakeEnvironment:
+        async def upload_file(self, source: Path, destination: str) -> None:
+            return None
+
+    async def fake_exec_with_log(*args, **kwargs):
+        if kwargs["log_filename"] == PATCH_PUBLISH_LOG_FILENAME:
+            raise asyncio.CancelledError()
+        return SimpleNamespace(return_code=0, stdout="", stderr="")
+
+    monkeypatch.setattr(miner, "_exec_with_log", fake_exec_with_log)
+    context = AgentContext()
+
+    with pytest.raises(asyncio.CancelledError):
+        await miner.run("fix the task", environment=FakeEnvironment(), context=context)
+
+    assert not context.metadata
 
 
 @pytest.mark.anyio

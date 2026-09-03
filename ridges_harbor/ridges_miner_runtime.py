@@ -12,7 +12,9 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import sys
+import tempfile
 import traceback
 from pathlib import Path
 from types import ModuleType
@@ -25,6 +27,29 @@ RIDGES_MINER_AGENT_MODULE_NAME = "ridges_miner_agent"
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def _write_patch_atomically(path: Path, patch: str) -> None:
+    """Publish a complete patch without exposing a partially written file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(patch)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temporary_path = Path(handle.name)
+        temporary_path.replace(path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def _load_agent_module(agent_path: Path) -> ModuleType:
@@ -123,7 +148,7 @@ def main() -> int:
         if not patch.strip():
             raise RuntimeError("agent_main() returned an empty patch")
 
-        patch_path.write_text(patch)
+        _write_patch_atomically(patch_path, patch)
         return 0
     except Exception as exception:
         _write_json(

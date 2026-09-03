@@ -1,0 +1,328 @@
+cases:
+  - name: build-sidecar
+    valid: true
+    compose:
+      services:
+        postgres:
+          build:
+            context: .
+            dockerfile: postgres.Dockerfile
+          environment:
+            POSTGRES_DB: postgres
+          healthcheck:
+            test: [CMD-SHELL, "pg_isready"]
+            interval: 2s
+            timeout: 2s
+            retries: 30
+          deploy:
+            resources:
+              limits:
+                memory: 1g
+              reservations:
+                memory: 512m
+                cpus: "0.25"
+
+  - name: pinned-image-with-tmpfs
+    valid: true
+    compose:
+      services:
+        clickhouse:
+          image: clickhouse/clickhouse-server@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          healthcheck:
+            test: [CMD-SHELL, "wget -qO- http://127.0.0.1:8123/ping"]
+          volumes:
+            - type: tmpfs
+              target: /var/lib/clickhouse
+              tmpfs:
+                size: 1g
+          deploy:
+            resources:
+              limits:
+                memory: 3g
+              reservations:
+                memory: 2g
+                cpus: "0.5"
+
+  - name: legacy-memory-fields
+    valid: true
+    compose:
+      services:
+        redis:
+          image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+          mem_limit: 1g
+          mem_reservation: 256m
+
+  - name: tagged-image
+    valid: true
+    compose:
+      services:
+        redis:
+          image: redis:7
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+
+  - name: escaped-dollar
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis:7
+          environment:
+            PASSWORD: secret
+          healthcheck:
+            test: [CMD-SHELL, 'test "$$PASSWORD" = secret']
+
+  - name: boolean-environment-value
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis:7
+          environment:
+            DEBUG: true
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+
+  - name: mapping-environment-value
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis:7
+          environment:
+            DEBUG:
+              nested: value
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+
+  - name: empty-image-with-build
+    valid: false
+    compose:
+      services:
+        redis:
+          image: ""
+          build:
+            context: .
+            dockerfile: redis.Dockerfile
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+
+  - name: non-string-image
+    valid: false
+    compose:
+      services:
+        redis:
+          image: []
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+
+  - name: mixed-memory-syntax
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis:7
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+          mem_limit: 1g
+          deploy:
+            resources:
+              limits:
+                memory: 1g
+
+  - name: image-and-build
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          build:
+            context: .
+            dockerfile: redis.Dockerfile
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+
+  - name: missing-healthcheck
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+  - name: command-override
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          command: ["redis-server"]
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+
+  - name: invalid-service-name
+    valid: false
+    compose:
+      services:
+        Bad_Name:
+          image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+
+  - name: reserved-service-name
+    valid: false
+    compose:
+      services:
+        iptables-init:
+          image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+
+  - name: string-build
+    valid: false
+    compose:
+      services:
+        redis:
+          build: .
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+
+  - name: nested-dockerfile
+    valid: false
+    compose:
+      services:
+        redis:
+          build:
+            context: .
+            dockerfile: docker/redis.Dockerfile
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+
+  - name: cmd-healthcheck
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          healthcheck:
+            test: [CMD, "redis-cli", ping]
+
+  - name: named-volume
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+          volumes:
+            - redis-data:/data
+
+  - name: tmpfs-without-size
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+          volumes:
+            - type: tmpfs
+              target: /data
+              tmpfs: {}
+
+  - name: tmpfs-without-memory-limit
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+          volumes:
+            - type: tmpfs
+              target: /data
+              tmpfs:
+                size: 64m
+
+  - name: tmpfs-request-too-small
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+          volumes:
+            - type: tmpfs
+              target: /data
+              tmpfs:
+                size: 64m
+          deploy:
+            resources:
+              limits:
+                memory: 128m
+              reservations:
+                memory: 64m
+
+  - name: unsupported-resource-key
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+          deploy:
+            resources:
+              limits:
+                cpus: "1"
+
+  - name: host-interpolation
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          environment:
+            PASSWORD: "${PASSWORD}"
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+
+  - name: inherited-environment
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          environment:
+            PASSWORD:
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+
+  - name: invalid-cpu-request
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+          deploy:
+            resources:
+              reservations:
+                cpus: "zero"
+
+  - name: infinite-cpu-request
+    valid: false
+    compose:
+      services:
+        redis:
+          image: redis@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          healthcheck:
+            test: [CMD-SHELL, "redis-cli ping"]
+          deploy:
+            resources:
+              reservations:
+                cpus: .inf

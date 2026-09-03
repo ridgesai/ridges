@@ -37,10 +37,29 @@ class FakeEnvironmentConfig:
         self.import_path = import_path
 
 
+class FakeVerifierConfig:
+    def __init__(
+        self,
+        *,
+        max_timeout_sec: float | None = None,
+        override_timeout_sec: float | None = None,
+        disable: bool = False,
+        import_path: str | None = None,
+        kwargs: dict | None = None,
+    ):
+        self.max_timeout_sec = max_timeout_sec
+        self.override_timeout_sec = override_timeout_sec
+        self.disable = disable
+        self.import_path = import_path
+        self.kwargs = kwargs or {}
+
+
 class FakeJobConfig:
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
         self.environment = kwargs.get("environment", FakeEnvironmentConfig())
+        self.verifier = kwargs.get("verifier", FakeVerifierConfig())
+        self.artifacts = kwargs.get("artifacts", [])
 
 
 class FakeEnvironmentFactory:
@@ -97,6 +116,8 @@ def _install_fake_harbor(monkeypatch) -> None:
     FakeEnvironmentFactory.calls = []
     FakeJob.created_configs = []
     FakeJob.last_instance = None
+    monkeypatch.setattr(local_harbor_module, "_task_agent_timeout_sec", lambda _task_dir: None)
+    monkeypatch.setattr(local_harbor_module, "_resolve_separate_verifier", lambda _task_dir: False)
 
     harbor_module = types.ModuleType("harbor")
     environments_module = types.ModuleType("harbor.environments")
@@ -117,6 +138,7 @@ def _install_fake_harbor(monkeypatch) -> None:
     trial_config_module.AgentConfig = FakeAgentConfig
     trial_config_module.EnvironmentConfig = FakeEnvironmentConfig
     trial_config_module.TaskConfig = FakeTaskConfig
+    trial_config_module.VerifierConfig = FakeVerifierConfig
 
     monkeypatch.setitem(sys.modules, "harbor", harbor_module)
     monkeypatch.setitem(sys.modules, "harbor.environments", environments_module)
@@ -189,7 +211,10 @@ async def test_run_local_task_injects_provider_env_without_scaffold(tmp_path: Pa
     assert FakeJob.created_configs[0].tasks[0].path == task_dir
     assert FakeJob.created_configs[0].environment.env == {}
     assert FakeJob.created_configs[0].agents[0].import_path == "miners.local_agent:LocalMinerAgent"
-    assert FakeJob.created_configs[0].agents[0].kwargs == {"agent_path": str(agent_path.resolve())}
+    assert FakeJob.created_configs[0].agents[0].kwargs == {
+        "agent_path": str(agent_path.resolve()),
+        "separate_verifier": False,
+    }
     assert FakeJob.created_configs[0].agents[0].env == {
         "EVALUATION_RUN_ID": "eval-run-1",
         "RIDGES_INFERENCE_PROVIDER": "openrouter",
@@ -202,6 +227,78 @@ async def test_run_local_task_injects_provider_env_without_scaffold(tmp_path: Pa
     assert "SANDBOX_PROXY_URL" not in FakeJob.created_configs[0].agents[0].env
     assert summary.task_dir == task_dir
     assert pruned == [True]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("task_timeout", "requested_timeout", "expected_timeout"),
+    [
+        (1800.0, None, 1800.0),
+        (1800.0, 2700.0, 1800.0),
+        (1800.0, 900.0, 900.0),
+        (None, 900.0, 900.0),
+    ],
+)
+async def test_run_local_task_uses_minimum_task_and_requested_timeout(
+    tmp_path: Path,
+    monkeypatch,
+    task_timeout: float | None,
+    requested_timeout: float | None,
+    expected_timeout: float,
+) -> None:
+    _install_fake_harbor(monkeypatch)
+    monkeypatch.setattr(local_harbor_module, "_task_agent_timeout_sec", lambda _task_dir: task_timeout)
+
+    async def fake_prune() -> None:
+        return None
+
+    monkeypatch.setattr(local_harbor_module, "prune_dangling_images", fake_prune)
+
+    task_dir = tmp_path / "task"
+    _write_harbor_task(task_dir)
+    agent_path = tmp_path / "agent.py"
+    _write_agent(agent_path)
+
+    await local_harbor_module.run_local_task(
+        task_dir,
+        agent_path=agent_path,
+        inference=_inference(),
+        evaluation_run_id="eval-timeout",
+        agent_timeout_sec=requested_timeout,
+        results_dir=tmp_path / "results",
+        job_name="job-timeout",
+    )
+
+    agent_config = FakeJob.created_configs[0].agents[0]
+    assert agent_config.override_timeout_sec == expected_timeout
+    assert agent_config.env["AGENT_TIMEOUT"] == str(int(expected_timeout))
+
+
+@pytest.mark.anyio
+async def test_run_local_task_passes_separate_mode_to_agent_wrapper(tmp_path: Path, monkeypatch) -> None:
+    _install_fake_harbor(monkeypatch)
+    monkeypatch.setattr(local_harbor_module, "_resolve_separate_verifier", lambda _task_dir: True)
+
+    async def fake_prune() -> None:
+        return None
+
+    monkeypatch.setattr(local_harbor_module, "prune_dangling_images", fake_prune)
+
+    task_dir = tmp_path / "task"
+    _write_harbor_task(task_dir)
+    agent_path = tmp_path / "agent.py"
+    _write_agent(agent_path)
+
+    await local_harbor_module.run_local_task(
+        task_dir,
+        agent_path=agent_path,
+        inference=_inference(),
+        results_dir=tmp_path / "results",
+    )
+
+    assert FakeJob.created_configs[0].agents[0].kwargs["separate_verifier"] is True
+    assert FakeJob.created_configs[0].artifacts == []
+    assert FakeJob.created_configs[0].verifier.import_path is None
 
 
 @pytest.mark.anyio

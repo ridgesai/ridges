@@ -19,6 +19,7 @@ from miners.inference_client import LocalInferenceConfig
 from ridges_harbor._stdlib_contract import HARBOR_RUNNER_ERROR_FILENAME
 from ridges_harbor.digest import compute_task_digest
 from ridges_harbor.docker_runtime import prune_dangling_images
+from ridges_harbor.runner import _resolve_separate_verifier
 from ridges_harbor.shared import DEFAULT_RESULTS_DIR, HarborRunSummary
 
 _ARCHIVE_SUFFIXES = (".tar.gz", ".tgz")
@@ -26,6 +27,37 @@ _IGNORED_TOP_LEVEL_NAMES = {"__MACOSX", ".DS_Store"}
 _TASK_STAGING_DIRNAME = "_task_staging"
 
 logger = logging.getLogger(__name__)
+
+
+def _positive_timeout(value: float | None) -> float | None:
+    """Normalize a timeout, treating missing and non-positive values as unset."""
+    if value is None:
+        return None
+    timeout = float(str(value).strip())
+    return timeout if timeout > 0 else None
+
+
+def _task_agent_timeout_sec(task_dir: Path) -> float | None:
+    """Read the agent timeout using Harbor's task parser."""
+    from harbor.models.task.task import Task
+
+    return _positive_timeout(Task(task_dir).config.agent.timeout_sec)
+
+
+def _resolve_local_agent_timeout_sec(
+    task_dir: Path,
+    requested_timeout_sec: float | None,
+) -> float | None:
+    """Use the lower of the task timeout and an optional local cap."""
+    candidates = [
+        timeout
+        for timeout in (
+            _task_agent_timeout_sec(task_dir),
+            _positive_timeout(requested_timeout_sec),
+        )
+        if timeout is not None
+    ]
+    return min(candidates) if candidates else None
 
 
 def _normalize_endpoint_url(url: str, *, label: str) -> str:
@@ -258,7 +290,7 @@ async def run_local_task(
     from harbor.environments.factory import EnvironmentFactory
     from harbor.job import Job
     from harbor.models.job.config import JobConfig, RetryConfig
-    from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig
+    from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig, VerifierConfig
 
     resolved_task_path = Path(task_path).expanduser().resolve()
     resolved_agent_path = Path(agent_path).expanduser().resolve()
@@ -280,7 +312,8 @@ async def run_local_task(
         await _verify_task_digest(effective_task_dir, task_name=effective_task_name, task_digest=task_digest)
 
     effective_evaluation_run_id = evaluation_run_id or str(uuid4())
-    effective_timeout = agent_timeout_sec if agent_timeout_sec is not None and agent_timeout_sec > 0 else None
+    effective_timeout = _resolve_local_agent_timeout_sec(effective_task_dir, agent_timeout_sec)
+    separate_verifier = _resolve_separate_verifier(effective_task_dir)
     resolved_job_name = job_name or f"{effective_task_name}__{uuid4().hex[:8]}"
     job_dir = resolved_results_dir / resolved_job_name
 
@@ -293,12 +326,17 @@ async def run_local_task(
         quiet=True,
         retry=RetryConfig(max_retries=0),
         environment=EnvironmentConfig(env={}),
+        verifier=VerifierConfig(),
+        artifacts=[],
         tasks=[TaskConfig(path=effective_task_dir)],
         agents=[
             AgentConfig(
                 import_path="miners.local_agent:LocalMinerAgent",
                 override_timeout_sec=effective_timeout,
-                kwargs={"agent_path": str(resolved_agent_path)},
+                kwargs={
+                    "agent_path": str(resolved_agent_path),
+                    "separate_verifier": separate_verifier,
+                },
                 env=_local_agent_env(
                     evaluation_run_id=effective_evaluation_run_id,
                     inference=normalized_inference,

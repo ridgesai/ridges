@@ -41,6 +41,22 @@ def test_happy_path_returns_execution_result(tmp_path: Path) -> None:
     assert result.eval_logs == "verifier output"
 
 
+def test_kubernetes_environment_labels_execution_backend(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RIDGES_ENVIRONMENT_TYPE", "kubernetes")
+    summary = make_summary(
+        tmp_path,
+        test_results=successful_test_results(),
+        verifier_result=successful_verifier_result(),
+    )
+
+    result = result_from_summary(summary)
+
+    assert result.backend == "harbor-k8s"
+
+
 def test_proxy_usage_total_cost_is_attached_to_execution_result(tmp_path: Path) -> None:
     summary = make_summary(
         tmp_path,
@@ -70,6 +86,48 @@ def test_read_trial_snapshot_returns_patch_and_surfaced_agent_logs(tmp_path: Pat
     assert snapshot.agent_logs.startswith(f"# {SETUP_LOG_FILENAME}\nsetup ok")
     assert "# runtime.log\nruntime output" in snapshot.agent_logs
     assert "# trial.log\ntrial output" in snapshot.agent_logs
+
+
+def test_separate_verifier_returns_exact_patch_recorded_by_verifier(tmp_path: Path) -> None:
+    graded_patch = "--- a/status.txt\n+++ b/status.txt\n@@ -1 +1 @@\n-pending\n+verified\n"
+    summary = make_summary(
+        tmp_path,
+        separate_verifier=True,
+        graded_patch=graded_patch,
+        test_results=successful_test_results(),
+        verifier_result=successful_verifier_result(),
+    )
+
+    result = result_from_summary(summary)
+
+    assert result.patch == graded_patch
+
+
+def test_separate_verifier_rejects_success_without_graded_patch(tmp_path: Path) -> None:
+    summary = make_summary(
+        tmp_path,
+        separate_verifier=True,
+        test_results=successful_test_results(),
+        verifier_result=successful_verifier_result(),
+    )
+
+    with pytest.raises(EvaluationRunException) as exc_info:
+        result_from_summary(summary)
+
+    assert exc_info.value.error_code == EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR
+
+
+def test_shared_verifier_keeps_agent_patch_authoritative(tmp_path: Path) -> None:
+    summary = make_summary(
+        tmp_path,
+        graded_patch="unexpected verifier copy",
+        test_results=successful_test_results(),
+        verifier_result=successful_verifier_result(),
+    )
+
+    result = result_from_summary(summary)
+
+    assert result.patch.startswith("--- a/status.txt")
 
 
 def test_report_json_fills_structured_test_results_when_legacy_file_is_missing(tmp_path: Path) -> None:
@@ -191,10 +249,53 @@ def test_verifier_reward_after_agent_timeout_scores_the_run(tmp_path: Path) -> N
         test_results=successful_test_results(),
         eval_log="verifier output",
         verifier_result=successful_verifier_result(),
+        patch_published=True,
     )
 
     result = result_from_summary(summary)
 
+    assert result.verifier_reward == 1.0
+
+
+def test_separate_verifier_timeout_partial_credit_requires_graded_patch(tmp_path: Path) -> None:
+    summary = make_summary(
+        tmp_path,
+        separate_verifier=True,
+        exception_info={
+            "exception_type": "AgentTimeoutError",
+            "exception_message": "Agent execution timed out after 30 seconds",
+            "exception_traceback": "Traceback...\n_execute_agent\n",
+        },
+        test_results=successful_test_results(),
+        verifier_result=successful_verifier_result(),
+        patch_published=True,
+    )
+
+    with pytest.raises(EvaluationRunException) as exc_info:
+        result_from_summary(summary)
+
+    assert exc_info.value.error_code == EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_AGENT
+
+
+def test_separate_verifier_timeout_partial_credit_uses_graded_patch(tmp_path: Path) -> None:
+    graded_patch = "--- a/status.txt\n+++ b/status.txt\n@@ -1 +1 @@\n-pending\n+verified\n"
+    summary = make_summary(
+        tmp_path,
+        separate_verifier=True,
+        graded_patch=graded_patch,
+        exception_info={
+            "exception_type": "AgentTimeoutError",
+            "exception_message": "Agent execution timed out after 30 seconds",
+            "exception_traceback": "Traceback...\n_execute_agent\n",
+        },
+        test_results=successful_test_results(),
+        verifier_result=successful_verifier_result(),
+        patch_published=True,
+    )
+
+    result = result_from_summary(summary)
+
+    assert result.patch == graded_patch
     assert result.verifier_reward == 1.0
 
 
@@ -209,11 +310,35 @@ def test_zero_verifier_reward_after_agent_timeout_records_finished_zero(tmp_path
         test_results=successful_test_results(),
         eval_log="verifier output",
         verifier_result={"rewards": {"reward": 0.0}},
+        patch_published=True,
     )
 
     result = result_from_summary(summary)
 
     assert result.verifier_reward == 0.0
+
+
+def test_agent_timeout_rejects_agent_written_patch_without_publication_marker(
+    tmp_path: Path,
+) -> None:
+    summary = make_summary(
+        tmp_path,
+        separate_verifier=True,
+        graded_patch="--- a/status.txt\n+++ b/status.txt\n@@ -1 +1 @@\n-pending\n+verified\n",
+        exception_info={
+            "exception_type": "AgentTimeoutError",
+            "exception_message": "Agent execution timed out after 30 seconds",
+            "exception_traceback": "Traceback...\n_execute_agent\n",
+        },
+        test_results=successful_test_results(),
+        verifier_result=successful_verifier_result(),
+        patch_published=False,
+    )
+
+    with pytest.raises(EvaluationRunException) as exc_info:
+        result_from_summary(summary)
+
+    assert exc_info.value.error_code == EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_AGENT
 
 
 def test_agent_timeout_without_patch_classifies_as_agent_timeout(tmp_path: Path) -> None:
