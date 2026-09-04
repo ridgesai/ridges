@@ -2,19 +2,17 @@
 evaluation loop: heartbeat, weight-setting, and local-storage cleanup.
 
 These are started with `asyncio.create_task` from `validator.main`.
+The heartbeat lives in `validator.heartbeat` and runs on its own thread.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import pathlib
 from collections.abc import Set
-from uuid import UUID
 
 import validator.config as config
-from api.endpoints.validator_models import ValidatorHeartbeatRequest
 from ridges_harbor.shared import DEFAULT_RESULTS_DIR
 from utils.cleanup import prune_dirs_older_than
 from utils.docker import (
@@ -25,34 +23,11 @@ from utils.docker import (
 )
 from utils.system_metrics import get_system_metrics
 from utils.task_cache import prune_task_cache
-from validator.http_utils import get_ridges_platform, post_ridges_platform
+from validator.http_utils import get_ridges_platform
 from validator.retry_utils import retry_with_backoff
 from validator.set_weights import set_weights_from_mapping
 
 logger = logging.getLogger("validator")
-
-
-# A loop that sends periodic heartbeats to the Ridges platform
-async def send_heartbeat_loop(session_id: UUID):
-    logger.info("Starting send heartbeat loop...")
-    try:
-        while True:
-            logger.info("Sending heartbeat...")
-            system_metrics = await get_system_metrics()
-            await retry_with_backoff(
-                lambda: post_ridges_platform(
-                    "/validator/heartbeat",
-                    ValidatorHeartbeatRequest(system_metrics=system_metrics),
-                    bearer_token=session_id,
-                    quiet=2,
-                    timeout=5,
-                ),
-                max_attempts=config.MAX_HEARTBEAT_FAILURES,
-            )
-            await asyncio.sleep(config.SEND_HEARTBEAT_INTERVAL_SECONDS)
-    except Exception as e:
-        logger.error(f"Heartbeat failed after all retries, exiting: {type(e).__name__}: {e}", exc_info=True)
-        os._exit(1)
 
 
 # A loop that periodically sets weights
