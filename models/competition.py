@@ -29,6 +29,8 @@ class CompetitionState(str, Enum):
 class PublicCompetition(BaseModel):
     set_id: int
     name: str | None
+    description: str | None
+    links: list[str]
     state: CompetitionState
     accepting: bool
     processable: bool

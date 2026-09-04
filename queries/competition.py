@@ -101,6 +101,8 @@ _PUBLIC_COMPETITION_SELECT = f"""
     SELECT
         competition.set_id,
         competition.name,
+        competition.description,
+        competition.links,
         competition.created_at,
         competition.start_date,
         competition.submissions_closed_at,
@@ -212,6 +214,8 @@ def _public_competition_from_row(row: Mapping[str, object]) -> PublicCompetition
     return PublicCompetition(
         set_id=int(row["set_id"]),
         name=row["name"],
+        description=row["description"],
+        links=list(row["links"] or []),
         state=state,
         accepting=accepting,
         processable=processable,
