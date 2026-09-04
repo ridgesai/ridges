@@ -141,3 +141,33 @@ async def post_ridges_platform(
         logger.error(f"{type(e).__name__} during POST {url}")
 
         raise
+
+
+def post_ridges_platform_sync(
+    endpoint: str, body: BaseModel, *, bearer_token: str = None, quiet: int = 0, timeout: int = HTTP_TIMEOUT_SECONDS
+) -> Any:
+    url = f"{config.RIDGES_PLATFORM_URL.rstrip('/')}/{endpoint.lstrip('/')}"
+    body_dict = body.model_dump(mode="json")
+    if quiet <= 1:
+        logger.debug(f"Sending request for POST {url}")
+
+    if body_dict != {} and quiet == 0:
+        logger.debug(textwrap.indent(json.dumps(body_dict, indent=2), "  "))
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            response = client.post(url, json=body_dict, headers=_platform_headers(bearer_token))
+            response.raise_for_status()
+            response_json = response.json()
+            if quiet <= 1:
+                logger.debug(f"Received response for POST {url}: {response.status_code} {response.reason_phrase}")
+
+            if response_json != {} and quiet == 0:
+                logger.debug(textwrap.indent(json.dumps(response_json, indent=2), "  "))
+            return response_json
+    except httpx.HTTPStatusError as e:
+        _pretty_print_httpx_error("POST", url, e)
+        raise
+
+    except Exception as e:
+        logger.error(f"{type(e).__name__} during POST {url}")
+        raise
