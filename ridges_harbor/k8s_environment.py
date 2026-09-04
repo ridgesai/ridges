@@ -24,7 +24,9 @@ Two classes are defined here:
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import http.client
 import io
 import logging
 import re
@@ -32,6 +34,7 @@ import shlex
 import ssl
 import tarfile
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Sequence
@@ -45,7 +48,7 @@ from kubernetes import client as k8s_client
 from kubernetes import config as k8s_config
 from kubernetes.client.rest import ApiException
 from kubernetes.stream import stream
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from websocket import WebSocketException
 
 from ridges_harbor.k8s_compose import (
@@ -1724,6 +1727,96 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
 # ---------------------------------------------------------------------------
 
 
+REGISTRY_CHECK_ATTEMPTS = 5
+REGISTRY_CHECK_TIMEOUT_SECONDS = 10
+
+
+class _RegistryUnavailable(Exception):
+    """The registry did not give a usable answer (timeout, connection error, 429, 5xx)."""
+
+
+def _registry_manifest_status(
+    registry: str,
+    name: str,
+    tag: str,
+    *,
+    registry_insecure: bool,
+    registry_credentials_secret: str | None,
+    registry_password: str | None,
+) -> int:
+    """Issue one HEAD for ``name:tag`` and return the HTTP status (raises on transport errors)."""
+    scheme = "http" if registry_insecure else "https"
+    default_port = 5000 if registry_insecure else 443
+    parsed = urllib.parse.urlsplit(f"{scheme}://{registry}")
+    host = parsed.hostname or registry.split(":")[0]
+    port = parsed.port or default_port
+
+    if registry_insecure:
+        conn: http.client.HTTPConnection = http.client.HTTPConnection(
+            host, port, timeout=REGISTRY_CHECK_TIMEOUT_SECONDS
+        )
+    else:
+        ctx = ssl.create_default_context()
+        conn = http.client.HTTPSConnection(host, port, timeout=REGISTRY_CHECK_TIMEOUT_SECONDS, context=ctx)
+
+    headers: dict[str, str] = {}
+    if registry_credentials_secret and registry_password:
+        cred = base64.b64encode(b"kaniko:" + registry_password.encode()).decode()
+        headers["Authorization"] = f"Basic {cred}"
+
+    try:
+        conn.request("HEAD", f"/v2/{name}/manifests/{tag}", headers=headers)
+        return conn.getresponse().status
+    finally:
+        conn.close()
+
+
+@retry(
+    stop=stop_after_attempt(REGISTRY_CHECK_ATTEMPTS),
+    wait=wait_exponential(multiplier=2, min=2, max=16),
+    retry=retry_if_exception_type(_RegistryUnavailable),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
+async def _registry_manifest_present(
+    registry: str,
+    name: str,
+    tag: str,
+    *,
+    registry_insecure: bool,
+    registry_credentials_secret: str | None,
+    registry_password: str | None,
+) -> bool:
+    """One HEAD, classified: True on 200, False on a definitive 4xx, raises when transient."""
+    try:
+        status = await asyncio.to_thread(
+            _registry_manifest_status,
+            registry,
+            name,
+            tag,
+            registry_insecure=registry_insecure,
+            registry_credentials_secret=registry_credentials_secret,
+            registry_password=registry_password,
+        )
+    except (OSError, http.client.HTTPException) as exc:
+        raise _RegistryUnavailable(f"{name}:{tag}: {type(exc).__name__}: {exc}") from exc
+
+    except Exception as exc:
+        logger.warning(f"Registry check for {name}:{tag} failed ({type(exc).__name__}: {exc}); treating as missing")
+        return False
+
+    if status == 200:
+        return True
+
+    if status == 404:
+        return False
+
+    if status == 429 or status >= 500:
+        raise _RegistryUnavailable(f"{name}:{tag}: HTTP {status}")
+    logger.warning(f"Registry check for {name}:{tag} returned HTTP {status}; treating as missing")
+    return False
+
+
 async def _registry_image_exists(
     registry: str,
     task_name: str,
@@ -1733,41 +1826,27 @@ async def _registry_image_exists(
     registry_credentials_secret: str | None = None,
     registry_password: str | None = None,
 ) -> bool:
-    """HEAD-check ``task_name:digest_tag`` in the registry.
+    """HEAD-check ``task_name:digest_tag`` in the registry, retrying transient failures.
 
     Uses the lowercased task name to match how images are actually pushed
     (OCI repository names must be lowercase; see ``_ensure_image``).
+    Returns False only on a definitive 4xx or once every attempt failed.
     """
-    import base64
-    import http.client
-    import urllib.parse
-
     name, tag = task_name.lower(), digest_tag
     try:
-        scheme = "http" if registry_insecure else "https"
-        default_port = 5000 if registry_insecure else 443
-        parsed = urllib.parse.urlsplit(f"{scheme}://{registry}")
-        host = parsed.hostname or registry.split(":")[0]
-        port = parsed.port or default_port
-
-        def _head() -> bool:
-            if registry_insecure:
-                conn: http.client.HTTPConnection = http.client.HTTPConnection(host, port, timeout=10)
-            else:
-                ctx = ssl.create_default_context()
-                conn = http.client.HTTPSConnection(host, port, timeout=10, context=ctx)
-            headers: dict[str, str] = {}
-            if registry_credentials_secret and registry_password:
-                cred = base64.b64encode(b"kaniko:" + registry_password.encode()).decode()
-                headers["Authorization"] = f"Basic {cred}"
-            conn.request("HEAD", f"/v2/{name}/manifests/{tag}", headers=headers)
-            resp = conn.getresponse()
-            conn.close()
-            return resp.status == 200
-
-        return await asyncio.to_thread(_head)
-    except Exception as exc:
-        logger.debug(f"Registry check failed for {name}:{tag}: {exc}")
+        return await _registry_manifest_present(
+            registry,
+            name,
+            tag,
+            registry_insecure=registry_insecure,
+            registry_credentials_secret=registry_credentials_secret,
+            registry_password=registry_password,
+        )
+    except _RegistryUnavailable as exc:
+        logger.warning(
+            f"Registry check for {name}:{tag} failed on all {REGISTRY_CHECK_ATTEMPTS} attempts ({exc}); "
+            "treating as missing"
+        )
         return False
 
 
