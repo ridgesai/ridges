@@ -78,16 +78,6 @@ if not RIDGES_PLATFORM_URL:
 RIDGES_PLATFORM_URL = RIDGES_PLATFORM_URL.rstrip("/")
 SCREENER_EDGE_KEY = os.getenv("SCREENER_EDGE_KEY")
 
-RIDGES_INFERENCE_GATEWAY_URL = os.getenv("RIDGES_INFERENCE_GATEWAY_URL")
-if not RIDGES_INFERENCE_GATEWAY_URL:
-    logger.fatal("RIDGES_INFERENCE_GATEWAY_URL is not set in .env")
-
-RIDGES_INFERENCE_GATEWAY_URL = RIDGES_INFERENCE_GATEWAY_URL.rstrip("/")
-
-if "localhost" in RIDGES_INFERENCE_GATEWAY_URL or "127.0.0.1" in RIDGES_INFERENCE_GATEWAY_URL:
-    logger.fatal("RIDGES_INFERENCE_GATEWAY_URL must be set to a local IP address, not localhost/127.0.0.1.")
-
-
 SEND_HEARTBEAT_INTERVAL_SECONDS = os.getenv("SEND_HEARTBEAT_INTERVAL_SECONDS")
 if not SEND_HEARTBEAT_INTERVAL_SECONDS:
     logger.fatal("SEND_HEARTBEAT_INTERVAL_SECONDS is not set in .env")
@@ -155,7 +145,6 @@ elif MODE == "screener":
 logger.info("-------------------------------")
 
 logger.info(f"Ridges Platform URL: {RIDGES_PLATFORM_URL}")
-logger.info(f"Ridges Inference Gateway URL: {RIDGES_INFERENCE_GATEWAY_URL}")
 logger.info("-------------------------------")
 
 logger.info(f"Send Heartbeat Interval: {SEND_HEARTBEAT_INTERVAL_SECONDS} second(s)")

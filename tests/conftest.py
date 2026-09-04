@@ -44,7 +44,6 @@ TEST_ENV_DEFAULTS = {
     "PORT": "8000",
     "PRUNE_THRESHOLD": "0.4",
     "REQUEST_EVALUATION_INTERVAL_SECONDS": "10",
-    "RIDGES_INFERENCE_GATEWAY_URL": "http://10.0.0.1:8001",
     "RIDGES_AGENT_KEY_ENCRYPTION_KEY": base64.b64encode(b"k" * 32).decode("ascii"),
     "RIDGES_PLATFORM_URL": "http://localhost:8000",
     "S3_BUCKET_NAME": "ridges-test",

@@ -8,8 +8,6 @@ import ridges_harbor.docker_runtime as docker_runtime_module
 def test_docker_environment_env_includes_inference_seed() -> None:
     env = docker_runtime_module.docker_environment_env(
         ridges_trial_id="trial-1",
-        upstream_url="https://openrouter.ai",
-        upstream_host="openrouter.ai",
         evaluation_run_id="eval-run-1",
         max_cost_usd="9",
         proxy_data_dir="/tmp/proxy",
@@ -23,8 +21,6 @@ def test_docker_environment_env_includes_inference_seed() -> None:
 def test_docker_environment_env_defaults_inference_seed_to_empty_string() -> None:
     env = docker_runtime_module.docker_environment_env(
         ridges_trial_id="trial-1",
-        upstream_url="https://openrouter.ai",
-        upstream_host="openrouter.ai",
         evaluation_run_id="eval-run-1",
         max_cost_usd="9",
         proxy_data_dir="/tmp/proxy",

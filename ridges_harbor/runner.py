@@ -20,7 +20,7 @@ from ridges_harbor.docker_runtime import (
 )
 from ridges_harbor.k8s_compose import parse_kubernetes_compose
 from ridges_harbor.progress_logging import install_logging_harbor_progress
-from ridges_harbor.shared import DEFAULT_RESULTS_DIR, HarborRunSummary, resolve_inference_gateway
+from ridges_harbor.shared import DEFAULT_RESULTS_DIR, HarborRunSummary
 
 install_logging_harbor_progress()
 
@@ -157,7 +157,6 @@ async def run_task(
     agent_timeout_sec: float | None = None,
     verifier_timeout_sec: float | None = None,
     environment_build_timeout_multiplier: float | None = None,
-    inference_url: str | None = None,
     results_dir: str | Path | None = DEFAULT_RESULTS_DIR,
     debug: bool = False,
     job_name: str | None = None,
@@ -178,7 +177,6 @@ async def run_task(
     resolved_agent_path = Path(agent_path).expanduser().resolve()
     resolved_results_dir = Path(results_dir or DEFAULT_RESULTS_DIR).expanduser().resolve()
     resolved_results_dir.mkdir(parents=True, exist_ok=True)
-    upstream_url, upstream_host = resolve_inference_gateway(inference_url)
 
     if not resolved_task_dir.exists():
         raise FileNotFoundError(f"Harbor task directory does not exist: {resolved_task_dir}")
@@ -196,8 +194,6 @@ async def run_task(
         agent_timeout_sec=agent_timeout_sec,
         verifier_timeout_sec=verifier_timeout_sec,
         environment_build_timeout_multiplier=environment_build_timeout_multiplier,
-        upstream_url=upstream_url,
-        upstream_host=upstream_host,
         results_dir=resolved_results_dir,
         debug=debug,
         job_name=job_name,
@@ -222,8 +218,6 @@ async def _run_task_dir(
     agent_timeout_sec: float | None,
     verifier_timeout_sec: float | None,
     environment_build_timeout_multiplier: float | None = None,
-    upstream_url: str,
-    upstream_host: str,
     results_dir: Path,
     debug: bool,
     job_name: str | None,
@@ -350,8 +344,6 @@ async def _run_task_dir(
         environment_config = EnvironmentConfig(
             env=docker_environment_env(
                 ridges_trial_id=ridges_trial_id,
-                upstream_url=upstream_url,
-                upstream_host=upstream_host,
                 evaluation_run_id=evaluation_run_id,
                 max_cost_usd=effective_max_cost_usd,
                 proxy_data_dir=str(proxy_data_dir),

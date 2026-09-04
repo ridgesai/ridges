@@ -57,7 +57,7 @@ async def test_malformed_verifier_json_becomes_validator_internal_error(tmp_path
     write(agent_path, "def agent_main(_input):\n    return ''\n")
     monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
 
-    engine = ExecutionEngine("http://inference")
+    engine = ExecutionEngine()
 
     with pytest.raises(EvaluationRunException) as exc_info:
         await engine.evaluate(
@@ -78,7 +78,7 @@ async def test_harbor_local_task_kind_is_rejected_with_clear_error(tmp_path: Pat
     agent_path = tmp_path / "agent.py"
     write(agent_path, "def agent_main(_input):\n    return ''\n")
 
-    engine = ExecutionEngine("http://inference")
+    engine = ExecutionEngine()
 
     with pytest.raises(EvaluationRunException) as exc_info:
         await engine.evaluate(
@@ -102,7 +102,7 @@ async def test_malformed_remote_execution_spec_is_wrapped_as_validator_internal_
     agent_path = tmp_path / "agent.py"
     write(agent_path, "def agent_main(_input):\n    return ''\n")
 
-    engine = ExecutionEngine("http://inference")
+    engine = ExecutionEngine()
 
     with pytest.raises(EvaluationRunException) as exc_info:
         await engine.evaluate(
@@ -138,7 +138,7 @@ async def test_remote_task_cache_lookup_uses_execution_spec_task_name(tmp_path: 
     monkeypatch.setattr(engine_module, "get_cached_task", fake_get_cached_task)
     monkeypatch.setattr(engine_module, "get_or_download_task", fake_get_or_download_task)
 
-    resolved = await ExecutionEngine("http://inference")._resolve_task_dir(
+    resolved = await ExecutionEngine()._resolve_task_dir(
         HarborRemoteTaskExecutionSpec(
             kind="harbor_remote_task",
             dataset_name="test_dataset",
@@ -182,7 +182,7 @@ async def test_evaluate_attaches_job_dir_from_resolved_request(tmp_path: Path, m
     agent_path = tmp_path / "agent.py"
     write(agent_path, "def agent_main(_input):\n    return ''\n")
 
-    engine = ExecutionEngine("http://inference", harbor_results_dir=tmp_path / "results")
+    engine = ExecutionEngine(harbor_results_dir=tmp_path / "results")
     evaluation_run_id = uuid4()
 
     with pytest.raises(EvaluationRunException) as exc_info:
@@ -222,7 +222,6 @@ async def test_evaluate_orchestrates_run_task_with_stable_request(tmp_path: Path
     monkeypatch.setattr(engine_module, "run_task", fake_run_task)
 
     engine = ExecutionEngine(
-        "http://inference",
         harbor_results_dir=tmp_path / "results",
         max_eval_timeout_sec=600.0,
         max_cost_usd=12.5,
@@ -303,7 +302,7 @@ async def test_evaluate_translates_harbor_hooks_into_domain_callbacks(tmp_path: 
     monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
     monkeypatch.setattr(engine_module, "run_task", fake_run_task)
 
-    engine = ExecutionEngine("http://inference", harbor_results_dir=tmp_path / "results")
+    engine = ExecutionEngine(harbor_results_dir=tmp_path / "results")
 
     result = await engine.evaluate(
         evaluation_run_id=uuid4(),
@@ -358,7 +357,7 @@ async def test_evaluate_swallows_domain_callback_failures(tmp_path: Path, monkey
     monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
     monkeypatch.setattr(engine_module, "run_task", fake_run_task)
 
-    engine = ExecutionEngine("http://inference", harbor_results_dir=tmp_path / "results")
+    engine = ExecutionEngine(harbor_results_dir=tmp_path / "results")
 
     result = await engine.evaluate(
         evaluation_run_id=uuid4(),
@@ -389,7 +388,7 @@ async def test_digest_mismatch_from_run_task_becomes_validator_internal_error(tm
     monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
     monkeypatch.setattr(engine_module, "run_task", fake_run_task)
 
-    engine = ExecutionEngine("http://inference", harbor_results_dir=tmp_path / "results")
+    engine = ExecutionEngine(harbor_results_dir=tmp_path / "results")
 
     with pytest.raises(EvaluationRunException) as exc_info:
         await engine.evaluate(
@@ -422,7 +421,7 @@ async def test_catch_all_preserves_job_dir_when_no_logs_are_available(tmp_path: 
     monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
     monkeypatch.setattr(engine_module, "run_task", fake_run_task)
 
-    engine = ExecutionEngine("http://inference", harbor_results_dir=tmp_path / "results")
+    engine = ExecutionEngine(harbor_results_dir=tmp_path / "results")
     evaluation_run_id = uuid4()
 
     with pytest.raises(EvaluationRunException) as exc_info:
@@ -458,7 +457,7 @@ async def test_catch_all_attaches_job_log_context(tmp_path: Path, monkeypatch) -
     monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
     monkeypatch.setattr(engine_module, "run_task", fake_run_task)
 
-    engine = ExecutionEngine("http://inference", harbor_results_dir=tmp_path / "results")
+    engine = ExecutionEngine(harbor_results_dir=tmp_path / "results")
 
     with pytest.raises(EvaluationRunException) as exc_info:
         await engine.evaluate(
@@ -496,7 +495,7 @@ async def test_catch_all_attaches_single_trial_context(tmp_path: Path, monkeypat
     monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
     monkeypatch.setattr(engine_module, "run_task", fake_run_task)
 
-    engine = ExecutionEngine("http://inference", harbor_results_dir=tmp_path / "results")
+    engine = ExecutionEngine(harbor_results_dir=tmp_path / "results")
 
     with pytest.raises(EvaluationRunException) as exc_info:
         await engine.evaluate(
@@ -534,7 +533,7 @@ async def test_catch_all_never_raises_when_one_expected_log_path_is_a_directory(
     monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
     monkeypatch.setattr(engine_module, "run_task", fake_run_task)
 
-    engine = ExecutionEngine("http://inference", harbor_results_dir=tmp_path / "results")
+    engine = ExecutionEngine(harbor_results_dir=tmp_path / "results")
 
     with pytest.raises(EvaluationRunException) as exc_info:
         await engine.evaluate(
@@ -573,7 +572,6 @@ async def test_evaluate_forwards_build_timeout_multiplier(tmp_path: Path, monkey
     monkeypatch.setattr(engine_module, "run_task", fake_run_task)
 
     engine = ExecutionEngine(
-        "http://inference",
         harbor_results_dir=tmp_path / "results",
         build_timeout_multiplier=2.5,
     )
@@ -611,7 +609,7 @@ async def test_evaluate_defaults_build_timeout_multiplier_to_none(tmp_path: Path
     monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
     monkeypatch.setattr(engine_module, "run_task", fake_run_task)
 
-    engine = ExecutionEngine("http://inference", harbor_results_dir=tmp_path / "results")
+    engine = ExecutionEngine(harbor_results_dir=tmp_path / "results")
 
     await engine.evaluate(
         evaluation_run_id=uuid4(),

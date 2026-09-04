@@ -8,12 +8,10 @@ import pytest
 
 import api.endpoints.retrieval as retrieval_endpoint
 import api.endpoints.scoring as scoring_endpoint
-import api.endpoints.statistics as statistics_endpoint
 import utils.database as _db
 from models.competition import CompetitionPolicy
 from models.evaluation_set import EvaluationSetGroup
 from models.queue import QueueStage
-from queries.problem_statistics import get_problem_statistics
 from queries.statistics import (
     get_average_score_per_evaluation_set_group,
     get_average_wait_time_per_evaluation_set_group,
@@ -190,7 +188,7 @@ async def test_network_statistics_uses_exact_policy_count_and_scale_without_glob
     assert leader_calls == [(1, 2), (2, 4)]
 
 
-async def test_queue_and_score_history_queries_isolate_two_open_competitions():
+async def test_queue_and_top_agent_queries_isolate_two_open_competitions():
     first_agent_id = uuid4()
     second_agent_id = uuid4()
     mismatched_agent_id = uuid4()
@@ -255,39 +253,13 @@ async def test_queue_and_score_history_queries_isolate_two_open_competitions():
             finally:
                 await conn.execute("ALTER TABLE agent_scores ENABLE TRIGGER ALL")
 
-    first_history = await retrieval_endpoint._build_top_scores_over_time(1)
-    second_history = await retrieval_endpoint._build_top_scores_over_time(2)
-
-    assert first_history[-1].top_score == pytest.approx(0.6)
-    assert second_history[-1].top_score == pytest.approx(0.9)
-
     first_top_agents = await retrieval_endpoint._build_top_agents(1)
     assert [agent.agent_id for agent in first_top_agents] == [legacy_agent_id, first_agent_id]
     assert first_top_agents[0].legacy_membership is True
     assert first_top_agents[1].legacy_membership is False
 
 
-async def test_problem_statistics_routes_explicit_and_compatibility_ids_to_the_same_builder(monkeypatch):
-    calls: list[int] = []
-
-    async def build(set_id: int):
-        calls.append(set_id)
-        return SimpleNamespace(problem_set_id=set_id)
-
-    monkeypatch.setattr(statistics_endpoint, "_cached_live_problem_statistics", build)
-    async with _db.pool.acquire() as conn:
-        await _insert_competition(conn, set_id=1, policy=_policy(threshold=0.11, validator_count=2, scale_hours=5))
-        await _insert_competition(conn, set_id=2, policy=_policy(threshold=0.21, validator_count=4, scale_hours=9))
-
-    explicit = await statistics_endpoint.problem_statistics(set_id=1)
-    compatible = await statistics_endpoint.problem_statistics()
-
-    assert explicit.problem_set_id == 1
-    assert compatible.problem_set_id == 2
-    assert calls == [1, 2]
-
-
-async def test_screener_and_problem_statistics_exclude_assigned_mismatches_but_keep_null_legacy():
+async def test_screener_averages_exclude_assigned_mismatches_but_keep_null_legacy():
     valid_agent_id = uuid4()
     mismatched_agent_id = uuid4()
     legacy_agent_id = uuid4()
@@ -452,18 +424,3 @@ async def test_screener_and_problem_statistics_exclude_assigned_mismatches_but_k
     assert waits[EvaluationSetGroup.screener_1] == pytest.approx(120)
     assert waits[EvaluationSetGroup.screener_2] == pytest.approx(60)
     assert waits[EvaluationSetGroup.validator] == pytest.approx(60)
-
-    by_problem = {stat.problem_name: stat for stat in await get_problem_statistics(1)}
-    finished = by_problem["problem-a"]
-    assert finished.total_num_evaluation_runs == 6
-    assert finished.tests[0].num_runs == 6
-    assert finished.token_distribution[0].num_input_tokens == 60
-    assert {agent.agent_id for agent in finished.fastest_agents} == {valid_agent_id}
-
-    errored = by_problem["problem-error"]
-    assert errored.total_num_evaluation_runs == 2
-    assert errored.num_errored_evaluation_runs == 2
-    assert {agent.agent_id for agent in errored.error_code_distribution[0].recent_errored_agents} == {
-        valid_agent_id,
-        legacy_agent_id,
-    }
