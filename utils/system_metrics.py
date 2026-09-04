@@ -27,7 +27,7 @@ class SystemMetrics(BaseModel):
     num_containers: Optional[int] = None
 
 
-async def get_system_metrics() -> SystemMetrics:
+def collect_system_metrics() -> SystemMetrics:
     metrics = SystemMetrics()
 
     try:
@@ -54,3 +54,7 @@ async def get_system_metrics() -> SystemMetrics:
         logger.warning(f"Error in get_system_metrics(): {e}")
 
     return metrics
+
+
+async def get_system_metrics() -> SystemMetrics:
+    return collect_system_metrics()
