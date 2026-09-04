@@ -609,6 +609,7 @@ class KubernetesEnvironment(BaseEnvironment):
                 stdout=True,
                 tty=False,
                 _preload_content=False,
+                binary=True,
             )
         except ApiException as exc:
             raise RuntimeError(f"Failed to start tar download from Pod {self.pod_name}: {exc}") from exc
@@ -641,6 +642,7 @@ class KubernetesEnvironment(BaseEnvironment):
                 stdout=True,
                 tty=False,
                 _preload_content=False,
+                binary=True,
             )
         except ApiException as exc:
             raise RuntimeError(f"Failed to start tar download from Pod {self.pod_name}: {exc}") from exc
@@ -715,7 +717,12 @@ class KubernetesEnvironment(BaseEnvironment):
         return stdout, stderr
 
     def _read_tar_stream(self, resp: Any) -> tuple[bytes, str]:
-        """Blocking: drain a WebSocket exec stream, returning (stdout_bytes, stderr_text)."""
+        """Blocking: drain a WebSocket exec stream, returning (stdout_bytes, stderr_text).
+
+        The stream must be opened with ``binary=True``: in text mode the
+        kubernetes client decodes every frame as UTF-8 with replacement, which
+        corrupts any non-text file in the archive and truncates the extraction.
+        """
         tar_data = b""
         stderr_data = ""
         try:
@@ -726,7 +733,8 @@ class KubernetesEnvironment(BaseEnvironment):
                     chunk = resp.read_stdout()
                     tar_data += chunk.encode("utf-8", errors="surrogateescape") if isinstance(chunk, str) else chunk
                 if resp.peek_stderr():
-                    stderr_data += resp.read_stderr()
+                    err = resp.read_stderr()
+                    stderr_data += err.decode("utf-8", errors="replace") if isinstance(err, bytes) else err
                 now = time.monotonic()
                 if now - last_ping >= _KUBERNETES_EXEC_STREAM_PING_INTERVAL_SEC and resp.is_open():
                     self._ping_exec_stream(resp)
