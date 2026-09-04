@@ -20,6 +20,7 @@ from models.competition import (
     CompetitionAdminSnapshot,
     CompetitionAllocationSnapshot,
     CompetitionAllocationUpdateRequest,
+    CompetitionMetadataUpdateRequest,
     CompetitionPolicy,
     CompetitionPolicyUpdateRequest,
     CompetitionState,
@@ -27,6 +28,7 @@ from models.competition import (
 )
 from queries.competition import (
     replace_competition_allocations,
+    replace_competition_metadata,
     replace_competition_policy,
     update_competition_state,
 )
@@ -121,17 +123,21 @@ async def _seed_competition(
     )
 
 
+_TRUNCATE = "TRUNCATE competition_admin_events, evaluation_sets, competitions, agents RESTART IDENTITY CASCADE"
+
+
 @pytest.fixture
-async def clean_competitions(postgres_db):
+async def db(postgres_db):
+    """A pooled connection for seeding and asserting."""
     async with _db.pool.acquire() as conn:
-        await conn.execute(
-            "TRUNCATE competition_admin_events, evaluation_sets, competitions, agents RESTART IDENTITY CASCADE"
-        )
+        yield conn
+
+
+@pytest.fixture
+async def clean_competitions(db):
+    await db.execute(_TRUNCATE)
     yield
-    async with _db.pool.acquire() as conn:
-        await conn.execute(
-            "TRUNCATE competition_admin_events, evaluation_sets, competitions, agents RESTART IDENTITY CASCADE"
-        )
+    await db.execute(_TRUNCATE)
 
 
 def _state_request(**overrides) -> CompetitionStateUpdateRequest:
@@ -152,9 +158,19 @@ def _policy_request(**overrides) -> CompetitionPolicyUpdateRequest:
     return CompetitionPolicyUpdateRequest(**_policy(**overrides).model_dump(), reason=reason)
 
 
-async def test_open_initializes_defaults_once_and_exact_retry_is_not_audited(clean_competitions) -> None:
-    async with _db.pool.acquire() as conn:
-        await _seed_competition(conn, set_id=10)
+def _metadata_request(**overrides) -> CompetitionMetadataUpdateRequest:
+    values = {
+        "name": "Competition One",
+        "description": "A long-form blurb.",
+        "links": ["https://docs.example.com/"],
+        "reason": "operator metadata update",
+    }
+    values.update(overrides)
+    return CompetitionMetadataUpdateRequest(**values)
+
+
+async def test_open_initializes_defaults_once_and_exact_retry_is_not_audited(clean_competitions, db) -> None:
+    await _seed_competition(db, set_id=10)
 
     opened = await update_competition_state(
         set_id=10,
@@ -171,8 +187,7 @@ async def test_open_initializes_defaults_once_and_exact_retry_is_not_audited(cle
     assert opened.start_date is not None
     assert opened.policy == competition_queries.current_competition_policy_defaults(10)
     assert retried == opened
-    async with _db.pool.acquire() as conn:
-        events = await conn.fetch("SELECT * FROM competition_admin_events")
+    events = await db.fetch("SELECT * FROM competition_admin_events")
     assert len(events) == 1
     assert events[0]["operation"] == "state"
     assert events[0]["actor"] == ADMIN_ACTOR
@@ -184,27 +199,26 @@ async def test_open_initializes_defaults_once_and_exact_retry_is_not_audited(cle
 @pytest.mark.parametrize("missing_group", ["screener_1", "screener_2", "validator"])
 async def test_open_requires_a_nonempty_task_in_every_pipeline_group(
     clean_competitions,
+    db,
     missing_group: str,
 ) -> None:
     groups = tuple(group for group in ("screener_1", "screener_2", "validator") if group != missing_group)
-    async with _db.pool.acquire() as conn:
-        await _seed_competition(conn, set_id=11, groups=groups)
+    await _seed_competition(db, set_id=11, groups=groups)
 
     with pytest.raises(CompetitionAdminConflictError, match=missing_group):
         await update_competition_state(set_id=11, target=_state_request(), actor=ADMIN_ACTOR)
 
-    async with _db.pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT start_date, scoring_mode FROM competitions WHERE set_id = 11")
-        assert dict(row) == {"start_date": None, "scoring_mode": None}
-        assert await conn.fetchval("SELECT count(*) FROM competition_admin_events") == 0
+    row = await db.fetchrow("SELECT start_date, scoring_mode FROM competitions WHERE set_id = 11")
+    assert dict(row) == {"start_date": None, "scoring_mode": None}
+    assert await db.fetchval("SELECT count(*) FROM competition_admin_events") == 0
 
 
 async def test_open_preserves_explicit_policy_and_cutoff_can_be_reopened_or_amended(
     clean_competitions,
+    db,
 ) -> None:
     explicit_policy = _policy(screener_1_threshold=0.87)
-    async with _db.pool.acquire() as conn:
-        await _seed_competition(conn, set_id=12, policy=explicit_policy)
+    await _seed_competition(db, set_id=12, policy=explicit_policy)
 
     opened = await update_competition_state(set_id=12, target=_state_request(), actor=ADMIN_ACTOR)
     cutoff = datetime.now(timezone.utc) + timedelta(hours=1)
@@ -220,17 +234,16 @@ async def test_open_preserves_explicit_policy_and_cutoff_can_be_reopened_or_amen
     )
     old_close = datetime.now(timezone.utc) - timedelta(days=2)
     old_cutoff = old_close + timedelta(hours=1)
-    async with _db.pool.acquire() as conn:
-        await conn.execute(
-            """
-            UPDATE competitions
-            SET submissions_closed_at = $2, emissions_end_at = $3
-            WHERE set_id = $1
-            """,
-            12,
-            old_close,
-            old_cutoff,
-        )
+    await db.execute(
+        """
+        UPDATE competitions
+        SET submissions_closed_at = $2, emissions_end_at = $3
+        WHERE set_id = $1
+        """,
+        12,
+        old_close,
+        old_cutoff,
+    )
     amended = await update_competition_state(
         set_id=12,
         target=_state_request(
@@ -252,10 +265,9 @@ async def test_open_preserves_explicit_policy_and_cutoff_can_be_reopened_or_amen
     assert amended.emissions_end_at == amended.submissions_closed_at == old_close
 
 
-async def test_draft_cancellation_direct_end_and_terminal_state(clean_competitions) -> None:
-    async with _db.pool.acquire() as conn:
-        await _seed_competition(conn, set_id=20, groups=())
-        await _seed_competition(conn, set_id=21, started=True, policy=_policy())
+async def test_draft_cancellation_direct_end_and_terminal_state(clean_competitions, db) -> None:
+    await _seed_competition(db, set_id=20, groups=())
+    await _seed_competition(db, set_id=21, started=True, policy=_policy())
 
     cancelled = await update_competition_state(
         set_id=20,
@@ -279,8 +291,7 @@ async def test_draft_cancellation_direct_end_and_terminal_state(clean_competitio
             actor=ADMIN_ACTOR,
         )
     with pytest.raises(CompetitionAdminConflictError, match="return to draft"):
-        async with _db.pool.acquire() as conn:
-            await _seed_competition(conn, set_id=22, started=True, policy=_policy())
+        await _seed_competition(db, set_id=22, started=True, policy=_policy())
         await update_competition_state(
             set_id=22,
             target=_state_request(started=False),
@@ -288,9 +299,8 @@ async def test_draft_cancellation_direct_end_and_terminal_state(clean_competitio
         )
 
 
-async def test_policy_replace_is_complete_editable_after_end_and_noop_safe(clean_competitions) -> None:
-    async with _db.pool.acquire() as conn:
-        await _seed_competition(conn, set_id=30, started=True, ended=True, policy=_policy())
+async def test_policy_replace_is_complete_editable_after_end_and_noop_safe(clean_competitions, db) -> None:
+    await _seed_competition(db, set_id=30, started=True, ended=True, policy=_policy())
 
     changed = await replace_competition_policy(
         set_id=30,
@@ -310,18 +320,16 @@ async def test_policy_replace_is_complete_editable_after_end_and_noop_safe(clean
     assert changed.policy.screener_1_threshold == pytest.approx(0.87)
     assert changed.policy.hardcoding_policy_version == "hardcoding-v2"
     assert retried == changed
-    async with _db.pool.acquire() as conn:
-        events = await conn.fetch("SELECT operation, before_state, after_state FROM competition_admin_events")
+    events = await db.fetch("SELECT operation, before_state, after_state FROM competition_admin_events")
     assert len(events) == 1
     assert events[0]["operation"] == "policy"
     assert json.loads(events[0]["before_state"])["policy"]["screener_1_threshold"] == 0.41
     assert json.loads(events[0]["after_state"])["policy"]["screener_1_threshold"] == 0.87
 
 
-async def test_allocation_replaces_complete_sorted_vector_and_reports_owner_remainder(clean_competitions) -> None:
-    async with _db.pool.acquire() as conn:
-        await _seed_competition(conn, set_id=40, started=True, ended=True, policy=_policy())
-        await _seed_competition(conn, set_id=10, policy=None)
+async def test_allocation_replaces_complete_sorted_vector_and_reports_owner_remainder(clean_competitions, db) -> None:
+    await _seed_competition(db, set_id=40, started=True, ended=True, policy=_policy())
+    await _seed_competition(db, set_id=10, policy=None)
 
     request = CompetitionAllocationUpdateRequest.model_validate(
         {
@@ -344,9 +352,8 @@ async def test_allocation_replaces_complete_sorted_vector_and_reports_owner_rema
     ]
     assert changed.owner_emission_weight == Decimal("0.60")
     assert retried == changed
-    async with _db.pool.acquire() as conn:
-        rows = await conn.fetch("SELECT set_id, raw_emission_weight FROM competitions ORDER BY set_id")
-        events = await conn.fetch("SELECT before_state, after_state FROM competition_admin_events")
+    rows = await db.fetch("SELECT set_id, raw_emission_weight FROM competitions ORDER BY set_id")
+    events = await db.fetch("SELECT before_state, after_state FROM competition_admin_events")
     assert [(row["set_id"], row["raw_emission_weight"]) for row in rows] == [
         (10, Decimal("0.25")),
         (40, Decimal("0.15")),
@@ -357,10 +364,9 @@ async def test_allocation_replaces_complete_sorted_vector_and_reports_owner_rema
     assert after_state["owner_emission_weight"] == "0.60"
 
 
-async def test_allocation_rejects_stale_catalog_and_model_rejects_invalid_vectors(clean_competitions) -> None:
-    async with _db.pool.acquire() as conn:
-        await _seed_competition(conn, set_id=50)
-        await _seed_competition(conn, set_id=51)
+async def test_allocation_rejects_stale_catalog_and_model_rejects_invalid_vectors(clean_competitions, db) -> None:
+    await _seed_competition(db, set_id=50)
+    await _seed_competition(db, set_id=51)
 
     incomplete = CompetitionAllocationUpdateRequest(
         allocations=[{"set_id": 50, "raw_emission_weight": Decimal("0.5")}],
@@ -395,9 +401,8 @@ def test_allocation_snapshot_preserves_a_microscopic_owner_remainder() -> None:
     assert snapshot.owner_emission_weight == Decimal("1e-400")
 
 
-async def test_audit_failure_rolls_back_state_change(clean_competitions, monkeypatch) -> None:
-    async with _db.pool.acquire() as conn:
-        await _seed_competition(conn, set_id=60, started=True, policy=_policy())
+async def test_audit_failure_rolls_back_state_change(clean_competitions, db, monkeypatch) -> None:
+    await _seed_competition(db, set_id=60, started=True, policy=_policy())
 
     async def fail_audit(*args, **kwargs):
         raise RuntimeError("audit unavailable")
@@ -410,14 +415,16 @@ async def test_audit_failure_rolls_back_state_change(clean_competitions, monkeyp
             actor=ADMIN_ACTOR,
         )
 
-    async with _db.pool.acquire() as conn:
-        assert await conn.fetchval("SELECT is_paused FROM competitions WHERE set_id = 60") is False
-        assert await conn.fetchval("SELECT count(*) FROM competition_admin_events") == 0
+    assert await db.fetchval("SELECT is_paused FROM competitions WHERE set_id = 60") is False
+    assert await db.fetchval("SELECT count(*) FROM competition_admin_events") == 0
 
 
 def _sample_snapshot() -> CompetitionAdminSnapshot:
     return CompetitionAdminSnapshot(
         set_id=1,
+        name="Sample",
+        description=None,
+        links=[],
         state=CompetitionState.open,
         started=True,
         start_date=datetime.now(timezone.utc),
@@ -435,6 +442,7 @@ def _sample_snapshot() -> CompetitionAdminSnapshot:
 def _make_client(monkeypatch) -> TestClient:
     monkeypatch.setattr(admin_endpoint, "update_competition_state", AsyncMock(return_value=_sample_snapshot()))
     monkeypatch.setattr(admin_endpoint, "replace_competition_policy", AsyncMock(return_value=_sample_snapshot()))
+    monkeypatch.setattr(admin_endpoint, "replace_competition_metadata", AsyncMock(return_value=_sample_snapshot()))
     monkeypatch.setattr(
         admin_endpoint,
         "replace_competition_allocations",
@@ -456,9 +464,11 @@ def test_competition_routes_require_configured_admin_bearer(monkeypatch) -> None
     state_payload = _state_request().model_dump(mode="json")
     policy_payload = _policy_request().model_dump(mode="json")
     allocation_payload = {"allocations": [], "reason": "set vector"}
+    metadata_payload = _metadata_request().model_dump(mode="json")
     routes = [
         ("/admin/competitions/1/state", state_payload),
         ("/admin/competitions/1/policy", policy_payload),
+        ("/admin/competitions/1", metadata_payload),
         ("/admin/competition-allocations", allocation_payload),
     ]
     for path, payload in routes:
@@ -484,6 +494,12 @@ def test_competition_routes_accept_strict_complete_bodies_and_fixed_actor(monkey
     assert client.put("/admin/competitions/1/policy", json=policy_payload, headers=auth).status_code == 200
     assert admin_endpoint.replace_competition_policy.await_args.kwargs["actor"] == ADMIN_ACTOR
 
+    metadata_payload = _metadata_request(reason="  retitle  ").model_dump(mode="json")
+    assert client.put("/admin/competitions/1", json=metadata_payload, headers=auth).status_code == 200
+    metadata_call = admin_endpoint.replace_competition_metadata.await_args
+    assert metadata_call.kwargs["actor"] == ADMIN_ACTOR
+    assert metadata_call.kwargs["target"].reason == "retitle"
+
     allocation_payload = {
         "allocations": [{"set_id": 1, "raw_emission_weight": 0.25}],
         "reason": "set vector",
@@ -494,6 +510,9 @@ def test_competition_routes_accept_strict_complete_bodies_and_fixed_actor(monkey
     for path, payload in (
         ("/admin/competitions/1/state", {**state_payload, "unexpected": True}),
         ("/admin/competitions/1/policy", {**policy_payload, "unexpected": True}),
+        ("/admin/competitions/1", {**metadata_payload, "unexpected": True}),
+        ("/admin/competitions/1", {**metadata_payload, "links": ["javascript:alert(1)"]}),
+        ("/admin/competitions/1", {**metadata_payload, "links": ["not a url"]}),
         ("/admin/competition-allocations", {**allocation_payload, "unexpected": True}),
     ):
         assert client.put(path, json=payload, headers=auth).status_code == 422
@@ -617,3 +636,72 @@ async def test_competition_admin_success_refreshes_cached_values_but_failure_kee
         assert reads == 2
     finally:
         clear_all_ttl_caches()
+
+
+async def test_metadata_round_trips_and_is_audited(clean_competitions, db) -> None:
+    await _seed_competition(db, set_id=70, started=True, policy=_policy())
+
+    updated = await replace_competition_metadata(
+        set_id=70,
+        target=_metadata_request(
+            name="Renamed",
+            description="Fresh blurb.",
+            links=["https://a.example.com/", "https://b.example.com/docs"],
+        ),
+        actor=ADMIN_ACTOR,
+    )
+    assert updated.name == "Renamed"
+    assert updated.description == "Fresh blurb."
+    assert updated.links == ["https://a.example.com/", "https://b.example.com/docs"]
+
+    stored = await db.fetchrow("SELECT name, description, links FROM competitions WHERE set_id = 70")
+    events = await db.fetch("SELECT operation, actor, reason, before_state, after_state FROM competition_admin_events")
+
+    assert stored["name"] == "Renamed"
+    assert stored["description"] == "Fresh blurb."
+    assert stored["links"] == ["https://a.example.com/", "https://b.example.com/docs"]
+
+    assert len(events) == 1
+    assert events[0]["operation"] == "metadata"
+    assert events[0]["actor"] == ADMIN_ACTOR
+    assert events[0]["reason"] == "operator metadata update"
+    assert json.loads(events[0]["before_state"])["name"] is None
+    assert json.loads(events[0]["after_state"])["name"] == "Renamed"
+
+
+async def test_metadata_clears_fields_and_skips_audit_on_exact_retry(clean_competitions, db) -> None:
+    await _seed_competition(db, set_id=71, started=True, policy=_policy())
+
+    request = _metadata_request(name="Titled", description="Blurb.", links=["https://a.example.com/"])
+    await replace_competition_metadata(set_id=71, target=request, actor=ADMIN_ACTOR)
+    retried = await replace_competition_metadata(set_id=71, target=request, actor=ADMIN_ACTOR)
+    assert retried.name == "Titled"
+
+    cleared = await replace_competition_metadata(
+        set_id=71,
+        target=_metadata_request(name=None, description=None, links=[]),
+        actor=ADMIN_ACTOR,
+    )
+    assert (cleared.name, cleared.description, cleared.links) == (None, None, [])
+
+    operations = await db.fetch("SELECT operation FROM competition_admin_events ORDER BY created_at, event_id")
+
+    # The identical retry is a no-op, so only the initial write and the clear are audited.
+    assert [row["operation"] for row in operations] == ["metadata", "metadata"]
+
+
+async def test_metadata_stays_editable_after_a_competition_ends(clean_competitions, db) -> None:
+    await _seed_competition(db, set_id=72, started=True, ended=True, policy=_policy())
+
+    updated = await replace_competition_metadata(
+        set_id=72,
+        target=_metadata_request(name="Corrected after the fact"),
+        actor=ADMIN_ACTOR,
+    )
+    assert updated.ended is True
+    assert updated.name == "Corrected after the fact"
+
+
+async def test_metadata_update_on_missing_competition_raises_not_found(clean_competitions) -> None:
+    with pytest.raises(CompetitionNotFoundError):
+        await replace_competition_metadata(set_id=999, target=_metadata_request(), actor=ADMIN_ACTOR)
