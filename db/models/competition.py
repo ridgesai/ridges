@@ -135,7 +135,7 @@ class CompetitionAdminEvent(Base, CreatedAtMixin):
 
     __table_args__ = (
         sa.CheckConstraint(
-            "operation IN ('state', 'policy', 'allocation')",
+            "operation IN ('state', 'policy', 'allocation', 'metadata')",
             name="ck_competition_admin_events_operation",
         ),
         sa.CheckConstraint(
