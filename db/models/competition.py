@@ -4,7 +4,7 @@ from typing import Any, Optional
 from uuid import UUID
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +16,12 @@ class Competition(Base, CreatedAtMixin):
 
     set_id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
     name: Mapped[Optional[str]] = mapped_column(sa.Text)
+    description: Mapped[Optional[str]] = mapped_column(sa.Text)
+    links: Mapped[list[str]] = mapped_column(
+        ARRAY(sa.Text),
+        nullable=False,
+        server_default=sa.text("'{}'::text[]"),
+    )
     start_date: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
     submissions_closed_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
     is_paused: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
@@ -97,6 +103,10 @@ class Competition(Base, CreatedAtMixin):
             name="ck_competitions_incentive_durations",
         ),
         sa.CheckConstraint(
+            "coalesce(competitions_links_are_nonblank(links), true)",
+            name="ck_competitions_links_nonblank",
+        ),
+        sa.CheckConstraint(
             "end_date IS NULL OR start_date IS NULL OR end_date >= start_date",
             name="ck_competitions_end_not_before_start",
         ),
@@ -125,7 +135,7 @@ class CompetitionAdminEvent(Base, CreatedAtMixin):
 
     __table_args__ = (
         sa.CheckConstraint(
-            "operation IN ('state', 'policy', 'allocation')",
+            "operation IN ('state', 'policy', 'allocation', 'metadata')",
             name="ck_competition_admin_events_operation",
         ),
         sa.CheckConstraint(

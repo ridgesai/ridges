@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Annotated, Literal
 
 from pydantic import (
+    AnyHttpUrl,
     AwareDatetime,
     BaseModel,
     ConfigDict,
@@ -29,6 +30,8 @@ class CompetitionState(str, Enum):
 class PublicCompetition(BaseModel):
     set_id: int
     name: str | None
+    description: str | None
+    links: list[str]
     state: CompetitionState
     accepting: bool
     processable: bool
@@ -129,7 +132,7 @@ class CompetitionStateUpdateRequest(BaseModel):
     started: StrictBool
     submissions_closed: StrictBool
     is_paused: StrictBool
-    emissions_end_at: AwareDatetime | None
+    emissions_end_at: Annotated[AwareDatetime | None, Field(strict=False)]
     ended: StrictBool
     reason: AdminReason
 
@@ -141,6 +144,29 @@ class CompetitionStateUpdateRequest(BaseModel):
 
 
 class CompetitionPolicyUpdateRequest(CompetitionPolicy):
+    reason: AdminReason
+
+
+class CompetitionMetadata(BaseModel):
+    """Editorial fields that carry no lifecycle or scoring meaning."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    name: Annotated[str, StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=200)] | None
+    description: (
+        Annotated[str, StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=5000)] | None
+    )
+    links: Annotated[list[AnyHttpUrl], Field(max_length=20)]
+
+    @model_validator(mode="after")
+    def reject_duplicate_links(self) -> CompetitionMetadata:
+        rendered = [str(link) for link in self.links]
+        if len(rendered) != len(set(rendered)):
+            raise ValueError("links must not contain duplicates")
+        return self
+
+
+class CompetitionMetadataUpdateRequest(CompetitionMetadata):
     reason: AdminReason
 
 
@@ -175,6 +201,9 @@ class CompetitionAllocationUpdateRequest(BaseModel):
 
 class CompetitionAdminSnapshot(BaseModel):
     set_id: int
+    name: str | None
+    description: str | None
+    links: list[str]
     state: CompetitionState
     started: bool
     start_date: datetime | None

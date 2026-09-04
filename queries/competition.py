@@ -14,6 +14,7 @@ from models.competition import (
     CompetitionAllocation,
     CompetitionAllocationSnapshot,
     CompetitionAllocationUpdateRequest,
+    CompetitionMetadataUpdateRequest,
     CompetitionPolicy,
     CompetitionPolicyUpdateRequest,
     CompetitionState,
@@ -72,6 +73,9 @@ _COMPETITION_CONTEXT_SELECT = """
 _ADMIN_COMPETITION_SELECT = """
     SELECT
         set_id,
+        name,
+        description,
+        links,
         start_date,
         submissions_closed_at,
         is_paused,
@@ -101,6 +105,8 @@ _PUBLIC_COMPETITION_SELECT = f"""
     SELECT
         competition.set_id,
         competition.name,
+        competition.description,
+        competition.links,
         competition.created_at,
         competition.start_date,
         competition.submissions_closed_at,
@@ -171,6 +177,9 @@ def _admin_snapshot_from_row(row: Mapping[str, object]) -> CompetitionAdminSnaps
     end_date = row["end_date"]
     return CompetitionAdminSnapshot(
         set_id=int(row["set_id"]),
+        name=row["name"],
+        description=row["description"],
+        links=list(row["links"] or []),
         state=derive_competition_state(
             start_date=start_date,
             submissions_closed_at=submissions_closed_at,
@@ -212,6 +221,8 @@ def _public_competition_from_row(row: Mapping[str, object]) -> PublicCompetition
     return PublicCompetition(
         set_id=int(row["set_id"]),
         name=row["name"],
+        description=row["description"],
+        links=list(row["links"] or []),
         state=state,
         accepting=accepting,
         processable=processable,
@@ -520,7 +531,7 @@ async def initialize_current_competition_policy(conn: DatabaseConnection) -> Com
 async def _insert_competition_admin_event(
     conn: DatabaseConnection,
     *,
-    operation: Literal["state", "policy", "allocation"],
+    operation: Literal["state", "policy", "allocation", "metadata"],
     actor: str,
     reason: str,
     before_state: dict[str, object],
@@ -814,6 +825,71 @@ async def replace_competition_policy(
         await _insert_competition_admin_event(
             conn,
             operation="policy",
+            actor=actor,
+            reason=target.reason,
+            before_state=_audit_snapshot(before),
+            after_state=_audit_snapshot(after),
+        )
+        return after
+
+
+@db_operation
+async def replace_competition_metadata(
+    conn: DatabaseConnection,
+    *,
+    set_id: int,
+    target: CompetitionMetadataUpdateRequest,
+    actor: str,
+) -> CompetitionAdminSnapshot:
+    """Replace the editorial fields wholesale.
+
+    Metadata carries no lifecycle or scoring meaning, so unlike state transitions this
+    stays available after a competition has ended.
+    """
+    name = target.name
+    description = target.description
+    links = [str(link) for link in target.links]
+    async with conn.conn.transaction():
+        row = await conn.fetchrow(
+            f"""
+            {_ADMIN_COMPETITION_SELECT}
+            WHERE set_id = $1
+            FOR UPDATE
+            """,
+            set_id,
+        )
+        if row is None:
+            raise CompetitionNotFoundError(set_id)
+
+        before = _admin_snapshot_from_row(row)
+        if (before.name, before.description, before.links) == (name, description, links):
+            return before
+
+        await conn.execute(
+            """
+            UPDATE competitions
+            SET
+                name = $2,
+                description = $3,
+                links = $4
+            WHERE set_id = $1
+            """,
+            set_id,
+            name,
+            description,
+            links,
+        )
+        updated_row = await conn.fetchrow(
+            f"""
+            {_ADMIN_COMPETITION_SELECT}
+            WHERE set_id = $1
+            """,
+            set_id,
+        )
+        after = _admin_snapshot_from_row(updated_row)
+        await _insert_competition_admin_event(
+            conn,
+            operation="metadata",
             actor=actor,
             reason=target.reason,
             before_state=_audit_snapshot(before),

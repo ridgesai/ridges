@@ -39,6 +39,8 @@ async def _insert_competition(
     *,
     set_id: int,
     name: str | None,
+    description: str | None = None,
+    links: list[str] | None = None,
     start_date: datetime | None = NOW,
     submissions_closed_at: datetime | None = None,
     is_paused: bool = False,
@@ -53,6 +55,8 @@ async def _insert_competition(
         INSERT INTO competitions (
             set_id,
             name,
+            description,
+            links,
             created_at,
             start_date,
             submissions_closed_at,
@@ -74,12 +78,14 @@ async def _insert_competition(
             incentive_reward_half_life_hours,
             incentive_time_multiplier_scale_hours
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9,
-            $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+            $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
         )
         """,
         set_id,
         name,
+        description,
+        links if links is not None else [],
         NOW - timedelta(days=set_id),
         start_date,
         submissions_closed_at,
@@ -237,6 +243,8 @@ async def test_public_openapi_is_lean_and_explicit_detail_hides_drafts() -> None
     assert set(public_schema) == {
         "set_id",
         "name",
+        "description",
+        "links",
         "state",
         "accepting",
         "processable",
@@ -249,3 +257,32 @@ async def test_public_openapi_is_lean_and_explicit_detail_hides_drafts() -> None
         "raw_emission_weight",
     }
     assert "policy" not in public_schema
+
+
+async def test_catalog_and_detail_expose_description_and_links() -> None:
+    links = ["https://docs.example.com", "https://x.com/example"]
+    async with _db.pool.acquire() as conn:
+        await _insert_competition(
+            conn,
+            set_id=1,
+            name="Documented",
+            description="A long-form blurb about this competition.",
+            links=links,
+        )
+
+    detail = await competitions_endpoint.competition_detail(1)
+    assert detail.description == "A long-form blurb about this competition."
+    assert detail.links == links
+
+    [listed] = await competitions_endpoint.competition_catalog()
+    assert listed.description == "A long-form blurb about this competition."
+    assert listed.links == links
+
+
+async def test_metadata_defaults_to_null_description_and_empty_links() -> None:
+    async with _db.pool.acquire() as conn:
+        await _insert_competition(conn, set_id=1, name="Bare")
+
+    detail = await competitions_endpoint.competition_detail(1)
+    assert detail.description is None
+    assert detail.links == []

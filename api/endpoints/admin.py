@@ -14,6 +14,7 @@ from models.competition import (
     CompetitionAdminSnapshot,
     CompetitionAllocationSnapshot,
     CompetitionAllocationUpdateRequest,
+    CompetitionMetadataUpdateRequest,
     CompetitionPolicyUpdateRequest,
     CompetitionStateUpdateRequest,
 )
@@ -21,6 +22,7 @@ from models.upload_credit import UploadCredit
 from queries.banned_coldkey import ban_coldkey, unban_coldkey
 from queries.competition import (
     replace_competition_allocations,
+    replace_competition_metadata,
     replace_competition_policy,
     update_competition_state,
 )
@@ -76,6 +78,17 @@ def validate_hotkey(miner_hotkey: str) -> None:
         Keypair(ss58_address=miner_hotkey)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid hotkey SS58 address") from None
+
+
+@router.put("/competitions/{set_id}", response_model=CompetitionAdminSnapshot)
+async def put_competition_metadata(
+    set_id: int,
+    request: CompetitionMetadataUpdateRequest,
+    actor: Annotated[str, Depends(require_coldkey_ban_admin)],
+) -> CompetitionAdminSnapshot:
+    snapshot = await replace_competition_metadata(set_id=set_id, target=request, actor=actor)
+    clear_all_ttl_caches()
+    return snapshot
 
 
 @router.put("/competitions/{set_id}/state", response_model=CompetitionAdminSnapshot)
