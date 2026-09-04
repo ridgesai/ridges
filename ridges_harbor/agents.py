@@ -259,6 +259,10 @@ class RidgesMinerAgent(BaseInstalledAgent):
 
     async def _ensure_git_baseline(self, environment: "BaseEnvironment") -> None:
         """Ensure the task workdir has a valid git HEAD before patch generation."""
+        exclude_bytecode = (
+            'mkdir -p "$(git rev-parse --git-path info)" && '
+            "printf '__pycache__/\\n*.pyc\\n' >> \"$(git rev-parse --git-path info/exclude)\""
+        )
         command = (
             "command -v git >/dev/null 2>&1 || { "
             "echo 'git is required for Ridges patch workflow' >&2; "
@@ -271,7 +275,9 @@ class RidgesMinerAgent(BaseInstalledAgent):
             "git config commit.gpgsign false && "
             "git add -A && "
             "git commit --allow-empty -m 'ridges baseline'"
-            ")"
+            "); rc=$?; "
+            f"{{ {exclude_bytecode}; }} 2>/dev/null || true; "
+            "exit $rc"
         )
         await self._exec_with_log(
             environment,

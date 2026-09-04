@@ -233,7 +233,7 @@ cases:
               tmpfs: {}
 
   - name: tmpfs-without-memory-limit
-    valid: false
+    valid: true
     compose:
       services:
         redis:
@@ -247,7 +247,7 @@ cases:
                 size: 64m
 
   - name: tmpfs-request-too-small
-    valid: false
+    valid: true
     compose:
       services:
         redis:

@@ -24,7 +24,9 @@ Two classes are defined here:
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import http.client
 import io
 import logging
 import re
@@ -32,6 +34,7 @@ import shlex
 import ssl
 import tarfile
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Sequence
@@ -45,7 +48,7 @@ from kubernetes import client as k8s_client
 from kubernetes import config as k8s_config
 from kubernetes.client.rest import ApiException
 from kubernetes.stream import stream
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 from websocket import WebSocketException
 
 from ridges_harbor.k8s_compose import (
@@ -589,30 +592,40 @@ class KubernetesEnvironment(BaseEnvironment):
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10), reraise=True)
     async def download_file(self, source_path: str, target_path: Path | str) -> None:
         await self._ensure_client()
+        await self._wait_for_container_exec_ready()
         target_path = Path(target_path)
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
-        resp = await asyncio.to_thread(
-            stream,
-            self._api.connect_get_namespaced_pod_exec,
-            self.pod_name,
-            self.namespace,
-            container="main",
-            command=["tar", "cf", "-", source_path],
-            stderr=True,
-            stdin=False,
-            stdout=True,
-            tty=False,
-            _preload_content=False,
-        )
+        try:
+            resp = await asyncio.to_thread(
+                stream,
+                self._api.connect_get_namespaced_pod_exec,
+                self.pod_name,
+                self.namespace,
+                container="main",
+                command=["tar", "cf", "-", source_path],
+                stderr=True,
+                stdin=False,
+                stdout=True,
+                tty=False,
+                _preload_content=False,
+                binary=True,
+            )
+        except ApiException as exc:
+            raise RuntimeError(f"Failed to start tar download from Pod {self.pod_name}: {exc}") from exc
 
-        tar_data, _stderr_data = await asyncio.to_thread(self._read_tar_stream, resp)
+        tar_data, stderr_data = await asyncio.to_thread(self._read_tar_stream, resp)
+        if not tar_data:
+            raise RuntimeError(
+                f"No data received when downloading {source_path} from Pod {self.pod_name}: stderr={stderr_data!r}"
+            )
 
         await asyncio.to_thread(self._extract_tar_member, tar_data, source_path, target_path)
 
     @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=30), reraise=True)
     async def download_dir(self, source_dir: str, target_dir: Path | str) -> None:
         await self._ensure_client()
+        await self._wait_for_container_exec_ready()
         target_dir = Path(target_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -629,6 +642,7 @@ class KubernetesEnvironment(BaseEnvironment):
                 stdout=True,
                 tty=False,
                 _preload_content=False,
+                binary=True,
             )
         except ApiException as exc:
             raise RuntimeError(f"Failed to start tar download from Pod {self.pod_name}: {exc}") from exc
@@ -639,7 +653,9 @@ class KubernetesEnvironment(BaseEnvironment):
             raise RuntimeError(f"Failed to access directory {source_dir} in Pod {self.pod_name}: {stderr_data.strip()}")
 
         if not tar_data:
-            raise RuntimeError(f"No data received when downloading {source_dir} from Pod {self.pod_name}")
+            raise RuntimeError(
+                f"No data received when downloading {source_dir} from Pod {self.pod_name}: stderr={stderr_data!r}"
+            )
 
         try:
             await asyncio.to_thread(self._extract_tar_all, tar_data, target_dir)
@@ -701,22 +717,40 @@ class KubernetesEnvironment(BaseEnvironment):
         return stdout, stderr
 
     def _read_tar_stream(self, resp: Any) -> tuple[bytes, str]:
-        """Blocking: drain a WebSocket exec stream, returning (stdout_bytes, stderr_text)."""
+        """Blocking: drain a WebSocket exec stream, returning (stdout_bytes, stderr_text).
+
+        The stream must be opened with ``binary=True``: in text mode the
+        kubernetes client decodes every frame as UTF-8 with replacement, which
+        corrupts any non-text file in the archive and truncates the extraction.
+        """
         tar_data = b""
         stderr_data = ""
-        last_ping = time.monotonic()
-        while resp.is_open():
-            resp.update(timeout=1)
-            if resp.peek_stdout():
-                chunk = resp.read_stdout()
-                tar_data += chunk.encode("utf-8", errors="surrogateescape") if isinstance(chunk, str) else chunk
-            if resp.peek_stderr():
-                stderr_data += resp.read_stderr()
-            now = time.monotonic()
-            if now - last_ping >= _KUBERNETES_EXEC_STREAM_PING_INTERVAL_SEC and resp.is_open():
-                self._ping_exec_stream(resp)
-                last_ping = now
-        return tar_data, stderr_data
+        try:
+            last_ping = time.monotonic()
+            while resp.is_open():
+                resp.update(timeout=1)
+                if resp.peek_stdout():
+                    chunk = resp.read_stdout()
+                    tar_data += chunk.encode("utf-8", errors="surrogateescape") if isinstance(chunk, str) else chunk
+                if resp.peek_stderr():
+                    err = resp.read_stderr()
+                    stderr_data += err.decode("utf-8", errors="replace") if isinstance(err, bytes) else err
+                now = time.monotonic()
+                if now - last_ping >= _KUBERNETES_EXEC_STREAM_PING_INTERVAL_SEC and resp.is_open():
+                    self._ping_exec_stream(resp)
+                    last_ping = now
+            resp.run_forever(timeout=0)
+            return_code = self._exec_stream_return_code(resp)
+            if return_code != 0:
+                raise RuntimeError(
+                    f"Tar command failed in Pod {self.pod_name}: return_code={return_code}, stderr={stderr_data!r}"
+                )
+            return tar_data, stderr_data
+        finally:
+            try:
+                resp.close()
+            except Exception:
+                pass
 
     def _write_tar_stream(self, resp: Any, payload: bytes) -> None:
         """Blocking: write payload to the exec stream stdin and drain until closed."""
@@ -1187,28 +1221,25 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         if has_explicit_memory:
             memory_request_bytes = sidecar.memory_request_bytes or default_request
             memory_limit_bytes = sidecar.memory_limit_bytes or default_limit
-            if tmpfs_bytes and memory_request_bytes <= tmpfs_bytes:
-                raise RuntimeError(f"sidecar {sidecar.name}: memory request must exceed total tmpfs size")
-
-            if tmpfs_bytes and memory_limit_bytes <= tmpfs_bytes:
-                raise RuntimeError(f"sidecar {sidecar.name}: memory limit must exceed total tmpfs size")
         else:
-            # Backwards compatibility
-            memory_request_bytes = default_request + tmpfs_bytes
-            memory_limit_bytes = default_limit + tmpfs_bytes
+            memory_request_bytes = default_request
+            memory_limit_bytes = default_limit
         if memory_request_bytes > memory_limit_bytes:
             raise RuntimeError(f"sidecar {sidecar.name}: memory request exceeds memory limit")
         if not has_explicit_memory:
             self.logger.debug(
                 f"Sidecar {sidecar.name}: using default memory "
-                f"{self.sidecar_memory_request_mi}Mi/{self.sidecar_memory_limit_mi}Mi "
-                "plus declared tmpfs capacity"
+                f"{self.sidecar_memory_request_mi}Mi/{self.sidecar_memory_limit_mi}Mi"
             )
         requests: dict[str, str] = {
             "cpu": sidecar.cpu_request or DEFAULT_SIDECAR_CPU_REQUEST,
             "memory": k8s_memory_quantity(memory_request_bytes),
         }
         limits: dict[str, str] = {"memory": k8s_memory_quantity(memory_limit_bytes)}
+        if tmpfs_bytes:
+            ephemeral = str(tmpfs_bytes)
+            requests["ephemeral-storage"] = ephemeral
+            limits["ephemeral-storage"] = ephemeral
         return k8s_client.V1Container(
             name=sidecar.name,
             image=self._sidecar_image_ref(sidecar.name),
@@ -1236,7 +1267,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         volumes = super()._build_volumes()
         for sidecar in self._compose_sidecars():
             for index, mount in enumerate(sidecar.tmpfs_mounts):
-                empty_dir = k8s_client.V1EmptyDirVolumeSource(medium="Memory")
+                empty_dir = k8s_client.V1EmptyDirVolumeSource()
                 if mount.size_bytes is not None:
                     empty_dir.size_limit = str(mount.size_bytes)
                 volumes.append(
@@ -1724,6 +1755,96 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
 # ---------------------------------------------------------------------------
 
 
+REGISTRY_CHECK_ATTEMPTS = 5
+REGISTRY_CHECK_TIMEOUT_SECONDS = 10
+
+
+class _RegistryUnavailable(Exception):
+    """The registry did not give a usable answer (timeout, connection error, 429, 5xx)."""
+
+
+def _registry_manifest_status(
+    registry: str,
+    name: str,
+    tag: str,
+    *,
+    registry_insecure: bool,
+    registry_credentials_secret: str | None,
+    registry_password: str | None,
+) -> int:
+    """Issue one HEAD for ``name:tag`` and return the HTTP status (raises on transport errors)."""
+    scheme = "http" if registry_insecure else "https"
+    default_port = 5000 if registry_insecure else 443
+    parsed = urllib.parse.urlsplit(f"{scheme}://{registry}")
+    host = parsed.hostname or registry.split(":")[0]
+    port = parsed.port or default_port
+
+    if registry_insecure:
+        conn: http.client.HTTPConnection = http.client.HTTPConnection(
+            host, port, timeout=REGISTRY_CHECK_TIMEOUT_SECONDS
+        )
+    else:
+        ctx = ssl.create_default_context()
+        conn = http.client.HTTPSConnection(host, port, timeout=REGISTRY_CHECK_TIMEOUT_SECONDS, context=ctx)
+
+    headers: dict[str, str] = {}
+    if registry_credentials_secret and registry_password:
+        cred = base64.b64encode(b"kaniko:" + registry_password.encode()).decode()
+        headers["Authorization"] = f"Basic {cred}"
+
+    try:
+        conn.request("HEAD", f"/v2/{name}/manifests/{tag}", headers=headers)
+        return conn.getresponse().status
+    finally:
+        conn.close()
+
+
+@retry(
+    stop=stop_after_attempt(REGISTRY_CHECK_ATTEMPTS),
+    wait=wait_exponential(multiplier=2, min=2, max=16),
+    retry=retry_if_exception_type(_RegistryUnavailable),
+    before_sleep=before_sleep_log(logger, logging.WARNING),
+    reraise=True,
+)
+async def _registry_manifest_present(
+    registry: str,
+    name: str,
+    tag: str,
+    *,
+    registry_insecure: bool,
+    registry_credentials_secret: str | None,
+    registry_password: str | None,
+) -> bool:
+    """One HEAD, classified: True on 200, False on a definitive 4xx, raises when transient."""
+    try:
+        status = await asyncio.to_thread(
+            _registry_manifest_status,
+            registry,
+            name,
+            tag,
+            registry_insecure=registry_insecure,
+            registry_credentials_secret=registry_credentials_secret,
+            registry_password=registry_password,
+        )
+    except (OSError, http.client.HTTPException) as exc:
+        raise _RegistryUnavailable(f"{name}:{tag}: {type(exc).__name__}: {exc}") from exc
+
+    except Exception as exc:
+        logger.warning(f"Registry check for {name}:{tag} failed ({type(exc).__name__}: {exc}); treating as missing")
+        return False
+
+    if status == 200:
+        return True
+
+    if status == 404:
+        return False
+
+    if status == 429 or status >= 500:
+        raise _RegistryUnavailable(f"{name}:{tag}: HTTP {status}")
+    logger.warning(f"Registry check for {name}:{tag} returned HTTP {status}; treating as missing")
+    return False
+
+
 async def _registry_image_exists(
     registry: str,
     task_name: str,
@@ -1733,42 +1854,22 @@ async def _registry_image_exists(
     registry_credentials_secret: str | None = None,
     registry_password: str | None = None,
 ) -> bool:
-    """HEAD-check ``task_name:digest_tag`` in the registry.
+    """HEAD-check ``task_name:digest_tag`` in the registry, retrying transient failures.
 
     Uses the lowercased task name to match how images are actually pushed
     (OCI repository names must be lowercase; see ``_ensure_image``).
+    Returns False only on a definitive 4xx. Transient failures raise
+    ``_RegistryUnavailable`` after retries so callers do not treat an
+    unreachable registry as a missing image.
     """
-    import base64
-    import http.client
-    import urllib.parse
-
-    name, tag = task_name.lower(), digest_tag
-    try:
-        scheme = "http" if registry_insecure else "https"
-        default_port = 5000 if registry_insecure else 443
-        parsed = urllib.parse.urlsplit(f"{scheme}://{registry}")
-        host = parsed.hostname or registry.split(":")[0]
-        port = parsed.port or default_port
-
-        def _head() -> bool:
-            if registry_insecure:
-                conn: http.client.HTTPConnection = http.client.HTTPConnection(host, port, timeout=10)
-            else:
-                ctx = ssl.create_default_context()
-                conn = http.client.HTTPSConnection(host, port, timeout=10, context=ctx)
-            headers: dict[str, str] = {}
-            if registry_credentials_secret and registry_password:
-                cred = base64.b64encode(b"kaniko:" + registry_password.encode()).decode()
-                headers["Authorization"] = f"Basic {cred}"
-            conn.request("HEAD", f"/v2/{name}/manifests/{tag}", headers=headers)
-            resp = conn.getresponse()
-            conn.close()
-            return resp.status == 200
-
-        return await asyncio.to_thread(_head)
-    except Exception as exc:
-        logger.debug(f"Registry check failed for {name}:{tag}: {exc}")
-        return False
+    return await _registry_manifest_present(
+        registry,
+        task_name.lower(),
+        digest_tag,
+        registry_insecure=registry_insecure,
+        registry_credentials_secret=registry_credentials_secret,
+        registry_password=registry_password,
+    )
 
 
 def _build_secret_body(

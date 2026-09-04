@@ -679,6 +679,9 @@ async def test_run_ensures_git_baseline_before_runtime_and_patch_apply(tmp_path:
     assert "git rev-parse --is-inside-work-tree" not in baseline_command
     assert "git config commit.gpgsign false" in baseline_command
     assert "git commit --allow-empty -m 'ridges baseline'" in baseline_command
+    assert "git rev-parse --git-path info/exclude" in baseline_command
+    assert "printf '__pycache__/\\n*.pyc\\n'" in baseline_command
+    assert baseline_command.endswith("exit $rc")
     assert calls[0]["error_summary"] == "Failed to initialize git baseline"
     assert calls[0]["error_type"] is MinerRuntimeError
     assert calls[1]["include_output_body"] is False
