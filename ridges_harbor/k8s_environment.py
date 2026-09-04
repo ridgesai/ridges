@@ -1190,28 +1190,25 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         if has_explicit_memory:
             memory_request_bytes = sidecar.memory_request_bytes or default_request
             memory_limit_bytes = sidecar.memory_limit_bytes or default_limit
-            if tmpfs_bytes and memory_request_bytes <= tmpfs_bytes:
-                raise RuntimeError(f"sidecar {sidecar.name}: memory request must exceed total tmpfs size")
-
-            if tmpfs_bytes and memory_limit_bytes <= tmpfs_bytes:
-                raise RuntimeError(f"sidecar {sidecar.name}: memory limit must exceed total tmpfs size")
         else:
-            # Backwards compatibility
-            memory_request_bytes = default_request + tmpfs_bytes
-            memory_limit_bytes = default_limit + tmpfs_bytes
+            memory_request_bytes = default_request
+            memory_limit_bytes = default_limit
         if memory_request_bytes > memory_limit_bytes:
             raise RuntimeError(f"sidecar {sidecar.name}: memory request exceeds memory limit")
         if not has_explicit_memory:
             self.logger.debug(
                 f"Sidecar {sidecar.name}: using default memory "
-                f"{self.sidecar_memory_request_mi}Mi/{self.sidecar_memory_limit_mi}Mi "
-                "plus declared tmpfs capacity"
+                f"{self.sidecar_memory_request_mi}Mi/{self.sidecar_memory_limit_mi}Mi"
             )
         requests: dict[str, str] = {
             "cpu": sidecar.cpu_request or DEFAULT_SIDECAR_CPU_REQUEST,
             "memory": k8s_memory_quantity(memory_request_bytes),
         }
         limits: dict[str, str] = {"memory": k8s_memory_quantity(memory_limit_bytes)}
+        if tmpfs_bytes:
+            ephemeral = str(tmpfs_bytes)
+            requests["ephemeral-storage"] = ephemeral
+            limits["ephemeral-storage"] = ephemeral
         return k8s_client.V1Container(
             name=sidecar.name,
             image=self._sidecar_image_ref(sidecar.name),
@@ -1239,7 +1236,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         volumes = super()._build_volumes()
         for sidecar in self._compose_sidecars():
             for index, mount in enumerate(sidecar.tmpfs_mounts):
-                empty_dir = k8s_client.V1EmptyDirVolumeSource(medium="Memory")
+                empty_dir = k8s_client.V1EmptyDirVolumeSource()
                 if mount.size_bytes is not None:
                     empty_dir.size_limit = str(mount.size_bytes)
                 volumes.append(

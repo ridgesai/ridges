@@ -307,16 +307,6 @@ def _parse_sidecar(name: str, spec: Any, *, source: str) -> ComposeSidecar:
         raise RuntimeError(f"{source}: service {name}: healthcheck is required")
 
     tmpfs_mounts = tuple(_parse_volumes(name, spec.get("volumes"), source=source))
-    tmpfs_bytes = sum(mount.size_bytes or 0 for mount in tmpfs_mounts)
-    if tmpfs_bytes:
-        if memory_limit_bytes is None:
-            raise RuntimeError(f"{source}: service {name}: tmpfs requires a memory limit")
-
-        if memory_request_bytes is None or memory_request_bytes <= tmpfs_bytes:
-            raise RuntimeError(f"{source}: service {name}: memory request must exceed total tmpfs size")
-
-        if memory_limit_bytes <= tmpfs_bytes:
-            raise RuntimeError(f"{source}: service {name}: memory limit must exceed total tmpfs size")
 
     return ComposeSidecar(
         name=name,

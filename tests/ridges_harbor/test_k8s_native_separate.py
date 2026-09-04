@@ -203,13 +203,13 @@ def test_agent_and_verifier_pods_include_compose_sidecars(tmp_path: Path) -> Non
     assert postgres.security_context is None
     tmpfs_name = agent._tmpfs_volume_name("postgres", 0)
     tmpfs = next(volume for volume in agent._build_volumes() if volume.name == tmpfs_name)
-    assert tmpfs.empty_dir.medium == "Memory"
+    assert tmpfs.empty_dir.medium is None
     assert tmpfs.empty_dir.size_limit == "4294967296"
     assert postgres.resources.requests["cpu"] == "500m"
     assert postgres.resources.requests["memory"] == "5Gi"
     assert postgres.resources.limits["memory"] == "6Gi"
-    assert "ephemeral-storage" not in postgres.resources.requests
-    assert "ephemeral-storage" not in postgres.resources.limits
+    assert postgres.resources.requests["ephemeral-storage"] == "4294967296"
+    assert postgres.resources.limits["ephemeral-storage"] == "4294967296"
     redis = next(container for container in agent._build_containers() if container.name == "redis")
     assert "ephemeral-storage" not in redis.resources.requests
     assert redis.resources.requests["memory"] == "512Mi"
@@ -219,6 +219,30 @@ def test_agent_and_verifier_pods_include_compose_sidecars(tmp_path: Path) -> Non
     assert aliases[0].hostnames == ["postgres", "redis"]
     assert verifier._build_pod_spec().init_containers is None
     assert agent._pod_ready_timeout_sec() == 1200
+
+
+def test_sidecar_tmpfs_does_not_inflate_default_memory(tmp_path: Path) -> None:
+    directory = tmp_path / "environment"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "docker-compose.yaml").write_text(
+        "services:\n"
+        "  redis:\n"
+        "    image: redis:7\n"
+        "    healthcheck:\n"
+        '      test: ["CMD-SHELL", "redis-cli ping"]\n'
+        "    volumes:\n"
+        "      - type: tmpfs\n"
+        "        target: /data\n"
+        "        tmpfs:\n"
+        "          size: 67108864\n"
+    )
+    agent = _make_environment(tmp_path, session_id="native-separate-task__env")
+    redis = next(container for container in agent._build_containers() if container.name == "redis")
+
+    assert redis.resources.requests["memory"] == "512Mi"
+    assert redis.resources.limits["memory"] == "2Gi"
+    assert redis.resources.requests["ephemeral-storage"] == "67108864"
+    assert redis.resources.limits["ephemeral-storage"] == "67108864"
 
 
 def test_tmpfs_volume_names_are_short_stable_and_collision_safe(tmp_path: Path) -> None:
