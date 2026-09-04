@@ -6,6 +6,7 @@ import pytest
 from tenacity import wait_none
 
 import ridges_harbor.k8s_environment as k8s_environment_module
+from ridges_harbor.k8s_environment import _RegistryUnavailable
 
 
 @pytest.fixture
@@ -58,12 +59,13 @@ async def test_server_errors_and_protocol_errors_are_retried(monkeypatch: pytest
 
 
 @pytest.mark.anyio
-async def test_persistent_failure_gives_up_after_all_attempts(
+async def test_persistent_failure_raises_unavailable_after_all_attempts(
     monkeypatch: pytest.MonkeyPatch, no_backoff: None
 ) -> None:
     calls = _sequence(monkeypatch, [ConnectionRefusedError("down")])
 
-    assert await k8s_environment_module._registry_image_exists("registry:5000", "task", "abc-agent") is False
+    with pytest.raises(_RegistryUnavailable, match="task:abc-agent: ConnectionRefusedError: down"):
+        await k8s_environment_module._registry_image_exists("registry:5000", "task", "abc-agent")
     assert len(calls) == k8s_environment_module.REGISTRY_CHECK_ATTEMPTS
 
 

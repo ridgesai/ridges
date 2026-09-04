@@ -592,30 +592,39 @@ class KubernetesEnvironment(BaseEnvironment):
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10), reraise=True)
     async def download_file(self, source_path: str, target_path: Path | str) -> None:
         await self._ensure_client()
+        await self._wait_for_container_exec_ready()
         target_path = Path(target_path)
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
-        resp = await asyncio.to_thread(
-            stream,
-            self._api.connect_get_namespaced_pod_exec,
-            self.pod_name,
-            self.namespace,
-            container="main",
-            command=["tar", "cf", "-", source_path],
-            stderr=True,
-            stdin=False,
-            stdout=True,
-            tty=False,
-            _preload_content=False,
-        )
+        try:
+            resp = await asyncio.to_thread(
+                stream,
+                self._api.connect_get_namespaced_pod_exec,
+                self.pod_name,
+                self.namespace,
+                container="main",
+                command=["tar", "cf", "-", source_path],
+                stderr=True,
+                stdin=False,
+                stdout=True,
+                tty=False,
+                _preload_content=False,
+            )
+        except ApiException as exc:
+            raise RuntimeError(f"Failed to start tar download from Pod {self.pod_name}: {exc}") from exc
 
-        tar_data, _stderr_data = await asyncio.to_thread(self._read_tar_stream, resp)
+        tar_data, stderr_data = await asyncio.to_thread(self._read_tar_stream, resp)
+        if not tar_data:
+            raise RuntimeError(
+                f"No data received when downloading {source_path} from Pod {self.pod_name}: stderr={stderr_data!r}"
+            )
 
         await asyncio.to_thread(self._extract_tar_member, tar_data, source_path, target_path)
 
     @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=30), reraise=True)
     async def download_dir(self, source_dir: str, target_dir: Path | str) -> None:
         await self._ensure_client()
+        await self._wait_for_container_exec_ready()
         target_dir = Path(target_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -642,7 +651,9 @@ class KubernetesEnvironment(BaseEnvironment):
             raise RuntimeError(f"Failed to access directory {source_dir} in Pod {self.pod_name}: {stderr_data.strip()}")
 
         if not tar_data:
-            raise RuntimeError(f"No data received when downloading {source_dir} from Pod {self.pod_name}")
+            raise RuntimeError(
+                f"No data received when downloading {source_dir} from Pod {self.pod_name}: stderr={stderr_data!r}"
+            )
 
         try:
             await asyncio.to_thread(self._extract_tar_all, tar_data, target_dir)
@@ -707,19 +718,31 @@ class KubernetesEnvironment(BaseEnvironment):
         """Blocking: drain a WebSocket exec stream, returning (stdout_bytes, stderr_text)."""
         tar_data = b""
         stderr_data = ""
-        last_ping = time.monotonic()
-        while resp.is_open():
-            resp.update(timeout=1)
-            if resp.peek_stdout():
-                chunk = resp.read_stdout()
-                tar_data += chunk.encode("utf-8", errors="surrogateescape") if isinstance(chunk, str) else chunk
-            if resp.peek_stderr():
-                stderr_data += resp.read_stderr()
-            now = time.monotonic()
-            if now - last_ping >= _KUBERNETES_EXEC_STREAM_PING_INTERVAL_SEC and resp.is_open():
-                self._ping_exec_stream(resp)
-                last_ping = now
-        return tar_data, stderr_data
+        try:
+            last_ping = time.monotonic()
+            while resp.is_open():
+                resp.update(timeout=1)
+                if resp.peek_stdout():
+                    chunk = resp.read_stdout()
+                    tar_data += chunk.encode("utf-8", errors="surrogateescape") if isinstance(chunk, str) else chunk
+                if resp.peek_stderr():
+                    stderr_data += resp.read_stderr()
+                now = time.monotonic()
+                if now - last_ping >= _KUBERNETES_EXEC_STREAM_PING_INTERVAL_SEC and resp.is_open():
+                    self._ping_exec_stream(resp)
+                    last_ping = now
+            resp.run_forever(timeout=0)
+            return_code = self._exec_stream_return_code(resp)
+            if return_code != 0:
+                raise RuntimeError(
+                    f"Tar command failed in Pod {self.pod_name}: return_code={return_code}, stderr={stderr_data!r}"
+                )
+            return tar_data, stderr_data
+        finally:
+            try:
+                resp.close()
+            except Exception:
+                pass
 
     def _write_tar_stream(self, resp: Any, payload: bytes) -> None:
         """Blocking: write payload to the exec stream stdin and drain until closed."""
@@ -1827,24 +1850,18 @@ async def _registry_image_exists(
 
     Uses the lowercased task name to match how images are actually pushed
     (OCI repository names must be lowercase; see ``_ensure_image``).
-    Returns False only on a definitive 4xx or once every attempt failed.
+    Returns False only on a definitive 4xx. Transient failures raise
+    ``_RegistryUnavailable`` after retries so callers do not treat an
+    unreachable registry as a missing image.
     """
-    name, tag = task_name.lower(), digest_tag
-    try:
-        return await _registry_manifest_present(
-            registry,
-            name,
-            tag,
-            registry_insecure=registry_insecure,
-            registry_credentials_secret=registry_credentials_secret,
-            registry_password=registry_password,
-        )
-    except _RegistryUnavailable as exc:
-        logger.warning(
-            f"Registry check for {name}:{tag} failed on all {REGISTRY_CHECK_ATTEMPTS} attempts ({exc}); "
-            "treating as missing"
-        )
-        return False
+    return await _registry_manifest_present(
+        registry,
+        task_name.lower(),
+        digest_tag,
+        registry_insecure=registry_insecure,
+        registry_credentials_secret=registry_credentials_secret,
+        registry_password=registry_password,
+    )
 
 
 def _build_secret_body(
