@@ -132,7 +132,7 @@ class CompetitionStateUpdateRequest(BaseModel):
     started: StrictBool
     submissions_closed: StrictBool
     is_paused: StrictBool
-    emissions_end_at: AwareDatetime | None
+    emissions_end_at: Annotated[AwareDatetime | None, Field(strict=False)]
     ended: StrictBool
     reason: AdminReason
 
