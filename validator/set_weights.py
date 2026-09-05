@@ -40,49 +40,39 @@ async def set_weights_from_mapping(weights_mapping: Dict[str, float]) -> None:
 
         requested.append((hotkey, weight))
 
+    total = math.fsum(weight for _hotkey, weight in requested)
+    if not math.isclose(total, 1.0, rel_tol=1e-9, abs_tol=1e-9):
+        raise ValueError(f"Expected hotkey weights to total one, got {total}")
+
     registered_uids = await _get_registered_uids()
     if registered_uids is None:
         return
 
     resolved_uids = [registered_uids.get(hotkey) for hotkey, _weight in requested]
-    resolved = [
-        (hotkey, uid, weight) for (hotkey, weight), uid in zip(requested, resolved_uids, strict=True) if uid is not None
-    ]
     missing_hotkeys = [hotkey for (hotkey, _weight), uid in zip(requested, resolved_uids, strict=True) if uid is None]
     if missing_hotkeys:
-        logger.warning(f"Skipping unregistered weight hotkeys: {', '.join(missing_hotkeys)}")
+        logger.error(
+            f"Weight mapping contains hotkeys missing from the submission metagraph; "
+            f"leaving on-chain weights unchanged: {', '.join(missing_hotkeys)}"
+        )
+        return
 
-    if not resolved:
-        owner_hotkey = await subtensor.get_subnet_owner_hotkey(netuid=config.NETUID)
-        if owner_hotkey is None:
-            logger.error("Could not resolve the subnet owner; leaving on-chain weights unchanged")
-            return
+    uids = [uid for uid in resolved_uids if uid is not None]
+    weights = [weight for _hotkey, weight in requested]
+    hotkeys = [hotkey for hotkey, _weight in requested]
 
-        owner_uid = registered_uids.get(owner_hotkey)
-        if owner_uid is None:
-            logger.error("Subnet owner is not registered; leaving on-chain weights unchanged")
-            return
-
-        logger.warning(f"No requested hotkeys are registered; burning emissions to subnet owner {owner_hotkey}")
-        resolved = [(owner_hotkey, owner_uid, 1.0)]
-
-    total = sum(weight for _hotkey, _uid, weight in resolved)
-    normalized_weights = [weight / total for _hotkey, _uid, weight in resolved]
-    uids = [uid for _hotkey, uid, _weight in resolved]
-    hotkeys = [hotkey for hotkey, _uid, _weight in resolved]
-
-    logger.info(f"Setting weights for {len(resolved)} hotkey(s): {', '.join(hotkeys)}")
+    logger.info(f"Setting weights for {len(requested)} hotkey(s): {', '.join(hotkeys)}")
 
     success, message = await subtensor.set_weights(
         wallet=config.VALIDATOR_WALLET,
         netuid=config.NETUID,
         uids=uids,
-        weights=normalized_weights,
+        weights=weights,
         wait_for_inclusion=True,
         wait_for_finalization=True,
     )
 
     if success:
-        logger.info(f"Set weights for {len(resolved)} hotkey(s)")
+        logger.info(f"Set weights for {len(requested)} hotkey(s)")
     else:
         logger.error(f"Failed to set weights: {message}")

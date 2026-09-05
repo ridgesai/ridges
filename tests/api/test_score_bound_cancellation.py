@@ -13,6 +13,7 @@ from api.endpoints.validator_models import (
     ValidatorUpdateEvaluationRunRequest,
 )
 from models.agent import Agent, AgentStatus
+from models.competition import CompetitionPolicy
 from models.evaluation import Evaluation
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetGroup
@@ -23,6 +24,32 @@ from queries.evaluation import (
 )
 
 
+def _policy() -> CompetitionPolicy:
+    return CompetitionPolicy(
+        scoring_mode="consensus",
+        screener_1_threshold=0.6,
+        screener_2_threshold=0.6,
+        prune_threshold=0.9,
+        required_validator_count=3,
+        pre_screening_enabled=True,
+        auto_approval_enabled=True,
+        hardcoding_policy_version="hardcoding-v1",
+        incentive_enabled=False,
+        incentive_performance_threshold=0.03,
+        incentive_cost_threshold=0.06,
+        incentive_reward_half_life_hours=336,
+        incentive_time_multiplier_scale_hours=12,
+    )
+
+
+@pytest.fixture(autouse=True)
+def stored_competition_policy(monkeypatch):
+    async def get_policy(_set_id):
+        return _policy()
+
+    monkeypatch.setattr(validator_endpoint, "get_competition_policy", get_policy)
+
+
 def _agent(agent_id, *, status: AgentStatus = AgentStatus.evaluating) -> Agent:
     return Agent(
         agent_id=agent_id,
@@ -30,6 +57,7 @@ def _agent(agent_id, *, status: AgentStatus = AgentStatus.evaluating) -> Agent:
         name="agent",
         version_num=1,
         status=status,
+        set_id=21,
         created_at=datetime.now(timezone.utc),
     )
 
@@ -74,6 +102,7 @@ async def test_score_bound_pruning_cancels_when_upper_bound_is_below_leader(monk
         return _agent(_agent_id)
 
     async def fake_get_leader_score(_set_id, _excluded_agent_id, _required_validator_count):
+        assert _required_validator_count == 3
         return 0.7333333333333333
 
     async def fake_get_upper_bound(_evaluation_id):
@@ -140,8 +169,8 @@ async def test_score_bound_pruning_fails_screener_1_when_upper_bound_is_below_th
         status_updates.append((_agent_id, expected_status, new_status))
         return True
 
-    monkeypatch.setattr(validator_endpoint.config, "SCREENER_1_THRESHOLD", 0.6)
     monkeypatch.setattr(validator_endpoint, "get_agent_by_id", fake_get_agent_by_id)
+    monkeypatch.setattr(validator_endpoint.config, "SCREENER_1_THRESHOLD", 0.4)
     monkeypatch.setattr(validator_endpoint, "get_local_evaluation_score_upper_bound", fake_get_upper_bound)
     monkeypatch.setattr(
         validator_endpoint, "transition_agent_status_if_matches", fake_transition_agent_status_if_matches
@@ -149,6 +178,27 @@ async def test_score_bound_pruning_fails_screener_1_when_upper_bound_is_below_th
 
     assert await validator_endpoint._maybe_stop_agent_by_score_bound(evaluation) is True
     assert status_updates == [(agent_id, AgentStatus.screening_1, AgentStatus.failed_screening_1)]
+
+
+@pytest.mark.anyio
+async def test_score_bound_pruning_skips_evaluation_without_competition_policy(monkeypatch) -> None:
+    agent_id = uuid4()
+    evaluation = _evaluation(agent_id)
+
+    async def fake_get_agent_by_id(_agent_id):
+        return _agent(_agent_id)
+
+    async def missing_policy(_set_id):
+        return None
+
+    async def unexpected_upper_bound(_evaluation_id):
+        raise AssertionError("score-bound work must stop before calculation when policy is missing")
+
+    monkeypatch.setattr(validator_endpoint, "get_agent_by_id", fake_get_agent_by_id)
+    monkeypatch.setattr(validator_endpoint, "get_competition_policy", missing_policy)
+    monkeypatch.setattr(validator_endpoint, "get_local_evaluation_score_upper_bound", unexpected_upper_bound)
+
+    assert await validator_endpoint._maybe_stop_agent_by_score_bound(evaluation) is False
 
 
 @pytest.mark.anyio
@@ -167,21 +217,11 @@ async def test_score_bound_pruning_screener_2_uses_screener_threshold(monkeypatc
         status_updates.append((_agent_id, expected_status, new_status))
         return True
 
-    async def fail_if_top_agents_called(*_args, **_kwargs):
-        raise AssertionError("score-bound pruning should use the screener 2 threshold directly")
-
-    monkeypatch.setattr(validator_endpoint.config, "SCREENER_2_THRESHOLD", 0.6)
     monkeypatch.setattr(validator_endpoint, "get_agent_by_id", fake_get_agent_by_id)
     monkeypatch.setattr(validator_endpoint, "get_local_evaluation_score_upper_bound", fake_get_upper_bound)
     monkeypatch.setattr(
         validator_endpoint, "transition_agent_status_if_matches", fake_transition_agent_status_if_matches
     )
-    monkeypatch.setattr(
-        validator_endpoint,
-        "get_top_agents",
-        fail_if_top_agents_called,
-    )
-
     assert await validator_endpoint._maybe_stop_agent_by_score_bound(evaluation) is True
     assert status_updates == [(agent_id, AgentStatus.screening_2, AgentStatus.failed_screening_2)]
 

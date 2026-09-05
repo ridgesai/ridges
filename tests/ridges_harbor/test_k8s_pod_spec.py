@@ -1,6 +1,6 @@
 from kubernetes import client as k8s_client
 
-from ridges_harbor.k8s_environment import RidgesKubernetesEnvironment
+from ridges_harbor.k8s_environment import AGENT_IMAGE_ROLE, RidgesKubernetesEnvironment
 
 
 def _make_env() -> RidgesKubernetesEnvironment:
@@ -10,6 +10,7 @@ def _make_env() -> RidgesKubernetesEnvironment:
     env.memory_request = "1024Mi"
     env.ephemeral_storage_request = "1024Mi"
     env.memory_limit = None
+    env.image_role = AGENT_IMAGE_ROLE
     env._proxy_container = lambda: k8s_client.V1Container(name="proxy")
     return env
 

@@ -10,8 +10,10 @@ from harbor.models.trial.result import AgentInfo, ExceptionInfo, TimingInfo, Tri
 from harbor.models.verifier.result import VerifierResult
 
 from ridges_harbor._stdlib_contract import (
+    GRADED_PATCH_FILENAME,
     PATCH_APPLY_LOG_FILENAME,
     PATCH_CHECK_LOG_FILENAME,
+    PATCH_PUBLISHED_METADATA_KEY,
     RUN_AGENT_PHASE,
     RUN_LOG_FILENAME,
     RUNTIME_LOG_FILENAME,
@@ -91,6 +93,9 @@ def make_summary(
     agent_execution: dict | None = None,
     verifier: dict | None = None,
     verifier_result: dict | None = None,
+    separate_verifier: bool = False,
+    graded_patch: str | None = None,
+    patch_published: bool = False,
 ) -> HarborRunSummary:
     trial_dir = tmp_path / "trial"
     agent_dir = trial_dir / "agent"
@@ -98,8 +103,21 @@ def make_summary(
     artifacts_dir = trial_dir / "artifacts"
     task_dir = tmp_path / "task"
 
+    write(task_dir / "instruction.md", "Update the status file.\n")
+    write(task_dir / "environment" / "Dockerfile", "FROM alpine:3.20\n")
+    write(task_dir / "tests" / "test.sh", "#!/bin/sh\n")
+    artifact_config = 'artifacts = ["/logs/agent/patch.diff"]\n' if separate_verifier else ""
+    verifier_config = '\n[verifier]\nenvironment_mode = "separate"\n' if separate_verifier else ""
+    write(
+        task_dir / "task.toml",
+        f'schema_version = "1.3"\n{artifact_config}{verifier_config}',
+    )
+
     if patch is not None:
         write(agent_dir / "patch.diff", patch)
+
+    if graded_patch is not None:
+        write(verifier_dir / GRADED_PATCH_FILENAME, graded_patch)
 
     if test_results is not None:
         write_json(verifier_dir / "test_results.json", test_results)
@@ -139,7 +157,7 @@ def make_summary(
     if runtime_payload_data is not None:
         write_json(agent_dir / RUNTIME_PAYLOAD_FILENAME, runtime_payload_data)
 
-    agent_result = AgentContext(metadata={})
+    agent_result = AgentContext(metadata={PATCH_PUBLISHED_METADATA_KEY: True} if patch_published else {})
     parsed_verifier_result = VerifierResult.model_validate(verifier_result) if verifier_result is not None else None
 
     trial_result = TrialResult(

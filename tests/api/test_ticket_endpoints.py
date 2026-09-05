@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 import utils.database as _db
 from api.src.endpoints import upload as upload_module
+from queries.competition import initialize_current_competition_policy
 from queries.upload_credit import credit_payment_identity
 from utils.upload_ticket import FUNDING_BURN, FUNDING_CREDIT, UploadTicket, encode_ticket, sign_ticket
 
@@ -34,11 +35,18 @@ def upload_prod_mode():
 
 @pytest.fixture(autouse=True)
 async def clean_tables(postgres_db):
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            "TRUNCATE evaluation_payments, upload_credits, upload_payment_quotes, agents, banned_coldkeys, "
+            "failed_upload_refunds, upload_attempts, evaluation_sets, competitions RESTART IDENTITY CASCADE"
+        )
+        await conn.execute("INSERT INTO competitions (set_id, start_date) VALUES (1, NOW())")
+    await initialize_current_competition_policy()
     yield
     async with _db.pool.acquire() as conn:
         await conn.execute(
             "TRUNCATE evaluation_payments, upload_credits, upload_payment_quotes, agents, banned_coldkeys, "
-            "failed_upload_refunds, upload_attempts RESTART IDENTITY CASCADE"
+            "failed_upload_refunds, upload_attempts, evaluation_sets, competitions RESTART IDENTITY CASCADE"
         )
 
 
@@ -112,6 +120,7 @@ def chain_and_s3_mocks(monkeypatch):
         ),
     )
     monkeypatch.setattr(upload_module.subtensor_client, "get_hotkey_owner", AsyncMock(return_value=FAKE_COLDKEY))
+    monkeypatch.setattr(upload_module, "upload_text_file_to_s3", AsyncMock())
     monkeypatch.setattr("queries.agent.upload_text_file_to_s3", AsyncMock())
     validated = MagicMock()
     validated.runtime_api_key = "fake-runtime-key"
@@ -181,7 +190,7 @@ def _credit_ticket_blob(credit_id: uuid.UUID) -> str:
     return encode_ticket(sign_ticket(unsigned, KEYPAIR.sign))
 
 
-async def _redeem(ticket_blob: str, content: bytes = b"async def agent_main(input): return 'ok'"):
+async def _redeem(ticket_blob: str, content: bytes = b"async def agent_main(input): return 'ok'", set_id: int = 1):
     return await upload_module.post_agent_ticket(
         request=_make_request(),
         agent_file=_make_upload_file(content),
@@ -189,6 +198,7 @@ async def _redeem(ticket_blob: str, content: bytes = b"async def agent_main(inpu
         name="ticket-agent",
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
+        set_id=set_id,
     )
 
 
@@ -198,6 +208,9 @@ async def test_burn_ticket_redeem_creates_agent():
     response = await _redeem(_burn_ticket_blob(quote_id))
 
     assert response.status == "success"
+    assert response.agent_id is not None
+    assert response.miner_hotkey == HOTKEY
+    assert response.miner_coldkey == FAKE_COLDKEY
     async with _db.pool.acquire() as conn:
         agent = await conn.fetchrow("SELECT miner_hotkey, name FROM agents WHERE miner_hotkey = $1", HOTKEY)
         payment = await conn.fetchrow(
@@ -351,7 +364,12 @@ async def _check(ticket_blob: str):
     return await upload_module.check_ticket(TicketCheckRequest(ticket=ticket_blob))
 
 
-async def test_check_valid_burn_ticket():
+async def test_check_valid_burn_ticket(monkeypatch):
+    monkeypatch.setattr(
+        upload_module,
+        "_resolve_upload_set_id",
+        AsyncMock(side_effect=AssertionError("ticket-check must remain competition-free")),
+    )
     quote_id = await _insert_quote()
     result = await _check(_burn_ticket_blob(quote_id))
     assert result.valid is True

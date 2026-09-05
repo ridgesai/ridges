@@ -33,10 +33,11 @@ agents.py.install()   ── upload ─────►      /installed-agent/
 
 agents.py.run()       ── exec ───────►      python3 ridges_miner_runtime.py
                                                calls agent_main(instruction)
-                                               writes patch.diff
-                                               (or ridges_runtime.json on failure)
+                                               writes raw-patch.diff
 
-                      ── exec ───────►      git apply patch.diff
+                      ── exec ───────►      git apply --check
+                      ── exec ───────►      git apply (as root)
+                      ── exec ───────►      atomic publish → patch.diff
 
                                             Harbor's verifier runs
                                                writes reward
@@ -45,10 +46,15 @@ execution/artifacts.py  ◄── read ────       trial_dir/
   emits ExecutionResult
 ```
 
+When the task asks for a separate verifier, the agent only runs `git apply
+--check` before publishing `patch.diff`. Harbor hands that patch to the
+verifier environment as a declared artifact, and `test.sh` applies it before
+grading.
+
 ## File map
 
 - `runner.py` — host-side entrypoint; builds a one-task Harbor job and runs it
-- `agents.py` — Harbor `BaseInstalledAgent`; uploads files, runs the runtime, applies the patch
+- `agents.py` — Harbor `BaseInstalledAgent`; uploads files, runs the runtime, checks/applies the patch
 - `ridges_miner_runtime.py` — runs inside the container; loads the miner and calls `agent_main`
 - `_stdlib_contract.py` — stdlib-only constants (filenames + phase names) shared host-and-container
 - `runtime_contract.py` — host-side Pydantic schema + custom exceptions for miner failures

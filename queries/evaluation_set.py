@@ -4,7 +4,7 @@ from typing import List
 
 import asyncpg
 
-from api.config import EARLIEST_SET_ID_WITH_GOOD_DATA, NUM_EVALS_PER_AGENT
+from api.config import EARLIEST_SET_ID_WITH_GOOD_DATA
 from models.evaluation_set import (
     EvaluationSet,
     EvaluationSetGroup,
@@ -157,7 +157,7 @@ def _sql_validator_metrics_cte(include_validator_hotkeys: bool, agent_filter_cte
         f"        JOIN {agent_filter_cte} aiw ON aiw.agent_id = ranked.agent_id\n"
         f"        where ranked.status in ('running', 'success') or ranked.cancelled is true\n"
         f"    ) AS sample\n"
-        f"    WHERE sample.rn <= {NUM_EVALS_PER_AGENT}\n"
+        f"    WHERE sample.rn <= $2::integer\n"
         f"    GROUP BY sample.agent_id\n"
         f")"
     )
@@ -311,6 +311,16 @@ async def get_all_evaluation_sets(
         FROM evaluation_sets es
         LEFT JOIN competitions c ON c.set_id = es.set_id
         WHERE es.set_id >= $1
+          AND (
+              c.start_date IS NOT NULL
+              OR c.set_id IS NULL
+              OR EXISTS (
+                  SELECT 1
+                  FROM evaluations evaluation
+                  WHERE evaluation.set_id = es.set_id
+                    AND evaluation.created_at < c.created_at
+              )
+          )
         GROUP BY es.set_id, c.name, c.start_date, c.end_date
         ORDER BY es.set_id
         """,
@@ -363,6 +373,7 @@ async def get_evaluation_set_pre_screening_distribution(
 async def get_evaluation_set_score_distribution(
     conn: DatabaseConnection,
     set_id: int,
+    required_validator_count: int | None,
 ) -> list[asyncpg.Record]:
     """Return one histogram count per populated score bucket and stage."""
 
@@ -459,7 +470,7 @@ async def get_evaluation_set_score_distribution(
             CROSS JOIN validator_problem_count problem_count
             LEFT JOIN validator_consensus_by_problem problem
                 ON problem.agent_id = validator.agent_id
-            WHERE validator.validator_count >= $2
+            WHERE validator.validator_count >= $2::integer
               AND problem_count.problem_count > 0
             GROUP BY
                 validator.agent_id,
@@ -484,7 +495,7 @@ async def get_evaluation_set_score_distribution(
         ORDER BY stage, bucket_index
         """,
         set_id,
-        NUM_EVALS_PER_AGENT,
+        required_validator_count,
     )
 
 
@@ -527,6 +538,8 @@ async def get_evaluation_set_performance_improvement(
                AND approval_state.set_id = approved.set_id
             LEFT JOIN approval_jobs approval_job
                 ON approval_job.job_id = approval_state.latest_job_id
+               AND approval_job.agent_id = approved.agent_id
+               AND approval_job.set_id = approved.set_id
             LEFT JOIN agent_final_review_statuses review
                 ON review.agent_id = approved.agent_id
                AND review.set_id = approved.set_id
@@ -539,6 +552,7 @@ async def get_evaluation_set_performance_improvement(
                   AND evaluation.status = 'success'::EvaluationStatus
             ) validator_cost ON TRUE
             WHERE approved.set_id = $1
+              AND (agent.set_id IS NULL OR agent.set_id = approved.set_id)
               AND review.approval_review_status IS DISTINCT FROM 'rejected'
               AND NOT EXISTS (
                   SELECT 1
@@ -719,40 +733,13 @@ async def get_evaluation_set_score_stats(conn: DatabaseConnection, set_id: int) 
         - above_50: The count of agents with a final score above 0.5.
         - above_75: The count of agents with a final score above 0.75.
         - above_90: The count of agents with a final score above 0.9.
-        - prev_best_score: The best final score from the previous evaluation set.
-        - agents_beating_previous_best: The count of agents in the current set that beat the previous best score.
+        - prev_best_score: Always null because competitions have no predecessor relation.
+        - agents_beating_previous_best: Always null because competitions have no predecessor relation.
     """
     return await conn.fetchrow(
         f"""
         WITH {_SQL_SET_WINDOW_CTE},
-        {_sql_agents_in_window_cte("a.agent_id, a.status")},
-        prev_best AS (
-            SELECT
-                MAX(previous_score.final_score) AS score
-            FROM
-                agent_scores previous_score
-            JOIN agents previous_agent ON previous_agent.agent_id = previous_score.agent_id
-            WHERE
-                previous_score.set_id = (
-                    SELECT
-                        MAX(set_id)
-                    FROM
-                        evaluation_sets
-                    WHERE
-                        set_id < $1
-                )
-                AND previous_score.agent_id NOT IN (
-                    SELECT
-                        agent_id
-                    FROM
-                        benchmark_agent_ids
-                )
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM banned_coldkeys bc
-                    WHERE bc.miner_coldkey = previous_agent.miner_coldkey
-                )
-        )
+        {_sql_agents_in_window_cte("a.agent_id, a.status")}
         SELECT
             MAX(s.final_score) AS best,
             AVG(s.final_score) AS average,
@@ -768,21 +755,8 @@ async def get_evaluation_set_score_stats(conn: DatabaseConnection, set_id: int) 
                 WHERE
                     s.final_score > 0.9
             ) :: int AS above_90,
-            (
-                SELECT
-                    score
-                FROM
-                    prev_best
-            ) AS prev_best_score,
-            COUNT(*) FILTER (
-                WHERE
-                    s.final_score > (
-                        SELECT
-                            score
-                        FROM
-                            prev_best
-                    )
-            ) :: int AS agents_beating_previous_best
+            NULL::double precision AS prev_best_score,
+            NULL::integer AS agents_beating_previous_best
         FROM
             agent_scores s
             JOIN agents_in_window aiw ON aiw.agent_id = s.agent_id
@@ -796,12 +770,16 @@ async def get_evaluation_set_score_stats(conn: DatabaseConnection, set_id: int) 
 
 
 @db_operation
-async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id: int) -> list[asyncpg.Record]:
+async def get_evaluation_set_leaderboard_agents(
+    conn: DatabaseConnection,
+    set_id: int,
+    required_validator_count: int | None,
+) -> list[asyncpg.Record]:
     """Return all competition-window agents with leaderboard fields for an evaluation set."""
     return await conn.fetch(
         f"""
         WITH {_SQL_SET_WINDOW_CTE},
-        {_sql_agents_in_window_cte("a.agent_id, a.miner_hotkey, a.name, a.version_num, a.status::text, a.created_at")},
+        {_sql_agents_in_window_cte("a.agent_id, a.miner_hotkey, a.miner_coldkey, a.name, a.version_num, a.status::text, a.created_at, (a.set_id IS NULL) AS legacy_membership")},
         {_sql_validator_metrics_cte(include_validator_hotkeys=True)},
         tentative_scores AS (
             WITH tentative_runs AS (
@@ -856,7 +834,8 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
             FROM per_problem pp
             JOIN validator_counts vc ON vc.agent_id = pp.agent_id
             GROUP BY pp.agent_id, vc.validator_count, vc.validator_hotkeys, pp.disqualified, pp.created_at, pp.agent_status
-            HAVING COUNT(*) FILTER (WHERE pp.solved_validator_count >= vc.validator_count) > 0
+            HAVING vc.validator_count >= $2::integer
+               AND COUNT(*) FILTER (WHERE pp.solved_validator_count >= vc.validator_count) > 0
         ),
         scored_agents AS (
             SELECT ass.agent_id, ass.final_score, ass.validator_count,
@@ -897,9 +876,11 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
             rs.rank,
             aiw.agent_id,
             aiw.miner_hotkey,
+            aiw.miner_coldkey,
             aiw.name,
             aiw.version_num,
             aiw.status,
+            aiw.legacy_membership,
             (aa.agent_id IS NOT NULL) AS approved,
             aiw.approval_review_status,
             aa.performance_delta,
@@ -908,7 +889,7 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
             aa.time_multiplier,
             aa.initial_reward_score,
             aa.approved_at,
-            aa.baseline_agent_id,
+            baseline.agent_id AS baseline_agent_id,
             baseline.name AS baseline_agent_name,
             baseline.version_num AS baseline_agent_version_num,
             rs.final_score,
@@ -923,7 +904,9 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
         LEFT JOIN approved_agents aa
             ON aa.agent_id = aiw.agent_id
            AND aa.set_id = $1
-        LEFT JOIN agents baseline ON baseline.agent_id = aa.baseline_agent_id
+        LEFT JOIN agents baseline
+            ON baseline.agent_id = aa.baseline_agent_id
+           AND (baseline.set_id IS NULL OR baseline.set_id = $1)
         ORDER BY
             rs.rank ASC NULLS LAST,
             rs.final_score DESC NULLS LAST,
@@ -931,11 +914,16 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
             aiw.agent_id ASC
         """,
         set_id,
+        required_validator_count,
     )
 
 
 @db_operation
-async def get_evaluation_set_leaderboard_summary(conn: DatabaseConnection, set_id: int) -> asyncpg.Record:
+async def get_evaluation_set_leaderboard_summary(
+    conn: DatabaseConnection,
+    set_id: int,
+    required_validator_count: int | None,
+) -> asyncpg.Record:
     """Return top-agent and efficiency summary fields without returning all agents."""
 
     return await conn.fetchrow(
@@ -987,11 +975,16 @@ async def get_evaluation_set_leaderboard_summary(conn: DatabaseConnection, set_i
         LEFT JOIN lowest_runtime_agent lra ON TRUE
         """,
         set_id,
+        required_validator_count,
     )
 
 
 @db_operation
-async def get_approved_agents_for_set(conn: DatabaseConnection, set_id: int) -> list[asyncpg.Record]:
+async def get_approved_agents_for_set(
+    conn: DatabaseConnection,
+    set_id: int,
+    required_validator_count: int | None,
+) -> list[asyncpg.Record]:
     return await conn.fetch(
         f"""
         WITH
@@ -1007,9 +1000,11 @@ async def get_approved_agents_for_set(conn: DatabaseConnection, set_id: int) -> 
         SELECT
             a.agent_id,
             a.miner_hotkey,
+            a.miner_coldkey,
             a.name,
             a.version_num,
             a.created_at,
+            (a.set_id IS NULL) AS legacy_membership,
             ass.final_score,
             review.approval_review_status,
             aa.approved_at,
@@ -1018,7 +1013,7 @@ async def get_approved_agents_for_set(conn: DatabaseConnection, set_id: int) -> 
             aa.relative_improvement_units,
             aa.time_multiplier,
             aa.initial_reward_score,
-            aa.baseline_agent_id,
+            baseline.agent_id AS baseline_agent_id,
             baseline.name AS baseline_agent_name,
             baseline.version_num AS baseline_agent_version_num,
             vm.average_cost_usd,
@@ -1029,9 +1024,12 @@ async def get_approved_agents_for_set(conn: DatabaseConnection, set_id: int) -> 
         LEFT JOIN agent_final_review_statuses review
             ON review.agent_id = aa.agent_id
             AND review.set_id = aa.set_id
-        LEFT JOIN agents baseline ON baseline.agent_id = aa.baseline_agent_id
+        LEFT JOIN agents baseline
+            ON baseline.agent_id = aa.baseline_agent_id
+           AND (baseline.set_id IS NULL OR baseline.set_id = $1)
         LEFT JOIN validator_metrics vm ON vm.agent_id = aa.agent_id
         WHERE aa.set_id = $1
+          AND (a.set_id IS NULL OR a.set_id = aa.set_id)
           AND aa.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
           AND NOT EXISTS (
               SELECT 1
@@ -1043,4 +1041,5 @@ async def get_approved_agents_for_set(conn: DatabaseConnection, set_id: int) -> 
         ORDER BY aa.approved_at DESC
         """,
         set_id,
+        required_validator_count,
     )

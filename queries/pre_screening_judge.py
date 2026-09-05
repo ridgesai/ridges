@@ -14,16 +14,18 @@ async def insert_pending_pre_screening_job(
     conn: DatabaseConnection,
     *,
     agent_id: UUID,
+    set_id: int,
     policy_version: str,
 ) -> None:
     """Insert a pending pre-screening job for the judge worker to pick up."""
 
     await conn.execute(
         """
-        INSERT INTO pre_screening_jobs (agent_id, policy_version)
-        VALUES ($1, $2)
+        INSERT INTO pre_screening_jobs (agent_id, set_id, policy_version)
+        VALUES ($1, $2, $3)
         """,
         agent_id,
+        set_id,
         policy_version,
     )
 
@@ -32,6 +34,7 @@ async def insert_terminal_pre_screening_job_with_result(
     conn: DatabaseConnection,
     *,
     agent_id: UUID,
+    set_id: int,
     policy_version: str,
     job_status: str,
     result: PreScreeningResultPayload,
@@ -46,13 +49,15 @@ async def insert_terminal_pre_screening_job_with_result(
         """
         INSERT INTO pre_screening_jobs (
             agent_id,
+            set_id,
             policy_version,
             status,
             next_attempt_at
-        ) VALUES ($1, $2, $3, NOW())
+        ) VALUES ($1, $2, $3, $4, NOW())
         RETURNING job_id
         """,
         agent_id,
+        set_id,
         policy_version,
         job_status,
     )
@@ -78,12 +83,16 @@ async def project_next_pre_screening_job_state(conn: DatabaseConnection) -> bool
     async with conn.conn.transaction():
         job = await conn.fetchrow(
             """
-            SELECT job_id, agent_id, status
-            FROM pre_screening_jobs
-            WHERE status IN ('succeeded', 'failed', 'needs_review')
-              AND projected_at IS NULL
-            ORDER BY created_at ASC
-            FOR UPDATE SKIP LOCKED
+            SELECT job.job_id, job.agent_id, job.set_id, job.status
+            FROM pre_screening_jobs job
+            INNER JOIN agents agent
+                ON agent.agent_id = job.agent_id
+               AND agent.set_id = job.set_id
+            WHERE job.set_id IS NOT NULL
+              AND job.status IN ('succeeded', 'failed', 'needs_review')
+              AND job.projected_at IS NULL
+            ORDER BY job.created_at ASC
+            FOR UPDATE OF job SKIP LOCKED
             LIMIT 1
             """
         )
@@ -97,10 +106,12 @@ async def project_next_pre_screening_job_state(conn: DatabaseConnection) -> bool
             UPDATE agents
             SET status = $2
             WHERE agent_id = $1
-              AND status IN ($3, $4)
+              AND set_id = $3
+              AND status IN ($4, $5)
             """,
             job["agent_id"],
             agent_status.value,
+            job["set_id"],
             AgentStatus.pre_screening.value,
             AgentStatus.pre_screening_needs_review.value,
         )
@@ -115,8 +126,13 @@ async def project_next_pre_screening_job_state(conn: DatabaseConnection) -> bool
             UPDATE pre_screening_jobs
             SET projected_at = NOW(), updated_at = NOW()
             WHERE job_id = $1
+              AND agent_id = $2
+              AND set_id = $3
+              AND projected_at IS NULL
             """,
             job["job_id"],
+            job["agent_id"],
+            job["set_id"],
         )
 
     return True

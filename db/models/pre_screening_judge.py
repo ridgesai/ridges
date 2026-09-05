@@ -19,6 +19,7 @@ class PreScreeningJob(Base):
     agent_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True), sa.ForeignKey("agents.agent_id", ondelete="CASCADE"), nullable=False
     )
+    set_id: Mapped[Optional[int]] = mapped_column(sa.Integer)
     status: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default=sa.text("'pending'"))
     attempt_count: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default=sa.text("0"))
     claim_token: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True))
@@ -46,6 +47,12 @@ class PreScreeningJob(Base):
     )
 
     __table_args__ = (
+        sa.ForeignKeyConstraint(
+            ["agent_id", "set_id"],
+            ["agents.agent_id", "agents.set_id"],
+            name="fk_pre_screening_jobs_agent_competition",
+            ondelete="CASCADE",
+        ),
         sa.CheckConstraint(
             "status IN ('pending', 'running', 'error', 'succeeded', 'failed', 'needs_review')",
             name="ck_pre_screening_jobs_status",

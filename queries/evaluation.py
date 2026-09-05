@@ -9,8 +9,10 @@ from models.agent import AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus, HydratedEvaluation
 from models.evaluation_run import EvaluationRun, EvaluationRunErrorCode, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetGroup
+from queries.agent import EvaluationCandidate
+from queries.errors import EvaluationSetMembershipMismatchError
 from queries.evaluation_run import create_evaluation_runs, get_all_evaluation_runs_in_evaluation_id
-from queries.evaluation_set import get_all_evaluation_set_problems_in_set_group_in_set_id, get_latest_set_id
+from queries.evaluation_set import get_all_evaluation_set_problems_in_set_group_in_set_id
 from utils.database import DatabaseConnection, db_operation
 
 logger = logging.getLogger(__name__)
@@ -71,37 +73,227 @@ async def create_evaluation(conn: DatabaseConnection, agent_id: UUID, validator_
     return evaluation_id
 
 
+async def _lock_processable_competition(conn: DatabaseConnection, set_id: int):
+    row = await conn.fetchrow(
+        """
+        SELECT start_date, end_date, is_paused, scoring_mode, required_validator_count
+        FROM competitions
+        WHERE set_id = $1
+        FOR SHARE SKIP LOCKED
+        """,
+        set_id,
+    )
+    if (
+        row is None
+        or row["start_date"] is None
+        or row["end_date"] is not None
+        or row["is_paused"]
+        or row["scoring_mode"] is None
+    ):
+        return None
+    return row
+
+
+async def _lock_matching_work_cursor(
+    conn: DatabaseConnection,
+    *,
+    family: EvaluationSetGroup,
+    observed_last_served_set_id: int | None,
+) -> bool:
+    row = await conn.fetchrow(
+        """
+        SELECT
+            last_served_set_id,
+            last_served_set_id IS NOT DISTINCT FROM $2::integer AS observation_matches
+        FROM competition_work_cursors
+        WHERE family = $1
+        FOR UPDATE
+        """,
+        family.value,
+        observed_last_served_set_id,
+    )
+    if row is None:
+        raise RuntimeError(f"Missing competition work cursor for {family.value}")
+    return row["observation_matches"]
+
+
+def _required_agent_status(set_group: EvaluationSetGroup) -> AgentStatus:
+    if set_group is EvaluationSetGroup.screener_1:
+        return AgentStatus.screening_1
+    if set_group is EvaluationSetGroup.screener_2:
+        return AgentStatus.screening_2
+    return AgentStatus.evaluating
+
+
+async def _evaluation_claim_stats(
+    conn: DatabaseConnection,
+    *,
+    agent_id: UUID,
+    set_id: int,
+    set_group: EvaluationSetGroup,
+    validator_hotkey: str,
+):
+    return await conn.fetchrow(
+        """
+        WITH evaluation_states AS (
+            SELECT
+                evaluation.validator_hotkey,
+                aggregate.computed_status
+            FROM evaluations evaluation
+            JOIN LATERAL (
+                SELECT CASE
+                    WHEN EVERY(
+                        evaluation_run.status = 'finished'
+                        OR (
+                            evaluation_run.status = 'error'
+                            AND evaluation_run.error_code BETWEEN 1000 AND 1999
+                        )
+                    ) THEN 'success'
+                    WHEN EVERY(evaluation_run.status IN ('finished', 'error')) THEN 'failure'
+                    ELSE 'running'
+                END AS computed_status
+                FROM evaluation_runs_hydrated evaluation_run
+                WHERE evaluation_run.evaluation_id = evaluation.evaluation_id
+                HAVING COUNT(*) > 0
+            ) aggregate ON TRUE
+            WHERE evaluation.agent_id = $1
+              AND evaluation.set_id = $2
+              AND evaluation.evaluation_set_group = $3::evaluationsetgroup
+        )
+        SELECT
+            COUNT(*) FILTER (WHERE computed_status IN ('running', 'success'))::int AS active_count,
+            COALESCE(
+                BOOL_OR(
+                    validator_hotkey = $4
+                    AND computed_status IN ('running', 'success')
+                ),
+                false
+            ) AS already_evaluated
+        FROM evaluation_states
+        """,
+        agent_id,
+        set_id,
+        set_group.value,
+        validator_hotkey,
+    )
+
+
 @db_operation
 async def create_new_evaluation_and_evaluation_runs(
-    conn: DatabaseConnection, agent_id: UUID, validator_hotkey: str, set_id: int = None
+    conn: DatabaseConnection,
+    candidate: EvaluationCandidate,
+    validator_hotkey: str,
+    observed_last_served_set_id: int | None,
 ) -> Optional[Tuple[Evaluation, List[EvaluationRun]]]:
-    if set_id is None:
-        set_id = await get_latest_set_id()
-        if set_id is None:
+    async with conn.conn.transaction():
+        set_group = EvaluationSetGroup.from_validator_hotkey(validator_hotkey)
+        if not await _lock_matching_work_cursor(
+            conn,
+            family=set_group,
+            observed_last_served_set_id=observed_last_served_set_id,
+        ):
+            logger.info(f"Skipping stale {set_group.value} candidate {candidate.agent_id}: work cursor changed")
+            return None
+
+        competition = await _lock_processable_competition(conn, candidate.set_id)
+        if competition is None:
             logger.info(
-                f"Skipping evaluation issuance for agent {agent_id}: no Harbor evaluation set has been promoted yet"
+                f"Skipping evaluation issuance for agent {candidate.agent_id}: "
+                f"competition {candidate.set_id} is locked or not processable"
             )
             return None
 
-    logger.debug(
-        f"Creating new evaluation and evaluation runs for agent {agent_id} with validator hotkey {validator_hotkey} and set ID {set_id}"
-    )
-
-    set_group = EvaluationSetGroup.from_validator_hotkey(validator_hotkey)
-    evaluation_set_problems = await get_all_evaluation_set_problems_in_set_group_in_set_id(set_id, set_group)
-    if not evaluation_set_problems:
-        logger.info(
-            f"Skipping evaluation issuance for agent {agent_id}: set_id {set_id} has no tasks for {set_group.value}"
+        agent = await conn.fetchrow(
+            """
+            SELECT set_id, status::text AS status
+            FROM agents
+            WHERE agent_id = $1
+            FOR UPDATE SKIP LOCKED
+            """,
+            candidate.agent_id,
         )
-        return None
+        if agent is None or agent["set_id"] is None:
+            logger.info(
+                f"Skipping evaluation issuance for agent {candidate.agent_id}: "
+                "agent is locked, missing, or has no competition membership"
+            )
+            return None
 
-    logger.debug(f"# of problems in set ID {set_id}, set group {set_group.value}: {len(evaluation_set_problems)}")
+        if agent["set_id"] != candidate.set_id:
+            raise EvaluationSetMembershipMismatchError(
+                agent_id=candidate.agent_id,
+                agent_set_id=agent["set_id"],
+                requested_set_id=candidate.set_id,
+            )
 
-    evaluation_id = await create_evaluation(agent_id, validator_hotkey, set_id)
+        if agent["status"] != _required_agent_status(set_group).value:
+            logger.info(
+                f"Skipping evaluation issuance for agent {candidate.agent_id}: status {agent['status']} "
+                f"is not eligible for {set_group.value}"
+            )
+            return None
 
-    await create_evaluation_runs(evaluation_id, evaluation_set_problems)
+        claim_stats = await _evaluation_claim_stats(
+            conn,
+            agent_id=candidate.agent_id,
+            set_id=candidate.set_id,
+            set_group=set_group,
+            validator_hotkey=validator_hotkey,
+        )
+        if (
+            claim_stats["already_evaluated"]
+            or claim_stats["active_count"] > 0
+            and set_group is not EvaluationSetGroup.validator
+        ):
+            logger.info(
+                f"Skipping evaluation issuance for agent {candidate.agent_id}: "
+                f"{set_group.value} already has active work"
+            )
+            return None
 
-    return await get_evaluation_by_id(evaluation_id), await get_all_evaluation_runs_in_evaluation_id(evaluation_id)
+        if (
+            set_group is EvaluationSetGroup.validator
+            and claim_stats["active_count"] >= competition["required_validator_count"]
+        ):
+            logger.info(
+                f"Skipping evaluation issuance for agent {candidate.agent_id}: validator target is already satisfied"
+            )
+            return None
+
+        logger.debug(
+            f"Creating new evaluation and evaluation runs for agent {candidate.agent_id} with validator hotkey "
+            f"{validator_hotkey} and set ID {candidate.set_id}"
+        )
+
+        evaluation_set_problems = await get_all_evaluation_set_problems_in_set_group_in_set_id(
+            candidate.set_id, set_group
+        )
+        if not evaluation_set_problems:
+            logger.info(
+                f"Skipping evaluation issuance for agent {candidate.agent_id}: "
+                f"set_id {candidate.set_id} has no tasks for {set_group.value}"
+            )
+            return None
+
+        logger.debug(
+            f"# of problems in set ID {candidate.set_id}, set group {set_group.value}: {len(evaluation_set_problems)}"
+        )
+
+        evaluation_id = await create_evaluation(candidate.agent_id, validator_hotkey, candidate.set_id)
+
+        await create_evaluation_runs(evaluation_id, evaluation_set_problems)
+
+        await conn.execute(
+            """
+            UPDATE competition_work_cursors
+            SET last_served_set_id = $2
+            WHERE family = $1
+            """,
+            set_group.value,
+            candidate.set_id,
+        )
+
+        return await get_evaluation_by_id(evaluation_id), await get_all_evaluation_runs_in_evaluation_id(evaluation_id)
 
 
 @db_operation
@@ -181,17 +373,68 @@ async def update_evaluation_finished_at(conn: DatabaseConnection, evaluation_id:
 
 
 @db_operation
-async def get_num_successful_validator_evaluations_for_agent_id(conn: DatabaseConnection, agent_id: UUID) -> int:
+async def get_num_successful_validator_evaluations_for_agent_in_set(
+    conn: DatabaseConnection,
+    agent_id: UUID,
+    set_id: int,
+) -> int:
     return await conn.fetchval(
         f"""
         SELECT COUNT(*)
         FROM evaluations_hydrated
         WHERE 
             agent_id = $1
+            AND set_id = $2
             AND status = '{EvaluationStatus.success.value}'
             AND evaluation_set_group = '{EvaluationSetGroup.validator.value}'::EvaluationSetGroup
         """,
         agent_id,
+        set_id,
+    )
+
+
+@db_operation
+async def get_top_agent_score_for_set(conn: DatabaseConnection, set_id: int) -> Optional[float]:
+    """Return the best eligible score in one explicit competition."""
+
+    return await conn.fetchval(
+        """
+        SELECT agent_score.final_score
+        FROM agent_scores agent_score
+        INNER JOIN agents agent
+            ON agent.agent_id = agent_score.agent_id
+           AND agent.set_id = agent_score.set_id
+        LEFT JOIN agent_final_review_statuses review
+            ON review.agent_id = agent_score.agent_id
+           AND review.set_id = agent_score.set_id
+        LEFT JOIN LATERAL (
+            SELECT AVG(evaluation.avg_cost_usd) AS avg_cost_usd
+            FROM evaluations_hydrated evaluation
+            WHERE evaluation.agent_id = agent_score.agent_id
+              AND evaluation.set_id = agent_score.set_id
+              AND evaluation.evaluation_set_group = 'validator'::evaluationsetgroup
+              AND evaluation.status = 'success'::evaluationstatus
+        ) runtime ON TRUE
+        WHERE agent_score.set_id = $1
+          AND agent_score.status::text <> 'cancelled'
+          AND review.approval_review_status IS DISTINCT FROM 'rejected'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM benchmark_agent_ids benchmark_agent
+              WHERE benchmark_agent.agent_id = agent_score.agent_id
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM banned_coldkeys banned_coldkey
+              WHERE banned_coldkey.miner_coldkey = agent.miner_coldkey
+          )
+        ORDER BY
+            ROUND(agent_score.final_score::numeric, 6) DESC,
+            runtime.avg_cost_usd ASC NULLS LAST,
+            agent_score.created_at ASC
+        LIMIT 1
+        """,
+        set_id,
     )
 
 
@@ -206,7 +449,9 @@ async def get_approved_validator_leader_score_for_set(
         """
         SELECT MAX(agent_score.final_score)
         FROM agent_scores agent_score
-        INNER JOIN agents agent ON agent.agent_id = agent_score.agent_id
+        INNER JOIN agents agent
+            ON agent.agent_id = agent_score.agent_id
+           AND agent.set_id = agent_score.set_id
         LEFT JOIN agent_final_review_statuses review
             ON review.agent_id = agent_score.agent_id
             AND review.set_id = agent_score.set_id
@@ -303,7 +548,9 @@ async def get_approved_leader_ranking_for_set(
             agent.miner_coldkey,
             clock_timestamp() AS observed_at
         FROM agent_scores ass
-        INNER JOIN agents agent ON agent.agent_id = ass.agent_id
+        INNER JOIN agents agent
+            ON agent.agent_id = ass.agent_id
+           AND agent.set_id = ass.set_id
         LEFT JOIN agent_final_review_statuses review
             ON review.agent_id = ass.agent_id
             AND review.set_id = ass.set_id
@@ -367,6 +614,9 @@ async def get_validator_agent_score_for_set(
             rt.avg_cost_usd,
             ass.created_at
         FROM agent_scores ass
+        INNER JOIN agents agent
+            ON agent.agent_id = ass.agent_id
+           AND agent.set_id = ass.set_id
         LEFT JOIN LATERAL (
             SELECT AVG(eh.avg_cost_usd) AS avg_cost_usd
             FROM evaluations_hydrated eh

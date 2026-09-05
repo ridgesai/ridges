@@ -42,7 +42,8 @@ from utils.docker import cleanup_harbor_docker_resources, prune_docker_disk_reso
 from utils.git import COMMIT_HASH, reset_local_repo
 from utils.logger import setup_logging
 from utils.system_metrics import get_system_metrics
-from validator.background_loops import cleanup_loop, send_heartbeat_loop, set_weights_loop
+from validator.background_loops import cleanup_loop, set_weights_loop
+from validator.heartbeat import start_heartbeat_thread
 from validator.http_utils import post_ridges_platform
 from validator.retry_utils import retry_with_backoff
 
@@ -912,8 +913,8 @@ async def main():
         build_timeout_multiplier=environment_build_timeout_multiplier,
     )
 
-    # Start the send heartbeat loop
-    asyncio.create_task(send_heartbeat_loop(session_id))
+    # Start the heartbeat sender on its own thread
+    start_heartbeat_thread(session_id)
 
     if config.MODE == "validator":
         # Start the set weights loop

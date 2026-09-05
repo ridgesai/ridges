@@ -1,17 +1,26 @@
 from datetime import datetime
-from typing import Optional
+from typing import NamedTuple, Optional
 from uuid import UUID
 
 from models.agent import AgentCreate
 from models.upload_credit import UploadCredit
-from queries.agent import create_agent
-from queries.errors import UploadCreditAlreadyRedeemedError, UploadCreditUnavailableError
+from queries.agent import CreditUploadFunding, _derive_agent_id, admit_agent
+from queries.competition import resolve_upload_competition
+from queries.errors import UploadCreditAlreadyRedeemedError
 from utils.database import DatabaseConnection, db_operation
+from utils.s3 import upload_text_file_to_s3
 
 
 def credit_payment_identity(credit_id: UUID) -> tuple[str, str]:
     """Return the canonical synthetic payment identity for a credit."""
     return f"credit:{credit_id}", "0"
+
+
+class CreditReplay(NamedTuple):
+    """The stored identity of an exact credit replay match."""
+
+    agent_id: UUID
+    miner_coldkey: str | None
 
 
 @db_operation
@@ -101,6 +110,44 @@ async def get_upload_credit_by_id(
 
 
 @db_operation
+async def get_exact_upload_credit_replay(
+    conn: DatabaseConnection,
+    *,
+    credit_id: UUID,
+    miner_hotkey: str,
+    source_sha256: str,
+    set_id: int | None,
+) -> CreditReplay | None:
+    """Return an exact successful credit replay without consulting lifecycle state."""
+    row = await conn.fetchrow(
+        """
+        SELECT
+            credit.redeemed_agent_id,
+            agent.miner_hotkey AS agent_hotkey,
+            agent.miner_coldkey AS agent_coldkey,
+            agent.source_sha256,
+            agent.set_id
+        FROM upload_credits credit
+        LEFT JOIN agents agent ON agent.agent_id = credit.redeemed_agent_id
+        WHERE credit.credit_id = $1
+          AND credit.miner_hotkey = $2
+        """,
+        credit_id,
+        miner_hotkey,
+    )
+    if row is None or row["redeemed_agent_id"] is None:
+        return None
+
+    if (
+        row["agent_hotkey"] == miner_hotkey
+        and row["source_sha256"] == source_sha256
+        and (set_id is None or row["set_id"] == set_id)
+    ):
+        return CreditReplay(agent_id=row["redeemed_agent_id"], miner_coldkey=row["agent_coldkey"])
+    raise UploadCreditAlreadyRedeemedError(row["redeemed_agent_id"])
+
+
+@db_operation
 async def create_agent_with_upload_credit(
     conn: DatabaseConnection,
     *,
@@ -116,10 +163,9 @@ async def create_agent_with_upload_credit(
     openrouter_api_key_label: str,
     openrouter_api_key_creator_user_id: str,
     openrouter_validated_at: datetime,
-    create_pre_screening_job: bool = False,
-    pre_screening_policy_version: str,
+    set_id: int,
 ) -> tuple[UUID, bool]:
-    """Create an agent and consume exactly one credit in a single database transaction."""
+    """Compatibility wrapper for credit admission used by focused query tests."""
     payment_block_hash, payment_extrinsic_index = credit_payment_identity(credit_id)
     credit_agent = agent.model_copy(
         update={
@@ -128,83 +174,25 @@ async def create_agent_with_upload_credit(
         }
     )
 
-    async with conn.conn.transaction():
-        credit = await conn.fetchrow(
-            """
-            SELECT *, expires_at IS NOT NULL AND expires_at <= NOW() AS is_expired
-            FROM upload_credits
-            WHERE credit_id = $1
-              AND miner_hotkey = $2
-            FOR UPDATE
-            """,
-            credit_id,
-            miner_hotkey,
-        )
-        if credit is None or credit["revoked_at"] is not None:
-            raise UploadCreditUnavailableError()
-
-        if credit["redeemed_at"] is None and credit["is_expired"]:
-            raise UploadCreditUnavailableError()
-
-        if credit["redeemed_agent_id"] is not None:
-            existing = await conn.fetchrow(
-                """
-                SELECT miner_hotkey, source_sha256
-                FROM agents
-                WHERE agent_id = $1
-                """,
-                credit["redeemed_agent_id"],
-            )
-            if (
-                existing is not None
-                and existing["miner_hotkey"] == miner_hotkey
-                and existing["source_sha256"] == source_sha256
-            ):
-                return credit["redeemed_agent_id"], True
-            raise UploadCreditAlreadyRedeemedError(credit["redeemed_agent_id"])
-
-        agent_id = await create_agent(
-            credit_agent,
-            agent_text,
-            source_sha256=source_sha256,
-            runtime_openrouter_api_key_ciphertext=runtime_openrouter_api_key_ciphertext,
-            management_openrouter_api_key_ciphertext=management_openrouter_api_key_ciphertext,
-            openrouter_workspace_id=openrouter_workspace_id,
-            openrouter_api_key_label=openrouter_api_key_label,
-            openrouter_api_key_creator_user_id=openrouter_api_key_creator_user_id,
-            openrouter_validated_at=openrouter_validated_at,
+    resolved_set_id = await resolve_upload_competition(set_id)
+    agent_id = _derive_agent_id(payment_block_hash, payment_extrinsic_index)
+    await upload_text_file_to_s3(f"{agent_id}/agent.py", agent_text)
+    result = await admit_agent(
+        credit_agent,
+        set_id=resolved_set_id,
+        source_sha256=source_sha256,
+        runtime_openrouter_api_key_ciphertext=runtime_openrouter_api_key_ciphertext,
+        management_openrouter_api_key_ciphertext=management_openrouter_api_key_ciphertext,
+        openrouter_workspace_id=openrouter_workspace_id,
+        openrouter_api_key_label=openrouter_api_key_label,
+        openrouter_api_key_creator_user_id=openrouter_api_key_creator_user_id,
+        openrouter_validated_at=openrouter_validated_at,
+        miner_coldkey=miner_coldkey,
+        funding=CreditUploadFunding(
+            credit_id=credit_id,
+            miner_hotkey=miner_hotkey,
             miner_coldkey=miner_coldkey,
-            create_pre_screening_job=create_pre_screening_job,
-            pre_screening_policy_version=pre_screening_policy_version,
-        )
-
-        await conn.execute(
-            """
-            INSERT INTO evaluation_payments (
-                payment_block_hash,
-                payment_extrinsic_index,
-                agent_id,
-                miner_hotkey,
-                miner_coldkey,
-                amount_alpha_rao,
-                upload_credit_id
-            ) VALUES ($1, $2, $3, $4, $5, 0, $6)
-            """,
-            payment_block_hash,
-            payment_extrinsic_index,
-            agent_id,
-            miner_hotkey,
-            miner_coldkey,
-            credit_id,
-        )
-        await conn.execute(
-            """
-            UPDATE upload_credits
-            SET redeemed_at = NOW(), redeemed_agent_id = $2
-            WHERE credit_id = $1
-            """,
-            credit_id,
-            agent_id,
-        )
-
-    return agent_id, False
+        ),
+        enforce_cooldown=False,
+    )
+    return result.agent_id, result.replayed

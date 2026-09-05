@@ -3,7 +3,6 @@ from typing import Dict, Optional
 
 from pydantic import BaseModel, Field
 
-import api.config as config
 from models.evaluation_set import EvaluationSetGroup
 from utils.database import DatabaseConnection, db_operation
 
@@ -14,12 +13,9 @@ class TopScoreOverTime(BaseModel):
 
 
 @db_operation
-async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOverTime]:
+async def get_top_scores_over_time(conn: DatabaseConnection, set_id: int) -> list[TopScoreOverTime]:
     query = """
         WITH
-        max_set AS (
-            SELECT MAX(set_id) as set_id FROM evaluation_sets
-        ),
         time_series AS (
             SELECT
             generate_series(
@@ -32,7 +28,8 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOve
                     agents a ON agent_scores.agent_id = a.agent_id
                 WHERE
                     agent_scores.final_score IS NOT NULL
-                    AND agent_scores.set_id = (SELECT set_id FROM max_set)
+                    AND agent_scores.set_id = $1
+                    AND (a.set_id IS NULL OR a.set_id = agent_scores.set_id)
                     AND NOT EXISTS (
                         SELECT 1 FROM banned_coldkeys bc
                         WHERE bc.miner_coldkey = a.miner_coldkey
@@ -57,7 +54,8 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOve
             WHERE
                 agent_scores.final_score IS NOT NULL
                 AND agent_scores.created_at <= ts.hour
-                AND agent_scores.set_id = (SELECT set_id FROM max_set)
+                AND agent_scores.set_id = $1
+                AND (a.set_id IS NULL OR a.set_id = agent_scores.set_id)
                 AND NOT EXISTS (
                     SELECT 1 FROM banned_coldkeys bc
                     WHERE bc.miner_coldkey = a.miner_coldkey
@@ -72,7 +70,7 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOve
         ORDER BY
         ts.hour
     """
-    rows = await conn.fetch(query)
+    rows = await conn.fetch(query, set_id)
     return [TopScoreOverTime(**row) for row in rows]
 
 
@@ -156,6 +154,7 @@ async def get_perfectly_solved_over_time(conn: DatabaseConnection) -> list[Perfe
 @db_operation
 async def get_average_score_per_evaluation_set_group(
     conn: DatabaseConnection,
+    set_id: int,
 ) -> Dict[EvaluationSetGroup, Optional[float]]:
     rows = await conn.fetch(
         """
@@ -165,7 +164,8 @@ async def get_average_score_per_evaluation_set_group(
         FROM evaluations_hydrated eh
             JOIN agents a on a.agent_id = eh.agent_id 
         WHERE eh.status = 'success'
-            AND eh.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            AND eh.set_id = $1
+            AND (a.set_id IS NULL OR a.set_id = eh.set_id)
             AND NOT EXISTS (
                 SELECT 1 FROM banned_coldkeys bc
                 WHERE bc.miner_coldkey = a.miner_coldkey
@@ -173,7 +173,8 @@ async def get_average_score_per_evaluation_set_group(
             AND eh.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
             AND eh.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
         GROUP BY validator_type
-        """
+        """,
+        set_id,
     )
 
     result = {EvaluationSetGroup(row["validator_type"]): float(row["average_score"]) for row in rows}
@@ -193,6 +194,8 @@ async def get_average_score_per_evaluation_set_group(
 @db_operation
 async def get_average_wait_time_per_evaluation_set_group(
     conn: DatabaseConnection,
+    set_id: int,
+    required_validator_count: int | None,
 ) -> Dict[EvaluationSetGroup, Optional[float]]:
     result = {}
 
@@ -204,7 +207,8 @@ async def get_average_wait_time_per_evaluation_set_group(
             JOIN agents a ON e.agent_id = a.agent_id
         WHERE e.status = 'success'
             AND e.evaluation_set_group = '{EvaluationSetGroup.screener_1.value}'::EvaluationSetGroup
-            AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            AND e.set_id = $1
+            AND (a.set_id IS NULL OR a.set_id = e.set_id)
             AND NOT EXISTS (
                 SELECT 1 FROM banned_coldkeys bc
                 WHERE bc.miner_coldkey = a.miner_coldkey
@@ -212,7 +216,8 @@ async def get_average_wait_time_per_evaluation_set_group(
             AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
             AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
             AND e.finished_at >= NOW() - INTERVAL '6 hours'
-        """
+        """,
+        set_id,
     )
 
     result[EvaluationSetGroup.screener_2] = await conn.fetchval(
@@ -225,8 +230,9 @@ async def get_average_wait_time_per_evaluation_set_group(
         WHERE sc1_e.status = 'success' AND sc2_e.status = 'success'
             AND sc1_e.evaluation_set_group = '{EvaluationSetGroup.screener_1.value}'::EvaluationSetGroup
             AND sc2_e.evaluation_set_group = '{EvaluationSetGroup.screener_2.value}'::EvaluationSetGroup
-            AND sc1_e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-            AND sc2_e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            AND sc1_e.set_id = $1
+            AND sc2_e.set_id = $1
+            AND (a.set_id IS NULL OR a.set_id = sc1_e.set_id)
             AND NOT EXISTS (
                 SELECT 1 FROM banned_coldkeys bc
                 WHERE bc.miner_coldkey = a.miner_coldkey
@@ -234,7 +240,8 @@ async def get_average_wait_time_per_evaluation_set_group(
             AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
             AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
             AND sc2_e.finished_at >= NOW() - INTERVAL '6 hours'
-        """
+        """,
+        set_id,
     )
 
     result[EvaluationSetGroup.validator] = await conn.fetchval(
@@ -250,14 +257,15 @@ async def get_average_wait_time_per_evaluation_set_group(
                     FROM evaluations_hydrated v_e2
                     WHERE v_e2.status = 'success'
                     AND v_e2.evaluation_set_group = '{EvaluationSetGroup.validator.value}'::EvaluationSetGroup
-                    AND v_e2.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                    AND v_e2.set_id = $1
                 GROUP BY v_e2.agent_id
             ) v_e ON sc2_e.agent_id = v_e.agent_id
             JOIN agents a ON sc2_e.agent_id = a.agent_id
         WHERE sc2_e.status = 'success'
             AND sc2_e.evaluation_set_group = '{EvaluationSetGroup.screener_2.value}'::EvaluationSetGroup
-            AND sc2_e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-            AND v_e.validator_count = {config.NUM_EVALS_PER_AGENT}
+            AND sc2_e.set_id = $1
+            AND (a.set_id IS NULL OR a.set_id = sc2_e.set_id)
+            AND v_e.validator_count = $2
             AND NOT EXISTS (
                 SELECT 1 FROM banned_coldkeys bc
                 WHERE bc.miner_coldkey = a.miner_coldkey
@@ -265,7 +273,9 @@ async def get_average_wait_time_per_evaluation_set_group(
             AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
             AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
             AND v_e.finished_at >= NOW() - INTERVAL '6 hours'
-        """
+        """,
+        set_id,
+        required_validator_count,
     )
 
     return result

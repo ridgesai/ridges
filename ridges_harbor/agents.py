@@ -22,6 +22,9 @@ from ridges_harbor._stdlib_contract import (
     PATCH_APPLY_LOG_FILENAME,
     PATCH_CHECK_LOG_FILENAME,
     PATCH_FILENAME,
+    PATCH_PUBLISH_LOG_FILENAME,
+    PATCH_PUBLISHED_METADATA_KEY,
+    RAW_PATCH_FILENAME,
     RUN_LOG_FILENAME,
     RUNTIME_FILENAME,
     RUNTIME_LOG_FILENAME,
@@ -59,6 +62,7 @@ class RidgesMinerAgent(BaseInstalledAgent):
         extra_env: dict[str, str] | None = None,
         workdir: str | None = None,
         runtime_dir: str = "/installed-agent",
+        separate_verifier: bool = False,
         **kwargs,
     ):
         super().__init__(
@@ -75,6 +79,7 @@ class RidgesMinerAgent(BaseInstalledAgent):
         self.agent_path = Path(agent_path).expanduser().resolve()
         self.workdir = workdir
         self.runtime_dir = runtime_dir.rstrip("/")
+        self.separate_verifier = separate_verifier
         self.runtime_script_path = Path(__file__).with_name(RUNTIME_FILENAME)
         self.stdlib_contract_path = Path(__file__).with_name(STDLIB_CONTRACT_FILENAME)
 
@@ -103,6 +108,16 @@ class RidgesMinerAgent(BaseInstalledAgent):
     @property
     def _env_patch_path(self) -> str:
         return (EnvironmentPaths.agent_dir / PATCH_FILENAME).as_posix()
+
+    @property
+    def _env_raw_patch_path(self) -> str:
+        # The runtime executes as the task's agent user. Harbor guarantees that
+        # /logs/agent is writable even when /installed-agent is root-owned.
+        # This raw file is not the declared grading artifact. Both modes run
+        # ``git apply --check`` here; shared mode also applies it. Separate mode
+        # publishes ``patch.diff`` for Harbor to upload into the verifier env,
+        # where ``test.sh`` applies it.
+        return (EnvironmentPaths.agent_dir / RAW_PATCH_FILENAME).as_posix()
 
     @property
     def _env_runtime_payload_path(self) -> str:
@@ -244,6 +259,10 @@ class RidgesMinerAgent(BaseInstalledAgent):
 
     async def _ensure_git_baseline(self, environment: "BaseEnvironment") -> None:
         """Ensure the task workdir has a valid git HEAD before patch generation."""
+        exclude_bytecode = (
+            'mkdir -p "$(git rev-parse --git-path info)" && '
+            "printf '__pycache__/\\n*.pyc\\n' >> \"$(git rev-parse --git-path info/exclude)\""
+        )
         command = (
             "command -v git >/dev/null 2>&1 || { "
             "echo 'git is required for Ridges patch workflow' >&2; "
@@ -256,7 +275,9 @@ class RidgesMinerAgent(BaseInstalledAgent):
             "git config commit.gpgsign false && "
             "git add -A && "
             "git commit --allow-empty -m 'ridges baseline'"
-            ")"
+            "); rc=$?; "
+            f"{{ {exclude_bytecode}; }} 2>/dev/null || true; "
+            "exit $rc"
         )
         await self._exec_with_log(
             environment,
@@ -276,11 +297,13 @@ class RidgesMinerAgent(BaseInstalledAgent):
         environment: "BaseEnvironment",
         context: AgentContext,
     ) -> None:
-        """Run the miner and apply the patch it writes.
+        """Run the miner and publish the patch it writes.
 
         Called once per trial by Harbor after 'install()'. Uploads the
-        instruction, executes the runtime with the canonical transcript captured to
-        'runtime.log', then runs 'git apply --check' followed by 'git apply'.
+        instruction and executes the runtime with the canonical transcript captured
+        to 'runtime.log'. Shared verification checks and applies the raw patch in the
+        agent environment. Separate verification publishes the completed patch for
+        Harbor to transfer and lets the pristine verifier validate and apply it.
 
         Raises MinerRuntimeError, MinerInvalidPatchError, or MinerPatchApplyError
         so Harbor's outer except clause catches them and skips the verifier.
@@ -294,7 +317,7 @@ class RidgesMinerAgent(BaseInstalledAgent):
                 f"python3 -u {shlex.quote(self._env_runtime_path)} "
                 f"--agent {shlex.quote(self._env_agent_path)} "
                 f"--instruction {shlex.quote(self._env_instruction_path)} "
-                f"--patch {shlex.quote(self._env_patch_path)} "
+                f"--patch {shlex.quote(self._env_raw_patch_path)} "
                 f"--runtime {shlex.quote(self._env_runtime_payload_path)} "
                 f"2>&1 | tee {shlex.quote(self._env_runtime_log_path)}"
             )
@@ -311,7 +334,7 @@ class RidgesMinerAgent(BaseInstalledAgent):
                 include_output_body=False,
             )
 
-            patch_check_command = f"git apply --check {shlex.quote(self._env_patch_path)}"
+            patch_check_command = f"git apply --check {shlex.quote(self._env_raw_patch_path)}"
             await self._exec_with_log(
                 environment,
                 executor=self.exec_as_agent,
@@ -323,17 +346,39 @@ class RidgesMinerAgent(BaseInstalledAgent):
                 error_type=MinerInvalidPatchError,
             )
 
-            patch_apply_command = f"git apply {shlex.quote(self._env_patch_path)}"
+            if not self.separate_verifier:
+                patch_apply_command = f"git apply {shlex.quote(self._env_raw_patch_path)}"
+                await self._exec_with_log(
+                    environment,
+                    executor=self.exec_as_root,
+                    command=patch_apply_command,
+                    cwd=self.workdir,
+                    log_filename=PATCH_APPLY_LOG_FILENAME,
+                    cancelled_detail="agent execution was cancelled, likely due to timeout",
+                    error_summary="Failed to apply miner patch",
+                    error_type=MinerPatchApplyError,
+                )
+            publish_source = (
+                "from pathlib import Path; "
+                "from ridges_miner_runtime import _write_patch_atomically; "
+                f"source = Path({self._env_raw_patch_path!r}); "
+                f"_write_patch_atomically(Path({self._env_patch_path!r}), source.read_text())"
+            )
+            publish_command = f"PYTHONPATH={shlex.quote(self.runtime_dir)} python3 -c {shlex.quote(publish_source)}"
             await self._exec_with_log(
                 environment,
-                executor=self.exec_as_agent,
-                command=patch_apply_command,
+                executor=self.exec_as_root,
+                command=publish_command,
                 cwd=self.workdir,
-                log_filename=PATCH_APPLY_LOG_FILENAME,
+                log_filename=PATCH_PUBLISH_LOG_FILENAME,
                 cancelled_detail="agent execution was cancelled, likely due to timeout",
-                error_summary="Failed to apply miner patch",
+                error_summary="Failed to publish completed miner patch",
                 error_type=MinerPatchApplyError,
             )
+            context.metadata = {
+                **(context.metadata or {}),
+                PATCH_PUBLISHED_METADATA_KEY: True,
+            }
 
     def populate_context_post_run(self, context: AgentContext) -> None:
         """Mark Harbor's post-run agent context as handled.
@@ -342,4 +387,5 @@ class RidgesMinerAgent(BaseInstalledAgent):
         paths. An empty dict marks the context as handled without copying
         ridges_runtime.json into result.json when the file is already on disk.
         """
-        context.metadata = {}
+        if context.metadata is None:
+            context.metadata = {}

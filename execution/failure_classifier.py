@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from harbor.trial.trial import (
+from harbor.trial.errors import (
     AgentSetupTimeoutError,
     AgentTimeoutError,
     EnvironmentStartTimeoutError,

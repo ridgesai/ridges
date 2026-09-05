@@ -8,18 +8,23 @@ import pytest
 import utils.database as _db
 from queries.approval import finish_agent_and_enqueue_approval
 from queries.banned_coldkey import COLDKEY_BAN_LOCK_NAMESPACE
+from queries.competition import initialize_current_competition_policy
 
 
 @pytest.fixture(autouse=True)
 async def clean_tables(postgres_db):
     async with _db.pool.acquire() as conn:
         await conn.execute(
-            "TRUNCATE approval_jobs, agent_approval_states, banned_coldkeys, agents RESTART IDENTITY CASCADE"
+            "TRUNCATE approval_jobs, agent_approval_states, banned_coldkeys, agents, competitions "
+            "RESTART IDENTITY CASCADE"
         )
+        await conn.execute("INSERT INTO competitions (set_id, start_date) VALUES (7, NOW())")
+    await initialize_current_competition_policy()
     yield
     async with _db.pool.acquire() as conn:
         await conn.execute(
-            "TRUNCATE approval_jobs, agent_approval_states, banned_coldkeys, agents RESTART IDENTITY CASCADE"
+            "TRUNCATE approval_jobs, agent_approval_states, banned_coldkeys, agents, competitions "
+            "RESTART IDENTITY CASCADE"
         )
 
 
@@ -30,9 +35,9 @@ async def _insert_evaluating_agent(*, miner_coldkey: str | None) -> UUID:
             """
             INSERT INTO agents (
                 agent_id, miner_hotkey, miner_coldkey, name, version_num,
-                status, created_at, ip_address
+                status, created_at, ip_address, set_id
             )
-            VALUES ($1, $2, $3, 'test-agent', 0, 'evaluating', NOW(), '127.0.0.1')
+            VALUES ($1, $2, $3, 'test-agent', 0, 'evaluating', NOW(), '127.0.0.1', 7)
             """,
             agent_id,
             f"hotkey-{agent_id}",

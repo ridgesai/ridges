@@ -19,23 +19,37 @@ async def clean_tables(postgres_db):
 
 async def _insert_agent(conn, *, miner_hotkey: str, set_id: int | None = None) -> UUID:
     agent_id = uuid4()
-    await conn.execute(
-        """
+    query = """
         INSERT INTO agents (
             agent_id, miner_hotkey, name, version_num, status,
             created_at, ip_address, set_id
         )
         VALUES ($1, $2, $2, 1, 'finished', NOW(), '127.0.0.1', $3)
-        """,
-        agent_id,
-        miner_hotkey,
-        set_id,
-    )
+        """
+    if set_id is None:
+        # Recreate a pre-migration agent for the compatibility-order test.
+        async with conn.transaction():
+            await conn.execute("ALTER TABLE agents DISABLE TRIGGER trg_agents_competition_membership")
+            await conn.execute(query, agent_id, miner_hotkey, set_id)
+            await conn.execute("ALTER TABLE agents ENABLE TRIGGER trg_agents_competition_membership")
+    else:
+        await conn.execute(query, agent_id, miner_hotkey, set_id)
     return agent_id
 
 
+async def _insert_grandfathered(conn, table: str, query: str, *args) -> None:
+    """Insert a row that predates the prospective membership constraints."""
+
+    async with conn.transaction():
+        await conn.execute(f"ALTER TABLE {table} DISABLE TRIGGER ALL")
+        await conn.execute(query, *args)
+        await conn.execute(f"ALTER TABLE {table} ENABLE TRIGGER ALL")
+
+
 async def _insert_evaluation(conn, *, agent_id: UUID, set_id: int) -> None:
-    await conn.execute(
+    await _insert_grandfathered(
+        conn,
+        "evaluations",
         """
         INSERT INTO evaluations (
             evaluation_id, agent_id, validator_hotkey, set_id,
@@ -50,7 +64,9 @@ async def _insert_evaluation(conn, *, agent_id: UUID, set_id: int) -> None:
 
 
 async def _insert_score(conn, *, agent_id: UUID, miner_hotkey: str, set_id: int) -> None:
-    await conn.execute(
+    await _insert_grandfathered(
+        conn,
+        "agent_scores",
         """
         INSERT INTO agent_scores (
             agent_id, miner_hotkey, name, version_num, created_at, status,
@@ -65,7 +81,9 @@ async def _insert_score(conn, *, agent_id: UUID, miner_hotkey: str, set_id: int)
 
 
 async def _insert_review(conn, *, agent_id: UUID, set_id: int) -> None:
-    await conn.execute(
+    await _insert_grandfathered(
+        conn,
+        "agent_approval_states",
         """
         INSERT INTO agent_approval_states (
             agent_id, set_id, processing_status, updated_at
@@ -78,7 +96,9 @@ async def _insert_review(conn, *, agent_id: UUID, set_id: int) -> None:
 
 
 async def _insert_approval(conn, *, agent_id: UUID, set_id: int) -> None:
-    await conn.execute(
+    await _insert_grandfathered(
+        conn,
+        "approved_agents",
         """
         INSERT INTO approved_agents (
             agent_id, set_id, approved_at, relative_improvement_units
