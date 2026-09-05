@@ -8,11 +8,11 @@ from dataclasses import dataclass
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-SUPPORTED_INFERENCE_PROVIDERS = ("openrouter", "targon", "chutes")
+SUPPORTED_INFERENCE_PROVIDERS = ("openrouter", "targon", "chutes", "gonka")
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 150
 
-LocalInferenceProvider = Literal["openrouter", "targon", "chutes"]
+LocalInferenceProvider = Literal["openrouter", "targon", "chutes", "gonka"]
 
 
 class _RequestsProxy:
@@ -87,15 +87,18 @@ class LocalInferenceConfig:
                 if self.embedding_base_url
                 else base_url
             )
-        elif provider == "targon":
+        elif provider in {"targon", "gonka"}:
             if not self.base_url:
-                raise ValueError("Targon local inference requires a base_url")
-            base_url = _normalize_base_url(self.base_url, label="Targon base URL")
-            embedding_base_url = (
-                _normalize_base_url(self.embedding_base_url, label="Targon embedding base URL")
-                if self.embedding_base_url
-                else base_url
-            )
+                raise ValueError(f"{provider.title()} local inference requires a base_url")
+            base_url = _normalize_base_url(self.base_url, label=f"{provider.title()} base URL")
+            if provider == "gonka":
+                embedding_base_url = None
+            else:
+                embedding_base_url = (
+                    _normalize_base_url(self.embedding_base_url, label="Targon embedding base URL")
+                    if self.embedding_base_url
+                    else base_url
+                )
         else:
             if not self.base_url:
                 raise ValueError("Chutes local inference requires an inference base_url")
@@ -293,6 +296,9 @@ class LocalInferenceClient:
         )
 
     def embedding(self, model: str, input: str, timeout: int | float | None = None) -> list[float]:
+        if self.config.provider == "gonka":
+            raise LocalInferenceError("Gonka does not support embeddings")
+
         embedding_base_url = self.config.embedding_base_url or self.config.base_url
         if not embedding_base_url:
             raise LocalInferenceError("No embedding base URL configured for local provider inference")
