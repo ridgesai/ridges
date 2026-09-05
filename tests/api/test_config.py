@@ -12,7 +12,7 @@ def test_netuid_defaults_to_62_when_environment_value_is_missing() -> None:
         [
             sys.executable,
             "-c",
-            "import dotenv; dotenv.load_dotenv = lambda: False; import api.config; print(api.config.NETUID)",
+            "import dotenv; dotenv.load_dotenv = lambda *a, **k: False; import api.config; print(api.config.NETUID)",
         ],
         cwd=repo_root,
         env=env,
@@ -39,7 +39,7 @@ def test_projector_loops_follow_deployment_loop_switch_not_policy_defaults() -> 
             sys.executable,
             "-c",
             (
-                "import dotenv; dotenv.load_dotenv = lambda: False; import api.config as c; "
+                "import dotenv; dotenv.load_dotenv = lambda *a, **k: False; import api.config as c; "
                 "print(c.PRE_SCREENING_PROJECTOR_RUN_LOOP, c.AUTO_APPROVAL_RUN_LOOP)"
             ),
         ],

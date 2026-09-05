@@ -11,7 +11,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 # Load everything from .env
-load_dotenv()
+load_dotenv(override=True)
 
 
 # Load host and port
