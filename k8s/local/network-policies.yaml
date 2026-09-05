@@ -1,5 +1,5 @@
 ---
-# Agent phase: allow only DNS + outbound port 443.
+# Agent phase: allow only cluster DNS + outbound port 443.
 # All HTTPS traffic from the main container is transparently intercepted by the
 # iptables REDIRECT rule and forwarded to the proxy SNI router on port 15443.
 # The proxy sidecar (UID 1337, exempt from REDIRECT) reaches the internet directly.
@@ -16,8 +16,15 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # DNS resolution
-    - ports:
+    # DNS resolution — cluster DNS only (kube-dns / CoreDNS in kube-system).
+    # Without a `to:` selector port 53 is open to the entire internet, which
+    # would let agent code exfiltrate data or tunnel arbitrary traffic (e.g.
+    # LLM calls to non-whitelisted providers) over DNS queries.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
         - port: 53
           protocol: UDP
         - port: 53
