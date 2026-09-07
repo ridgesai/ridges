@@ -25,12 +25,8 @@ def test_patches_false_and_true(monkeypatch):
     false_call, true_call = api.patch_namespaced_pod.call_args_list
     assert false_call.kwargs["name"] == "ridges-screener-1-0"
     assert false_call.kwargs["namespace"] == "ridges-prod"
-    assert false_call.kwargs["body"] == {
-        "metadata": {"annotations": {SAFE_TO_EVICT_ANNOTATION: "false"}}
-    }
-    assert true_call.kwargs["body"] == {
-        "metadata": {"annotations": {SAFE_TO_EVICT_ANNOTATION: "true"}}
-    }
+    assert false_call.kwargs["body"] == {"metadata": {"annotations": {SAFE_TO_EVICT_ANNOTATION: "false"}}}
+    assert true_call.kwargs["body"] == {"metadata": {"annotations": {SAFE_TO_EVICT_ANNOTATION: "true"}}}
 
 
 def test_noop_without_pod_name(monkeypatch):
