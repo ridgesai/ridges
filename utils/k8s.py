@@ -12,6 +12,8 @@ from kubernetes.client.rest import ApiException
 
 logger = logging.getLogger(__name__)
 
+SAFE_TO_EVICT_ANNOTATION = "cluster-autoscaler.kubernetes.io/safe-to-evict"
+
 _core_api: Optional[k8s_client.CoreV1Api] = None
 
 
@@ -24,6 +26,38 @@ def _get_core_api() -> k8s_client.CoreV1Api:
             k8s_config.load_kube_config(context=os.getenv("K8S_CONTEXT"))
         _core_api = k8s_client.CoreV1Api()
     return _core_api
+
+
+def set_screener_safe_to_evict(safe: bool) -> None:
+    """Patch this pod's cluster-autoscaler safe-to-evict annotation.
+
+    Best-effort: never raises. No-op outside Kubernetes or when MY_POD_NAME
+    is unset. A false value blocks CA drain of this node so owner-ref GC
+    cannot delete in-flight eval pods.
+    """
+    if os.getenv("RIDGES_ENVIRONMENT_TYPE") != "kubernetes":
+        return
+    pod_name = os.getenv("MY_POD_NAME")
+    if not pod_name:
+        return
+
+    namespace = os.getenv("K8S_NAMESPACE", "ridges")
+    value = "true" if safe else "false"
+    body = {"metadata": {"annotations": {SAFE_TO_EVICT_ANNOTATION: value}}}
+    try:
+        api = _get_core_api()
+        api.patch_namespaced_pod(name=pod_name, namespace=namespace, body=body)
+    except Exception as exc:
+        logger.warning(
+            "Failed to set %s=%s on pod %s/%s: %s",
+            SAFE_TO_EVICT_ANNOTATION,
+            value,
+            namespace,
+            pod_name,
+            exc,
+        )
+        return
+    logger.info("Set %s=%s on pod %s/%s", SAFE_TO_EVICT_ANNOTATION, value, namespace, pod_name)
 
 
 def get_num_k8s_eval_pods() -> int:

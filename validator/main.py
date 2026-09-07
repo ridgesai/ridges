@@ -151,9 +151,10 @@ async def _run_startup_tasks() -> None:
         import validator.healthz as healthz
 
         _healthz_task = asyncio.create_task(healthz.serve(get_session_id=lambda: session_id))
-        from utils.k8s import cleanup_harbor_k8s_resources
+        from utils.k8s import cleanup_harbor_k8s_resources, set_screener_safe_to_evict
 
         await asyncio.to_thread(cleanup_harbor_k8s_resources)
+        await asyncio.to_thread(set_screener_safe_to_evict, True)
 
     asyncio.get_running_loop().add_signal_handler(
         signal.SIGTERM,
@@ -783,20 +784,25 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
     _log_received_evaluation(request_evaluation_response)
     logger.info("Starting evaluation...")
 
-    await _pre_build_missing_images(request_evaluation_response)
-
-    tasks = _create_evaluation_run_tasks(request_evaluation_response)
-
-    poll_task = asyncio.create_task(
-        _poll_evaluation_cancellation(
-            request_evaluation_response.evaluation_id,
-            request_evaluation_response.agent_id,
-            cancellation_event,
-            cancellation_reason,
-        )
-    )
-
     try:
+        if config.RIDGES_ENVIRONMENT_TYPE == "kubernetes":
+            from utils.k8s import set_screener_safe_to_evict
+
+            await asyncio.to_thread(set_screener_safe_to_evict, False)
+
+        await _pre_build_missing_images(request_evaluation_response)
+
+        tasks = _create_evaluation_run_tasks(request_evaluation_response)
+
+        poll_task = asyncio.create_task(
+            _poll_evaluation_cancellation(
+                request_evaluation_response.evaluation_id,
+                request_evaluation_response.agent_id,
+                cancellation_event,
+                cancellation_reason,
+            )
+        )
+
         run_tasks_task, cancellation_wait_task = await _wait_for_runs_or_cancellation(tasks, cancellation_event)
 
         if cancellation_event.is_set():
@@ -823,9 +829,10 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
         if config.RIDGES_ENVIRONMENT_TYPE == "docker":
             await asyncio.to_thread(prune_docker_disk_resources)
         elif config.RIDGES_ENVIRONMENT_TYPE == "kubernetes":
-            from utils.k8s import cleanup_completed_k8s_eval_pods
+            from utils.k8s import cleanup_completed_k8s_eval_pods, set_screener_safe_to_evict
 
             await asyncio.to_thread(cleanup_completed_k8s_eval_pods)
+            await asyncio.to_thread(set_screener_safe_to_evict, True)
 
 
 # Main loop
