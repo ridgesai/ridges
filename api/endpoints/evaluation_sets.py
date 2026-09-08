@@ -82,13 +82,6 @@ async def evaluation_sets_list() -> list[EvaluationSet]:
     return await get_all_evaluation_sets()
 
 
-# /evaluation-sets/all-latest-set-problems
-@router.get("/all-latest-set-problems")
-async def evaluation_sets_all_latest_set_problems() -> list[EvaluationSetProblem]:
-    set_id = await resolve_set_id(-1)
-    return await get_all_evaluation_set_problems_for_set_id(set_id)
-
-
 async def _build_problems(set_id: int) -> list[EvaluationSetProblem]:
     return await get_all_evaluation_set_problems_for_set_id(set_id)
 

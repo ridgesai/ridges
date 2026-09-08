@@ -102,7 +102,7 @@ def setup_logging() -> None:
     """Configure logging for the application.
 
     - Root logger: WARNING (suppresses noisy third-party output by default).
-    - Named app namespaces (api, execution, inference_gateway, queries, utils,
+    - Named app namespaces (api, execution, queries, utils,
       validator, …): DEBUG.
     - Selected third-party loggers: INFO/WARNING as appropriate.
 
@@ -123,7 +123,6 @@ def setup_logging() -> None:
         "api": level,
         "db": level,
         "execution": level,
-        "inference_gateway": level,
         "miners": level,
         "models": level,
         "queries": level,

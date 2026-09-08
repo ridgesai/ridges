@@ -1,5 +1,4 @@
 import asyncio
-from datetime import datetime
 from typing import Dict, Optional
 
 from fastapi import APIRouter
@@ -10,7 +9,6 @@ from api.incentives import get_current_allocations
 from models.competition import CompetitionState
 from models.evaluation_set import EvaluationSetGroup
 from queries.competition import get_competition_policy
-from queries.evaluation_set import get_set_created_at
 from queries.statistics import (
     get_average_score_per_evaluation_set_group,
     get_average_wait_time_per_evaluation_set_group,
@@ -81,16 +79,3 @@ async def screener_info(set_id: int | None = None) -> ScoringScreenerInfoRespons
     competition = await resolve_optional_public_competition(set_id)
     builder = _cached_past_screener_info if competition.state is CompetitionState.ended else _cached_live_screener_info
     return await builder(competition.set_id)
-
-
-# /scoring/latest-set-info
-class ScoringLatestSetInfo(BaseModel):
-    latest_set_id: int
-    latest_set_created_at: datetime
-
-
-@router.get("/latest-set-info")
-async def latest_set_info() -> ScoringLatestSetInfo:
-    competition = await resolve_optional_public_competition()
-    created_at = await get_set_created_at(competition.set_id)
-    return ScoringLatestSetInfo(latest_set_id=competition.set_id, latest_set_created_at=created_at)

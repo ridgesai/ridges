@@ -8,7 +8,6 @@ from fastapi import HTTPException
 
 import api.endpoints.evaluation_sets as evaluation_sets_endpoint
 import api.endpoints.retrieval as retrieval_endpoint
-import api.endpoints.statistics as statistics_endpoint
 import utils.database as _db
 from api.endpoints import competitions as competitions_endpoint
 from queries.competition import get_public_evaluation_set_context
@@ -221,7 +220,6 @@ async def test_history_classifier_index_and_strict_competition_catalog() -> None
 async def test_grandfathered_routes_use_history_and_validator_fallback(monkeypatch) -> None:
     await _seed_history_shapes()
     overview_calls: list[tuple[str, int, int | None]] = []
-    problem_stats_calls: list[tuple[str, int]] = []
 
     async def past_overview(set_id: int, required_validator_count: int | None):
         overview_calls.append(("past", set_id, required_validator_count))
@@ -231,18 +229,8 @@ async def test_grandfathered_routes_use_history_and_validator_fallback(monkeypat
         overview_calls.append(("live", set_id, required_validator_count))
         return object()
 
-    async def past_problem_stats(set_id: int):
-        problem_stats_calls.append(("past", set_id))
-        return object()
-
-    async def live_problem_stats(set_id: int):
-        problem_stats_calls.append(("live", set_id))
-        return object()
-
     monkeypatch.setattr(evaluation_sets_endpoint, "_cached_build_past_overview", past_overview)
     monkeypatch.setattr(evaluation_sets_endpoint, "_cached_build_live_overview", live_overview)
-    monkeypatch.setattr(statistics_endpoint, "_cached_past_problem_statistics", past_problem_stats)
-    monkeypatch.setattr(statistics_endpoint, "_cached_live_problem_statistics", live_problem_stats)
 
     problems = await evaluation_sets_endpoint.evaluation_set_problems(7)
     assert [problem.problem_name for problem in problems] == ["problem-7"]
@@ -250,12 +238,9 @@ async def test_grandfathered_routes_use_history_and_validator_fallback(monkeypat
     assert await evaluation_sets_endpoint.evaluation_set_overview(7) is not None
     assert await evaluation_sets_endpoint.evaluation_set_leaderboard(7) == []
     assert await evaluation_sets_endpoint.evaluation_set_approved_agents(7) == []
-    assert await statistics_endpoint.problem_statistics(set_id=7) is not None
 
     assert await evaluation_sets_endpoint.evaluation_set_overview(56) is not None
-    assert await statistics_endpoint.problem_statistics(set_id=56) is not None
     assert overview_calls == [("past", 7, 1), ("live", 56, None)]
-    assert problem_stats_calls == [("past", 7), ("live", 56)]
 
 
 async def test_agent_versions_validate_context_and_pin_legacy_evidence() -> None:

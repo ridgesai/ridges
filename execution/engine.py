@@ -76,7 +76,6 @@ class ExecutionEngine:
 
     def __init__(
         self,
-        inference_url: str,
         *,
         harbor_results_dir: str | Path | None = None,
         harbor_debug: bool = False,
@@ -85,7 +84,6 @@ class ExecutionEngine:
         max_cost_usd: float | None = None,
         build_timeout_multiplier: float | None = None,
     ):
-        self.inference_url = inference_url
         self.results_dir = harbor_results_dir
         self.debug = harbor_debug
         self.max_agent_timeout_sec = max_agent_timeout_sec
@@ -152,7 +150,6 @@ class ExecutionEngine:
                     agent_timeout_sec=request.agent_timeout_sec,
                     verifier_timeout_sec=request.verifier_timeout_sec,
                     environment_build_timeout_multiplier=self.build_timeout_multiplier,
-                    inference_url=self.inference_url,
                     results_dir=request.results_dir,
                     debug=self.debug,
                     job_name=request.job_name,
