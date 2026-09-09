@@ -1925,6 +1925,7 @@ def _build_job_body(
     """
     tier = max(0, min(tier, len(BUILD_MEMORY_TIERS) - 1))
     memory_request, memory_limit = BUILD_MEMORY_TIERS[tier]
+    _ = registry
 
     fetch_script = (
         'curl -sSfL "$PRESIGNED_URL" -o /tmp/task.tar.gz && '
@@ -1966,14 +1967,9 @@ def _build_job_body(
         ),
     )
 
-    cache_ref = f"{registry}/cache"
     output_opt = f"type=image,name={image_ref},push=true"
-    export_cache_opt = f"type=registry,ref={cache_ref},mode=max"
-    import_cache_opt = f"type=registry,ref={cache_ref}"
     if registry_insecure:
         output_opt += ",registry.insecure=true"
-        export_cache_opt += ",registry.insecure=true"
-        import_cache_opt += ",registry.insecure=true"
 
     buildkit_args = [
         "build",
@@ -1982,8 +1978,6 @@ def _build_job_body(
         f"--local=dockerfile=/workspace/{context_name}",
         f"--opt=filename={dockerfile_name}",
         f"--output={output_opt}",
-        f"--export-cache={export_cache_opt}",
-        f"--import-cache={import_cache_opt}",
     ]
 
     buildkit_volume_mounts = [

@@ -670,6 +670,8 @@ async def test_run_ensures_git_baseline_before_runtime_and_patch_apply(tmp_path:
     assert calls[0]["error_type"] is MinerRuntimeError
     assert calls[1]["include_output_body"] is False
     assert miner._env_raw_patch_path in str(calls[1]["command"])
+    assert "tee " not in str(calls[1]["command"])
+    assert f"> {miner._env_runtime_log_path} 2>&1" in str(calls[1]["command"])
     assert miner._env_raw_patch_path in str(calls[2]["command"])
     assert miner._env_patch_path not in str(calls[2]["command"])
     assert miner._env_raw_patch_path in str(calls[3]["command"])

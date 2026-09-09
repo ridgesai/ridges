@@ -101,6 +101,10 @@ spec:
               value: "test"
             - name: AWS_SECRET_ACCESS_KEY
               value: "test"
+            - name: GOMEMLIMIT
+              value: "768MiB"
+            - name: GOGC
+              value: "50"
           volumeMounts:
             - name: config
               mountPath: /etc/zot/config.json
@@ -113,16 +117,23 @@ spec:
             # Zot temp metadata directory (required even with S3 backend).
             - name: tmp
               mountPath: /tmp/zot
+          startupProbe:
+            tcpSocket:
+              port: 5000
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 60
           readinessProbe:
             tcpSocket:
               port: 5000
-            initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 5
           livenessProbe:
             tcpSocket:
               port: 5000
-            initialDelaySeconds: 15
             periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
           resources:
             requests:
               cpu: "100m"

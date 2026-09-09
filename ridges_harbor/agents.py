@@ -319,7 +319,7 @@ class RidgesMinerAgent(BaseInstalledAgent):
                 f"--instruction {shlex.quote(self._env_instruction_path)} "
                 f"--patch {shlex.quote(self._env_raw_patch_path)} "
                 f"--runtime {shlex.quote(self._env_runtime_payload_path)} "
-                f"2>&1 | tee {shlex.quote(self._env_runtime_log_path)}"
+                f"> {shlex.quote(self._env_runtime_log_path)} 2>&1"
             )
 
             await self._exec_with_log(
