@@ -326,7 +326,7 @@ async def run_local_task(
         quiet=True,
         retry=RetryConfig(max_retries=0),
         environment=EnvironmentConfig(env={}),
-        verifier=VerifierConfig(),
+        verifier=VerifierConfig(import_path="ridges_harbor.verifier:RidgesVerifier"),
         artifacts=[],
         tasks=[TaskConfig(path=effective_task_dir)],
         agents=[

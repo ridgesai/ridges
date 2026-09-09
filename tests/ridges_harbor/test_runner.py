@@ -234,7 +234,7 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
     assert FakeEnvironmentFactory.calls == [("docker", None)]
     assert FakeJob.created_configs[0].tasks[0].path == task_dir
     assert FakeJob.created_configs[0].verifier.max_timeout_sec == 60.0
-    assert FakeJob.created_configs[0].verifier.import_path is None
+    assert FakeJob.created_configs[0].verifier.import_path == "ridges_harbor.verifier:RidgesVerifier"
     assert FakeJob.created_configs[0].artifacts == []
     assert FakeJob.created_configs[0].agents[0].override_timeout_sec == 30.0
     assert FakeJob.created_configs[0].agents[0].kwargs == {
@@ -459,7 +459,7 @@ async def test_run_task_dir_leaves_separate_verifier_egress_to_harbor(tmp_path: 
     assert FakeJob.last_instance.verification_started_hooks == [on_verification_started]
     config = FakeJob.created_configs[0]
     assert config.artifacts == []
-    assert config.verifier.import_path is None
+    assert config.verifier.import_path == "ridges_harbor.verifier:RidgesVerifier"
 
 
 @pytest.mark.anyio
