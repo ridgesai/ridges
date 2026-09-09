@@ -835,6 +835,24 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
             await asyncio.to_thread(set_screener_safe_to_evict, True)
 
 
+async def _update_docker_plugins() -> None:
+    script = pathlib.Path(__file__).resolve().parents[1] / "setup" / "update-docker-plugins.sh"
+    logger.info("Running Docker plugin startup update...")
+    process = await asyncio.create_subprocess_exec("bash", str(script), start_new_session=True)
+    try:
+        returncode = await asyncio.wait_for(process.wait(), timeout=600)
+    except BaseException:
+        if process.returncode is None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        await process.wait()
+        raise
+    if returncode != 0:
+        raise RuntimeError(f"Docker plugin startup update failed (exit {returncode}); see script output above")
+
+
 # Main loop
 async def main():
     global session_id
@@ -928,6 +946,9 @@ async def main():
     # Start the low-priority local-storage cleanup loop (validator and screener).
     if config.CLEANUP_ENABLED:
         asyncio.create_task(cleanup_loop(_active_task_digests))
+
+    if config.RIDGES_ENVIRONMENT_TYPE == "docker" and not config.SIMULATE_EVALUATION_RUNS:
+        await _update_docker_plugins()
 
     # Loop forever, just keep requesting evaluations and running them
     while True:
