@@ -54,7 +54,7 @@ def _fake_startup(monkeypatch, *, environment: str, simulate: bool, events: list
     monkeypatch.setattr(validator_main, "_run_startup_tasks", startup)
     monkeypatch.setattr(validator_main, "post_ridges_platform", post)
     monkeypatch.setattr(validator_main, "ExecutionEngine", lambda **kwargs: SimpleNamespace(**kwargs))
-    monkeypatch.setattr(validator_main, "send_heartbeat_loop", background_loop)
+    monkeypatch.setattr(validator_main, "start_heartbeat_thread", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(validator_main, "set_weights_loop", background_loop)
 
 
