@@ -264,6 +264,7 @@ async def _run_task_dir(
         openrouter_config=openrouter_config,
     )
 
+    verifier_import_path: str | None = None
     if ridges_environment_type == "kubernetes":
         # The proxy sidecar shares the pod network namespace and listens on 8080.
         agent_env["SANDBOX_PROXY_URL"] = "http://127.0.0.1:8080"
@@ -352,6 +353,7 @@ async def _run_task_dir(
             )
         )
         enable_verifier_egress = build_enable_verifier_egress_hook(ridges_trial_id=ridges_trial_id)
+        verifier_import_path = "ridges_harbor.verifier:RidgesVerifier"
 
     job_config = JobConfig(
         job_name=resolved_job_name,
@@ -362,7 +364,7 @@ async def _run_task_dir(
         quiet=True,
         retry=RetryConfig(max_retries=0),
         environment=environment_config,
-        verifier=VerifierConfig(max_timeout_sec=effective_verifier_timeout),
+        verifier=VerifierConfig(import_path=verifier_import_path, max_timeout_sec=effective_verifier_timeout),
         artifacts=[],
         environment_build_timeout_multiplier=environment_build_timeout_multiplier,
         tasks=[TaskConfig(path=task_dir)],
