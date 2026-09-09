@@ -541,6 +541,7 @@ def test_agent_build_job_uses_environment_context() -> None:
     assert "--local=context=/workspace/environment" in build_args
     assert "--local=dockerfile=/workspace/environment" in build_args
     assert "--opt=filename=Dockerfile" in build_args
+    assert not any(arg.startswith("--export-cache=") or arg.startswith("--import-cache=") for arg in build_args)
 
 
 def test_sidecar_build_job_uses_named_dockerfile() -> None:

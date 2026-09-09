@@ -32,8 +32,6 @@ def test_docker_environment_defaults_to_buildkit_bake(monkeypatch, tmp_path: Pat
 
     env = docker_environment_env(
         ridges_trial_id="trial-1",
-        upstream_url="http://127.0.0.1:1234",
-        upstream_host="127.0.0.1",
         evaluation_run_id="eval-1",
         max_cost_usd="1",
         proxy_data_dir=str(tmp_path),
@@ -228,8 +226,6 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
         agent_path=tmp_path / "agent.py",
         agent_timeout_sec=30.0,
         verifier_timeout_sec=60.0,
-        upstream_url="http://127.0.0.1:1234",
-        upstream_host="127.0.0.1",
         results_dir=results_dir,
         debug=False,
         job_name="job-1",
@@ -253,8 +249,6 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
     }
     assert FakeJob.created_configs[0].environment.env == {
         "RIDGES_TRIAL_ID": FakeJob.created_configs[0].environment.env["RIDGES_TRIAL_ID"],
-        "RIDGES_HARBOR_UPSTREAM_URL": "http://127.0.0.1:1234",
-        "RIDGES_HARBOR_UPSTREAM_HOST": "127.0.0.1",
         "RIDGES_EVALUATION_RUN_ID": "eval-run-1",
         "RIDGES_MAX_COST_USD": "9",
         "RIDGES_PROXY_DATA_DIR": str(results_dir / "job-1" / "proxy_data"),
@@ -305,8 +299,6 @@ async def test_run_task_dir_uses_loopback_proxy_in_kubernetes(tmp_path: Path, mo
         agent_path=tmp_path / "agent.py",
         agent_timeout_sec=30.0,
         verifier_timeout_sec=None,
-        upstream_url="http://127.0.0.1:1234",
-        upstream_host="127.0.0.1",
         results_dir=tmp_path / "results",
         debug=False,
         job_name="job-k8s",
@@ -355,8 +347,6 @@ async def test_run_task_dir_prebuilds_kubernetes_verifier_image_for_separate_mod
         agent_path=tmp_path / "agent.py",
         agent_timeout_sec=30.0,
         verifier_timeout_sec=None,
-        upstream_url="http://127.0.0.1:1234",
-        upstream_host="127.0.0.1",
         results_dir=tmp_path / "results",
         debug=False,
         job_name="job-k8s-separate",
@@ -387,8 +377,6 @@ async def test_run_task_dir_passes_optional_openrouter_key_and_cost_cap(tmp_path
         agent_path=tmp_path / "agent.py",
         agent_timeout_sec=30.0,
         verifier_timeout_sec=None,
-        upstream_url="http://127.0.0.1:1234",
-        upstream_host="127.0.0.1",
         results_dir=results_dir,
         debug=False,
         job_name="job-2",
@@ -432,8 +420,6 @@ async def test_run_task_dir_registers_lifecycle_hooks_in_expected_order(tmp_path
         agent_path=tmp_path / "agent.py",
         agent_timeout_sec=30.0,
         verifier_timeout_sec=None,
-        upstream_url="http://127.0.0.1:1234",
-        upstream_host="127.0.0.1",
         results_dir=results_dir,
         debug=False,
         job_name="job-1",
@@ -464,8 +450,6 @@ async def test_run_task_dir_leaves_separate_verifier_egress_to_harbor(tmp_path: 
         agent_path=tmp_path / "agent.py",
         agent_timeout_sec=30.0,
         verifier_timeout_sec=None,
-        upstream_url="http://127.0.0.1:1234",
-        upstream_host="127.0.0.1",
         results_dir=tmp_path / "results",
         debug=False,
         job_name="job-separate",
@@ -686,6 +670,8 @@ async def test_run_ensures_git_baseline_before_runtime_and_patch_apply(tmp_path:
     assert calls[0]["error_type"] is MinerRuntimeError
     assert calls[1]["include_output_body"] is False
     assert miner._env_raw_patch_path in str(calls[1]["command"])
+    assert "tee " not in str(calls[1]["command"])
+    assert f"> {miner._env_runtime_log_path} 2>&1" in str(calls[1]["command"])
     assert miner._env_raw_patch_path in str(calls[2]["command"])
     assert miner._env_patch_path not in str(calls[2]["command"])
     assert miner._env_raw_patch_path in str(calls[3]["command"])
@@ -891,8 +877,6 @@ async def test_run_task_dir_forwards_environment_build_timeout_multiplier(tmp_pa
         agent_path=tmp_path / "agent.py",
         agent_timeout_sec=30.0,
         verifier_timeout_sec=60.0,
-        upstream_url="http://127.0.0.1:1234",
-        upstream_host="127.0.0.1",
         results_dir=tmp_path / "results",
         debug=False,
         job_name="job-1",
@@ -916,8 +900,6 @@ async def test_run_task_dir_defaults_environment_build_timeout_multiplier_to_non
         agent_path=tmp_path / "agent.py",
         agent_timeout_sec=30.0,
         verifier_timeout_sec=60.0,
-        upstream_url="http://127.0.0.1:1234",
-        upstream_host="127.0.0.1",
         results_dir=tmp_path / "results",
         debug=False,
         job_name="job-1",

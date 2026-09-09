@@ -35,14 +35,6 @@ from queries.competition import (
 )
 from queries.evaluation import get_approved_leader_ranking_for_set, get_evaluations_for_agent_id
 from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
-from queries.statistics import (
-    PerfectlySolvedOverTime,
-    ProblemSetCreationTime,
-    TopScoreOverTime,
-    get_perfectly_solved_over_time,
-    get_problem_set_creation_times,
-    get_top_scores_over_time,
-)
 from utils.incentives import calculate_time_multiplier
 from utils.problem_alias import add_test_aliases, make_problem_alias
 from utils.s3 import download_text_file_from_s3
@@ -271,43 +263,6 @@ async def agent_code(agent_id: UUID) -> str:
             raise HTTPException(status_code=403, detail="Agent code is hidden for top agents")
 
     return await download_text_file_from_s3(f"{agent_id}/agent.py")
-
-
-# /retrieval/top-scores-over-time
-async def _build_top_scores_over_time(set_id: int) -> List[TopScoreOverTime]:
-    return await get_top_scores_over_time(set_id)
-
-
-_cached_live_top_scores_over_time = ttl_cache(ttl_seconds=60 * 15)(_build_top_scores_over_time)
-_cached_past_top_scores_over_time = ttl_cache(ttl_seconds=CACHE_PAST_COMPETITION_TTL_SECONDS)(
-    _build_top_scores_over_time
-)
-
-
-@router.get("/top-scores-over-time")
-async def top_scores_over_time(set_id: int | None = None) -> List[TopScoreOverTime]:
-    competition = await resolve_optional_public_competition(set_id)
-    builder = (
-        _cached_past_top_scores_over_time
-        if competition.state is CompetitionState.ended
-        else _cached_live_top_scores_over_time
-    )
-    return await builder(competition.set_id)
-
-
-# /retrieval/perfectly-solved-over-time
-class PerfectlySolvedOverTimeResponse(BaseModel):
-    perfectly_solved_over_times: List[PerfectlySolvedOverTime]
-    problem_set_creation_times: List[ProblemSetCreationTime]
-
-
-@router.get("/perfectly-solved-over-time")
-@ttl_cache(ttl_seconds=60 * 15)  # 15 minutes
-async def perfectly_solved_over_time() -> PerfectlySolvedOverTimeResponse:
-    return PerfectlySolvedOverTimeResponse(
-        perfectly_solved_over_times=await get_perfectly_solved_over_time(),
-        problem_set_creation_times=await get_problem_set_creation_times(),
-    )
 
 
 # /retrieval/network-statistics
