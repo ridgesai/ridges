@@ -52,11 +52,13 @@ class FakeContainer:
             "HostConfig": {"RestartPolicy": {"Name": restart_policy}} if restart_policy is not None else {},
         }
         self.removed = False
+        self.remove_calls = []
 
     def reload(self):
         pass
 
-    def remove(self, force=False):
+    def remove(self, force=False, v=False):
+        self.remove_calls.append({"force": force, "v": v})
         self.removed = True
 
     def summary(self):
@@ -328,7 +330,9 @@ def test_database_sidecars_without_main_are_cleaned_in_both_phases(inject_client
     assert result["count"] == len(containers)
     assert result["errors"] == 0
     assert all(c.removed == (not dry_run) for c in containers)
+    assert all(c.remove_calls == ([] if dry_run else [{"force": True, "v": True}]) for c in containers)
     assert not shared.removed
+    assert shared.remove_calls == []
 
 
 def test_startup_removes_fresh_sidecars_but_periodic_sweep_obeys_ttl(inject_client):
@@ -691,18 +695,18 @@ def test_stopped_corpse_removed_without_force(inject_client):
     seen_force = []
     original_remove = corpse.remove
 
-    def recording_remove(force=False):
+    def recording_remove(force=False, v=False):
         seen_force.append(force)
-        original_remove(force=force)
+        original_remove(force=force, v=v)
 
     corpse.remove = recording_remove
     orphan = FakeContainer("task__x__def-main-1", "running", age=timedelta(hours=9))
     orphan_force = []
     orphan_original = orphan.remove
 
-    def orphan_remove(force=False):
+    def orphan_remove(force=False, v=False):
         orphan_force.append(force)
-        orphan_original(force=force)
+        orphan_original(force=force, v=v)
 
     orphan.remove = orphan_remove
     inject_client(FakeClient(containers=[corpse, orphan]))
@@ -710,13 +714,15 @@ def test_stopped_corpse_removed_without_force(inject_client):
     assert _sweep_containers()["count"] == 2
     assert seen_force == [False]
     assert orphan_force == [True]
+    assert corpse.remove_calls == [{"force": False, "v": True}]
+    assert orphan.remove_calls == [{"force": True, "v": True}]
 
 
 def test_remove_failure_does_not_abort_sweep(inject_client):
     """One refused removal (e.g. race) must not stop the rest of the sweep."""
     flaky = FakeContainer("task__x__abc-main-1", "exited", age=timedelta(hours=2))
 
-    def failing_remove(force=False):
+    def failing_remove(force=False, v=False):
         raise RuntimeError("conflict: container is running")
 
     flaky.remove = failing_remove
