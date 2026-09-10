@@ -312,7 +312,7 @@ def cleanup_harbor_docker_resources(
             if dry_run:
                 logger.info(f"Janitor startup (dry-run): would remove container {container.name}")
             else:
-                container.remove(force=True)
+                container.remove(force=True, v=True)
                 logger.info(f"Janitor startup: removed container {container.name}")
             removed += 1
             if len(names) < 20:
@@ -513,7 +513,7 @@ def sweep_stale_harbor_containers(
                     f"(status={container.status}, created={container.attrs.get('Created')})"
                 )
             else:
-                container.remove(force=container.status == "running")
+                container.remove(force=container.status == "running", v=True)
                 logger.info(f"Janitor: removed leaked container {container.name} (status={container.status})")
             removed += 1
             if len(removed_names) < 20:
