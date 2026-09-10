@@ -33,16 +33,22 @@ class FakeContainer:
         image_id="sha256:aaa",
         image_ref=None,
         restart_policy="no",
+        compose_project=None,
+        compose_service=None,
     ):
         self.id = f"id-{name}"
         self.name = name
         self.status = status
         self.labels = {TRIAL_LABEL: "t123"} if labeled else {}
+        if compose_project is not None:
+            self.labels[docker_utils.COMPOSE_PROJECT_LABEL] = compose_project
+        if compose_service is not None:
+            self.labels[docker_utils.COMPOSE_SERVICE_LABEL] = compose_service
         self.attrs = {
             "Created": _iso(age),
             "ImageID": image_id,
             "Image": image_id,
-            "Config": {"Image": image_ref} if image_ref else {},
+            "Config": {"Image": image_ref, "Labels": self.labels},
             "HostConfig": {"RestartPolicy": {"Name": restart_policy}} if restart_policy is not None else {},
         }
         self.removed = False
@@ -66,9 +72,13 @@ class FakeContainer:
 
 
 class FakeNetwork:
-    def __init__(self, name, *, age=timedelta(hours=2), attached=False, compose_network="sandbox_egress"):
+    def __init__(
+        self, name, *, age=timedelta(hours=2), attached=False, compose_network="sandbox_egress", compose_project=None
+    ):
         self.name = name
         labels = {"com.docker.compose.network": compose_network} if compose_network else {}
+        if compose_project is not None:
+            labels[docker_utils.COMPOSE_PROJECT_LABEL] = compose_project
         self.attrs = {
             "Created": _iso(age),
             "Containers": {"c1": {}} if attached else {},
@@ -157,7 +167,7 @@ class FakeClient:
 
         class Api:
             def containers(self, all=False, filters=None):
-                result = client._containers
+                result = [c for c in client._containers if not c.removed]
                 if filters and "label" in filters:
                     result = [c for c in result if filters["label"] in c.labels]
                 return [c.summary() for c in result]
@@ -282,6 +292,279 @@ def test_autogen_untagged_intermediate_requires_full_resolvable_image_id():
     assert not is_janitor_container(tagged_by_id, client)
     assert not is_janitor_container(truncated, client)
     assert not is_janitor_container(unresolvable, client)
+
+
+# --- current Harbor / database task resources -------------------------------
+
+DB_PROJECT = "ch-plausible-query__abc1234__env"
+VERIFIER_PROJECT = "ch-plausible-query__abc1234__verifier__trial"
+CONTENT_IMAGE = "hb__" + "ab12" * 8 + ":latest"
+
+
+def _db_container(project=DB_PROJECT, service="postgres", **kwargs):
+    return FakeContainer(
+        f"{project}-{service}-1",
+        "running",
+        labeled=False,  # Existing DB tasks do not label their sidecars with ridges.trial_id.
+        compose_project=project,
+        compose_service=service,
+        **kwargs,
+    )
+
+
+@pytest.mark.parametrize("startup", [False, True])
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_database_sidecars_without_main_are_cleaned_in_both_phases(inject_client, startup, dry_run):
+    containers = [
+        _db_container(project, service, age=timedelta(days=1))
+        for project in (DB_PROJECT, VERIFIER_PROJECT)
+        for service in ("postgres", "redis", "clickhouse", "clickhouse-init", "future-service")
+    ]
+    shared = _db_container("production", age=timedelta(days=10), image_ref="postgres:16")
+    inject_client(FakeClient(containers=[*containers, shared]))
+
+    result = cleanup_harbor_docker_resources(dry_run=dry_run) if startup else _sweep_containers(dry_run=dry_run)
+
+    assert result["count"] == len(containers)
+    assert result["errors"] == 0
+    assert all(c.removed == (not dry_run) for c in containers)
+    assert not shared.removed
+
+
+def test_startup_removes_fresh_sidecars_but_periodic_sweep_obeys_ttl(inject_client):
+    fresh = _db_container(age=timedelta(minutes=5))
+    inject_client(FakeClient(containers=[fresh]))
+    assert _sweep_containers()["count"] == 0
+    assert not fresh.removed
+    assert cleanup_harbor_docker_resources()["count"] == 1
+    assert fresh.removed
+
+
+def test_legacy_main_with_compose_labels_and_current_replicas_are_recognized():
+    legacy = _db_container("task__abc1234", "main")
+    replica = _db_container(service="postgres")
+    replica.name = f"{DB_PROJECT}-postgres-2"
+    assert is_janitor_container(legacy, FakeClient())
+    assert is_janitor_container(replica, FakeClient())
+
+
+@pytest.mark.parametrize(
+    "name,project,service",
+    [
+        ("production-postgres-1", "production", "postgres"),
+        ("production__env-postgres-1", "production__env", "postgres"),
+        ("production__staging-postgres-1", "production__staging", "postgres"),
+        (f"{DB_PROJECT}-postgres-1", None, None),
+        (f"{DB_PROJECT}-postgres-1", "production", "postgres"),
+        (f"{DB_PROJECT}-postgres-1", DB_PROJECT, "redis"),
+        (f"{DB_PROJECT}-postgres-1", DB_PROJECT, None),
+        ("shared-postgres", DB_PROJECT, "postgres"),  # Inherited image labels are insufficient.
+    ],
+)
+def test_sidecar_name_and_compose_metadata_must_agree(inject_client, name, project, service):
+    candidate = FakeContainer(name, "running", age=timedelta(days=10), compose_project=project, compose_service=service)
+    inject_client(FakeClient(containers=[candidate]))
+    assert cleanup_harbor_docker_resources()["count"] == 0
+    assert not candidate.removed
+
+
+@pytest.mark.parametrize("startup", [False, True])
+def test_sidecar_ownership_is_rechecked_after_reload(inject_client, startup):
+    candidate = _db_container(age=timedelta(days=1))
+
+    def reload():
+        candidate.labels[docker_utils.COMPOSE_PROJECT_LABEL] = "production"
+
+    candidate.reload = reload
+    inject_client(FakeClient(containers=[candidate]))
+    result = cleanup_harbor_docker_resources() if startup else _sweep_containers()
+    assert result["count"] == 0
+    assert not candidate.removed
+
+
+def test_classic_builder_with_inherited_compose_labels_retains_ttl_guard(inject_client):
+    intermediate = FakeImage(FULL_ID, [])
+    step = FakeContainer(
+        "clever_builder",
+        "running",
+        age=timedelta(minutes=5),
+        image_id=FULL_ID,
+        image_ref=FULL_ID,
+        compose_project=DB_PROJECT,
+        compose_service="postgres",
+    )
+    client = inject_client(FakeClient(containers=[step], images=[intermediate]))
+    assert is_janitor_container(step, client)
+    assert cleanup_harbor_docker_resources()["count"] == 0
+    step.attrs["Created"] = _iso(timedelta(days=1))
+    assert cleanup_harbor_docker_resources()["count"] == 1
+
+
+@pytest.mark.parametrize("startup", [False, True])
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_current_verifier_networks_require_ownership_and_no_attachments(inject_client, startup, dry_run):
+    detached = FakeNetwork(f"{VERIFIER_PROJECT}_default", compose_project=VERIFIER_PROJECT, compose_network="default")
+    attached = FakeNetwork(
+        f"{DB_PROJECT}_database", compose_project=DB_PROJECT, compose_network="database", attached=True
+    )
+    foreign = FakeNetwork("production_default", compose_project="production", compose_network="default")
+    custom_name = FakeNetwork("shared-db-network", compose_project=DB_PROJECT, compose_network="database")
+    inject_client(FakeClient(networks=[detached, attached, foreign, custom_name]))
+    if startup:
+        cleanup_harbor_docker_resources(dry_run=dry_run)
+    else:
+        _sweep_containers(dry_run=dry_run)
+    assert detached.removed == (not dry_run)
+    assert not any(n.removed for n in (attached, foreign, custom_name))
+
+
+@pytest.mark.parametrize("change", ["ownership", "attachment", "age"])
+def test_network_changes_during_reload_prevent_removal(inject_client, change):
+    network = FakeNetwork(f"{VERIFIER_PROJECT}_default", compose_project=VERIFIER_PROJECT, compose_network="default")
+
+    def reload():
+        if change == "ownership":
+            network.attrs["Labels"][docker_utils.COMPOSE_PROJECT_LABEL] = "production"
+        elif change == "attachment":
+            network.attrs["Containers"] = {"new-container": {}}
+        else:
+            network.attrs["Created"] = _iso(timedelta(minutes=1))
+
+    network.reload = reload
+    inject_client(FakeClient(networks=[network]))
+    _sweep_containers()
+    assert not network.removed
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_current_task_image_tags_removed_but_base_and_foreign_tags_kept(inject_client, dry_run):
+    tags = [CONTENT_IMAGE, f"{DB_PROJECT}-postgres:latest", f"{VERIFIER_PROJECT}-clickhouse-init:latest"]
+    images = [FakeImage(f"sha256:owned-{i}", [tag, f"saved-copy-{i}:latest"]) for i, tag in enumerate(tags)]
+    foreign_tags = [
+        "postgres:16",
+        "redis:7",
+        "clickhouse/clickhouse-server:24",
+        "production__env-postgres:latest",
+        "production__staging-postgres:latest",
+        "registry.example/" + CONTENT_IMAGE,
+        "hb__" + "a" * 31 + ":latest",
+        "hb__" + "z" * 32 + ":latest",
+    ]
+    images.extend(FakeImage(f"sha256:foreign-{i}", [tag]) for i, tag in enumerate(foreign_tags))
+    client = inject_client(FakeClient(images=images))
+    assert _sweep_images(dry_run=dry_run, disk_used_percent=100)["count"] == len(tags)
+    assert client.removed_tags == ([] if dry_run else tags)
+
+
+def test_current_images_keep_age_and_reference_protection(inject_client):
+    images = [
+        FakeImage("sha256:in-use", [CONTENT_IMAGE]),
+        FakeImage("sha256:recent", [f"{DB_PROJECT}-redis:latest"], last_tag_age=timedelta(minutes=5)),
+        FakeImage("sha256:unknown", [f"{VERIFIER_PROJECT}-postgres:latest"], last_tag_age=None),
+    ]
+    holder = FakeContainer("shared-postgres", "exited", image_id="sha256:in-use")
+    client = inject_client(FakeClient(containers=[holder], images=images))
+    assert _sweep_images(disk_used_percent=100)["count"] == 0
+    assert client.removed_tags == []
+
+
+def test_task_image_refreshed_between_scan_and_delete_is_kept(inject_client):
+    image = FakeImage("sha256:retagged", [CONTENT_IMAGE])
+    client = inject_client(FakeClient(images=[image]))
+    original_get = client.images.get
+
+    def get(ref):
+        found = original_get(ref)
+        if ref == CONTENT_IMAGE:
+            found.attrs["Metadata"]["LastTagTime"] = _iso(timedelta(minutes=1))
+        return found
+
+    client.images.get = get
+    assert _sweep_images()["count"] == 0
+    assert client.removed_tags == []
+
+
+def test_task_image_reassigned_to_another_id_during_sweep_is_kept(inject_client):
+    image = FakeImage("sha256:original", [CONTENT_IMAGE])
+    replacement = FakeImage("sha256:replacement", [CONTENT_IMAGE])
+    client = inject_client(FakeClient(images=[image]))
+    original_get = client.images.get
+    client.images.get = lambda ref: replacement if ref == CONTENT_IMAGE else original_get(ref)
+    assert _sweep_images()["count"] == 0
+    assert client.removed_tags == []
+
+
+@pytest.mark.parametrize("task_name", ["db-task", "pg-listmonk-campaign-lifecycle-linearization-001", "My_Task.v2"])
+def test_pinned_harbor_resource_naming_contract(tmp_path, task_name):
+    """Exercise Harbor's naming functions, without starting Docker or a trial."""
+    from types import SimpleNamespace
+
+    from harbor.environments.docker.docker import DockerEnvironment, _sanitize_docker_compose_project_name
+    from harbor.models.task.config import EnvironmentConfig
+    from harbor.models.trial.config import TaskConfig, TrialConfig
+    from harbor.models.trial.paths import TrialPaths
+    from harbor.trial.trial import Trial
+
+    task_dir = tmp_path / task_name
+    environment_dir = task_dir / "environment"
+    environment_dir.mkdir(parents=True)
+    (environment_dir / "Dockerfile").write_text("FROM scratch\n")
+    config = TrialConfig(task=TaskConfig(path=task_dir))
+    trial = SimpleNamespace(config=config)
+    sessions = [f"{config.trial_name}__env"]
+    sessions.extend(Trial._separate_verifier_session_id(trial, key) for key in ("trial", "step-" * 30))
+    for session in sessions:
+        project = _sanitize_docker_compose_project_name(session)
+        container = _db_container(project, "postgres")
+        assert is_janitor_container(container, FakeClient()), project
+        assert image_ref_is_janitor_target(f"{project}-postgres:latest"), project
+
+    environment = DockerEnvironment(
+        environment_dir=environment_dir,
+        environment_name=task_name,
+        session_id=sessions[0],
+        trial_paths=TrialPaths(trial_dir=tmp_path / "trial"),
+        task_env_config=EnvironmentConfig(),
+    )
+    assert image_ref_is_janitor_target(environment._main_image_name + ":latest")
+
+
+@pytest.mark.anyio
+async def test_restart_reconciles_sidecars_then_images_and_keeps_shared_references(monkeypatch, inject_client):
+    from validator import main as validator_main
+
+    postgres = _db_container(image_id="sha256:postgres")
+    clickhouse = _db_container(VERIFIER_PROJECT, "clickhouse", image_id="sha256:clickhouse")
+    shared = FakeContainer("production-db", "running", labeled=False, image_id="sha256:postgres")
+    images = [
+        FakeImage("sha256:postgres", [f"{DB_PROJECT}-postgres:latest"]),
+        FakeImage("sha256:clickhouse", [f"{VERIFIER_PROJECT}-clickhouse:latest"]),
+    ]
+    client = inject_client(
+        FakeClient(containers=[postgres, clickhouse, shared], images=images, image_prune_reclaimed=[123, 0])
+    )
+    for key, value in {
+        "RIDGES_ENVIRONMENT_TYPE": "docker",
+        "CLEANUP_ENABLED": True,
+        "CLEANUP_DOCKER_ENABLED": True,
+        "CLEANUP_DOCKER_DRY_RUN": False,
+        "CLEANUP_IMAGE_TAG_GRACE_HOURS": 6,
+        "CLEANUP_DISK_PRESSURE_PERCENT": 75,
+    }.items():
+        monkeypatch.setattr(validator_main.config, key, value)
+
+    async def metrics():
+        return type("Metrics", (), {"disk_percent": 100.0})()
+
+    loop = validator_main.asyncio.get_running_loop()
+    monkeypatch.setattr(loop, "add_signal_handler", lambda *_args: None)
+    monkeypatch.setattr(validator_main, "get_system_metrics", metrics)
+    await validator_main._run_startup_tasks()
+
+    assert postgres.removed and clickhouse.removed
+    assert not shared.removed
+    assert client.removed_tags == [f"{VERIFIER_PROJECT}-clickhouse:latest"]
+    assert client.pruned_images and client.pruned_builds
 
 
 # --- container sweep --------------------------------------------------------
@@ -800,27 +1083,47 @@ def test_container_sweep_matches_when_alias_precedes_primary_name(inject_client)
 
 
 @pytest.mark.anyio
-async def test_validator_startup_honors_dry_run_and_pressure_gates_build_cache(monkeypatch):
+@pytest.mark.parametrize("disk_percent,include_build_cache", [(90.0, True), (30.0, False), (None, False)])
+@pytest.mark.parametrize("dry_run", [True, False])
+@pytest.mark.parametrize("image_sweep_fails", [False, True])
+async def test_validator_startup_honors_dry_run_and_pressure_gates_build_cache(
+    monkeypatch, caplog, disk_percent, include_build_cache, dry_run, image_sweep_fails
+):
     from validator import main as validator_main
 
+    monkeypatch.setattr(validator_main.logger, "propagate", True)
+    caplog.set_level("INFO", logger="validator")
     monkeypatch.setattr(validator_main.config, "RIDGES_ENVIRONMENT_TYPE", "docker")
     monkeypatch.setattr(validator_main.config, "CLEANUP_ENABLED", True)
     monkeypatch.setattr(validator_main.config, "CLEANUP_DOCKER_ENABLED", True)
-    monkeypatch.setattr(validator_main.config, "CLEANUP_DOCKER_DRY_RUN", True)
+    monkeypatch.setattr(validator_main.config, "CLEANUP_DOCKER_DRY_RUN", dry_run)
     monkeypatch.setattr(validator_main.config, "CLEANUP_STOPPED_GRACE_MINUTES", 45)
     monkeypatch.setattr(validator_main.config, "CLEANUP_RUNNING_TTL_HOURS", 4)
     monkeypatch.setattr(validator_main.config, "CLEANUP_DISK_PRESSURE_PERCENT", 75)
+    monkeypatch.setattr(validator_main.config, "CLEANUP_IMAGE_TAG_GRACE_HOURS", 6)
+    monkeypatch.setattr(validator_main.config, "CLEANUP_PULLED_IMAGE_DISK_PERCENT", 50)
     cleanup_kwargs = {}
+    image_kwargs = {}
     prune_kwargs = {}
+    events = []
 
     async def metrics():
-        return type("Metrics", (), {"disk_percent": 90.0})()
+        return type("Metrics", (), {"disk_percent": disk_percent})()
 
     def cleanup(**kwargs):
+        events.append("containers")
         cleanup_kwargs.update(kwargs)
         return {"count": 0, "names": []}
 
+    def images(**kwargs):
+        events.append("images")
+        image_kwargs.update(kwargs)
+        if image_sweep_fails:
+            raise RuntimeError("test daemon failure")
+        return {"count": 0, "names": []}
+
     def prune(**kwargs):
+        events.append("prune")
         prune_kwargs.update(kwargs)
         return {"image_bytes": 0, "build_bytes": 0}
 
@@ -830,10 +1133,21 @@ async def test_validator_startup_honors_dry_run_and_pressure_gates_build_cache(m
 
     monkeypatch.setattr(validator_main, "get_system_metrics", metrics)
     monkeypatch.setattr(validator_main, "cleanup_harbor_docker_resources", cleanup)
+    monkeypatch.setattr(validator_main, "sweep_leaked_harbor_images", images)
     monkeypatch.setattr(validator_main, "prune_docker_disk_resources", prune)
     monkeypatch.setattr(validator_main.asyncio, "get_running_loop", lambda: FakeLoop())
 
     await validator_main._run_startup_tasks()
 
-    assert cleanup_kwargs["dry_run"] is True
-    assert prune_kwargs == {"include_build_cache": True, "dry_run": True, "until": "1h"}
+    assert events == ["containers", "images", "prune"]
+    assert cleanup_kwargs["dry_run"] is dry_run
+    assert image_kwargs == {
+        "tag_grace_sec": 6 * 3600,
+        "dry_run": dry_run,
+        "disk_used_percent": disk_percent,
+        "pulled_image_pressure_percent": 50,
+    }
+    assert prune_kwargs == {"include_build_cache": include_build_cache, "dry_run": dry_run, "until": "1h"}
+    if image_sweep_fails:
+        assert "Janitor startup image cleanup failed" in caplog.text
+    assert f"errors={int(image_sweep_fails)} dry_run=" in caplog.text
