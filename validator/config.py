@@ -175,8 +175,9 @@ VALIDATOR_CONCURRENCY_CAPS_BY_NAME = {
     "Kraken": 10,
     "WildSage Labs (RT21)": 10,
     "Rizzo": 10,
+    "Crucible Labs": 10,
     # "Opentensor Foundation": 10,
-    # "Yuma": 10,
+    "Yuma": 10,
 }
 
 MAX_CONCURRENT_EVALUATION_RUNS = os.getenv("MAX_CONCURRENT_EVALUATION_RUNS")
