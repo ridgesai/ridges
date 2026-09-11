@@ -116,6 +116,9 @@ class CompetitionPolicy(BaseModel):
     screener_2_threshold: UnitInterval
     prune_threshold: UnitInterval
     required_validator_count: PositiveStrictInt
+    # Validator-only: how many evaluation runs a validator executes concurrently.
+    # Screeners keep reading MAX_CONCURRENT_EVALUATION_RUNS from their own env.
+    max_concurrent_evaluation_runs: PositiveStrictInt
     pre_screening_enabled: StrictBool
     auto_approval_enabled: StrictBool
     hardcoding_policy_version: NonBlankStrictString

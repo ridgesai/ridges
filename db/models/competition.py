@@ -37,6 +37,7 @@ class Competition(Base, CreatedAtMixin):
     screener_2_threshold: Mapped[Optional[Decimal]] = mapped_column(sa.Numeric())
     prune_threshold: Mapped[Optional[Decimal]] = mapped_column(sa.Numeric())
     required_validator_count: Mapped[Optional[int]] = mapped_column(sa.Integer)
+    max_concurrent_evaluation_runs: Mapped[Optional[int]] = mapped_column(sa.Integer)
     pre_screening_enabled: Mapped[Optional[bool]] = mapped_column(sa.Boolean)
     auto_approval_enabled: Mapped[Optional[bool]] = mapped_column(sa.Boolean)
     hardcoding_policy_version: Mapped[Optional[str]] = mapped_column(sa.Text)
@@ -54,10 +55,11 @@ class Competition(Base, CreatedAtMixin):
         ),
         sa.CheckConstraint(
             "num_nonnulls(scoring_mode, screener_1_threshold, screener_2_threshold, "
-            "prune_threshold, required_validator_count, pre_screening_enabled, "
+            "prune_threshold, required_validator_count, max_concurrent_evaluation_runs, "
+            "pre_screening_enabled, "
             "auto_approval_enabled, hardcoding_policy_version, incentive_enabled, "
             "incentive_performance_threshold, incentive_cost_threshold, "
-            "incentive_reward_half_life_hours, incentive_time_multiplier_scale_hours) IN (0, 13)",
+            "incentive_reward_half_life_hours, incentive_time_multiplier_scale_hours) IN (0, 14)",
             name="ck_competitions_policy_complete",
         ),
         sa.CheckConstraint(
@@ -76,6 +78,10 @@ class Competition(Base, CreatedAtMixin):
         sa.CheckConstraint(
             "required_validator_count IS NULL OR required_validator_count > 0",
             name="ck_competitions_required_validator_count",
+        ),
+        sa.CheckConstraint(
+            "max_concurrent_evaluation_runs IS NULL OR max_concurrent_evaluation_runs > 0",
+            name="ck_competitions_max_concurrent_evaluation_runs",
         ),
         sa.CheckConstraint(
             "hardcoding_policy_version IS NULL OR length(btrim(hardcoding_policy_version)) > 0",

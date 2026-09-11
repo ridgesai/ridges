@@ -653,7 +653,13 @@ def _create_evaluation_run_tasks(request_evaluation_response: ValidatorRequestEv
     """
 
     tasks = []
-    semaphore = asyncio.Semaphore(config.MAX_CONCURRENT_EVALUATION_RUNS)
+    # The platform sends the competition's concurrency; fall back to our own default when it
+    # doesn't (competition without a policy, or an older platform).
+    max_concurrent_evaluation_runs = (
+        request_evaluation_response.max_concurrent_evaluation_runs or config.MAX_CONCURRENT_EVALUATION_RUNS
+    )
+    logger.info(f"  Max Concurrent Evaluation Runs: {max_concurrent_evaluation_runs}")
+    semaphore = asyncio.Semaphore(max_concurrent_evaluation_runs)
 
     for evaluation_run in request_evaluation_response.evaluation_runs:
         evaluation_run_id = evaluation_run.evaluation_run_id

@@ -1,7 +1,7 @@
 import asyncio
 from typing import Dict, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from api.competition_resolution import resolve_optional_public_competition
@@ -13,6 +13,7 @@ from queries.statistics import (
     get_average_score_per_evaluation_set_group,
     get_average_wait_time_per_evaluation_set_group,
 )
+from utils.bittensor import SubtensorUnavailableError
 from utils.ttl import ttl_cache
 
 router = APIRouter()
@@ -22,7 +23,13 @@ CACHE_PAST_COMPETITION_TTL_SECONDS = 24 * 60 * 60
 # /scoring/weights
 @router.get("/weights")
 async def weights() -> Dict[str, float]:
-    allocations = await get_current_allocations()
+    try:
+        allocations = await get_current_allocations()
+    except SubtensorUnavailableError as e:
+        raise HTTPException(
+            status_code=503,
+            detail="Subtensor is currently unreachable; weights cannot be computed. Please retry shortly.",
+        ) from e
     return allocations.hotkey_weights
 
 
