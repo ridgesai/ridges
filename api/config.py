@@ -36,6 +36,14 @@ SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK")
 if not SUBTENSOR_NETWORK:
     logger.fatal("SUBTENSOR_NETWORK is not set in .env")
 
+# Subtensor connection resilience.
+# Every chain call is bounded by SUBTENSOR_CALL_TIMEOUT_SECONDS so a wedged websocket can never
+# hang a request indefinitely. The keepalive loop probes the connection every
+# SUBTENSOR_KEEPALIVE_INTERVAL_SECONDS (bounded by the shorter ping timeout) and rebuilds it on failure.
+SUBTENSOR_CALL_TIMEOUT_SECONDS = int(os.getenv("SUBTENSOR_CALL_TIMEOUT_SECONDS", "30"))
+SUBTENSOR_PING_TIMEOUT_SECONDS = int(os.getenv("SUBTENSOR_PING_TIMEOUT_SECONDS", "10"))
+SUBTENSOR_KEEPALIVE_INTERVAL_SECONDS = int(os.getenv("SUBTENSOR_KEEPALIVE_INTERVAL_SECONDS", "30"))
+
 
 OWNER_HOTKEY = os.getenv("OWNER_HOTKEY")
 if not OWNER_HOTKEY:
@@ -286,6 +294,11 @@ if DISALLOW_UPLOADS:
     logger.warning(f"Uploads are disallowed: {DISALLOW_UPLOADS_REASON}")
     logger.info("-------------------------")
 
+logger.info(
+    f"Subtensor Call Timeout: {SUBTENSOR_CALL_TIMEOUT_SECONDS} second(s), "
+    f"Ping Timeout: {SUBTENSOR_PING_TIMEOUT_SECONDS} second(s), "
+    f"Keepalive Interval: {SUBTENSOR_KEEPALIVE_INTERVAL_SECONDS} second(s)"
+)
 logger.info(f"Environment: {'Production' if ENV == 'prod' else 'Development'}")
 logger.info("-------------------------")
 
