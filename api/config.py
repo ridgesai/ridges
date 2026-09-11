@@ -216,6 +216,13 @@ if not NUM_EVALS_PER_AGENT:
     logger.fatal("NUM_EVALS_PER_AGENT is not set in .env")
 NUM_EVALS_PER_AGENT = int(NUM_EVALS_PER_AGENT)
 
+# Seeds Competition.max_concurrent_evaluation_runs for competitions that have no policy yet.
+# Validators receive the per-competition value on /validator/request-evaluation; screeners
+# keep reading MAX_CONCURRENT_EVALUATION_RUNS from their own environment.
+MAX_CONCURRENT_EVALUATION_RUNS = int(os.getenv("MAX_CONCURRENT_EVALUATION_RUNS", "15"))
+if MAX_CONCURRENT_EVALUATION_RUNS <= 0:
+    raise ValueError("MAX_CONCURRENT_EVALUATION_RUNS must be positive")
+
 MAX_ATTEMPTS_PER_EVALUATION_RUN = int(os.getenv("MAX_ATTEMPTS_PER_EVALUATION_RUN", "3"))
 
 AGENT_UUID_NAMESPACE = os.getenv("AGENT_UUID_NAMESPACE")
