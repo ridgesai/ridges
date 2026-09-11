@@ -57,6 +57,9 @@ class ValidatorRequestEvaluationResponse(BaseModel):
     evaluation_runs: List[ValidatorRequestEvaluationResponseEvaluationRun]
     artifact_upload_urls: dict[str, str] = Field(default_factory=dict)
     openrouter_config: OpenRouterRuntimeConfig | None = None
+    # Per-competition validator concurrency. None when the competition has no policy;
+    # the validator then falls back to its own configured default.
+    max_concurrent_evaluation_runs: int | None = None
 
 
 class ValidatorTaskDownloadUrlRequest(BaseModel):
