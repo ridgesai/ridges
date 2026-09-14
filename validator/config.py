@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 
 from utils.docker import get_prune_timeout_seconds
 from utils.logger import setup_logging
-from utils.validator_hotkeys import validator_hotkey_to_name
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -168,32 +167,18 @@ if UPDATE_AUTOMATICALLY:
 else:
     logger.warning("Not Updating Automatically!")
 
-VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS = 15
+DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS = 15
 SCREENER_DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS = 10
 HARDCODED_MAX_COST_USD = 0.29
-VALIDATOR_CONCURRENCY_CAPS_BY_NAME = {
-    "Kraken": 10,
-    "WildSage Labs (RT21)": 10,
-    "Rizzo": 10,
-    # "Opentensor Foundation": 10,
-    # "Yuma": 10,
-}
 
 MAX_CONCURRENT_EVALUATION_RUNS = os.getenv("MAX_CONCURRENT_EVALUATION_RUNS")
 if MODE == "validator":
-    validator_name = validator_hotkey_to_name(VALIDATOR_HOTKEY.ss58_address)
-    validator_concurrency_cap = min(
-        VALIDATOR_CONCURRENCY_CAPS_BY_NAME.get(validator_name, VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS),
-        VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS,
-    )
+    # Validators receive this per-competition on /validator/request-evaluation. The value
+    # below is only the fallback used before the first assignment arrives, or when the
+    # competition carries no policy.
     if MAX_CONCURRENT_EVALUATION_RUNS:
-        logger.warning(
-            "Ignoring MAX_CONCURRENT_EVALUATION_RUNS in validator mode; "
-            f"using configured cap of {validator_concurrency_cap} for {validator_name}"
-        )
-    if validator_concurrency_cap != VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS:
-        logger.info(f"Applying validator-specific concurrency cap for {validator_name}: {validator_concurrency_cap}")
-    MAX_CONCURRENT_EVALUATION_RUNS = validator_concurrency_cap
+        logger.warning("Ignoring MAX_CONCURRENT_EVALUATION_RUNS in validator mode; the competition configures it")
+    MAX_CONCURRENT_EVALUATION_RUNS = DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS
 else:
     if not MAX_CONCURRENT_EVALUATION_RUNS:
         logger.warning("MAX_CONCURRENT_EVALUATION_RUNS is not set in .env")

@@ -490,6 +490,18 @@ async def validator_request_evaluation(
     validator.current_evaluation = evaluation
     validator.current_agent = agent
 
+    # Validators take their run concurrency from the competition this evaluation belongs to.
+    # A competition without a policy sends nothing, leaving the validator on its own default.
+    competition_policy = await get_competition_policy(evaluation.set_id)
+    if competition_policy is None:
+        logger.warning(
+            f"Competition {evaluation.set_id} has no policy; "
+            f"validator '{validator.name}' will use its default evaluation run concurrency"
+        )
+    max_concurrent_evaluation_runs = (
+        competition_policy.max_concurrent_evaluation_runs if competition_policy is not None else None
+    )
+
     logger.info(f"Validator '{validator.name}' requested an evaluation")
     logger.info(f"  Agent ID: {agent_id}")
     logger.info(f"  Evaluation ID: {evaluation.evaluation_id}")
@@ -528,6 +540,7 @@ async def validator_request_evaluation(
         evaluation_runs=response_runs,
         artifact_upload_urls=artifact_upload_urls,
         openrouter_config=openrouter_config,
+        max_concurrent_evaluation_runs=max_concurrent_evaluation_runs,
     )
 
 

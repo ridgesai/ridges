@@ -18,6 +18,7 @@ from api.src.utils import openrouter_validation as openrouter_validation_module
 from api.src.utils.openrouter_validation import OPENROUTER_API_BASE_URL, ValidatedOpenRouterKeys
 from db.models import InternalFlagName
 from models.agent import Agent, AgentStatus
+from models.competition import CompetitionPolicy
 from models.evaluation import Evaluation
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetGroup
@@ -503,6 +504,10 @@ async def test_check_agent_uses_shared_openrouter_validation(monkeypatch) -> Non
     assert validation_calls == [("sk-or-v1-runtime", "sk-or-v1-management")]
 
 
+async def _async_none(*_args, **_kwargs):
+    return None
+
+
 def _patch_validator_dependencies(
     monkeypatch,
     *,
@@ -512,6 +517,7 @@ def _patch_validator_dependencies(
     created_evaluations: list | None = None,
     updated_runs: list[EvaluationRun] | None = None,
     handled_evaluations: list | None = None,
+    competition_policy=None,
 ):
     evaluation = _make_evaluation(agent_id, validator_hotkey)
     evaluation_runs = [
@@ -557,7 +563,11 @@ def _patch_validator_dependencies(
             InternalFlagName.BLACKLISTED_VALIDATORS: [],
         }
 
+    async def fake_get_competition_policy(_set_id):
+        return competition_policy
+
     monkeypatch.setattr(validator_endpoint, "get_internal_flags_parsed", fake_get_internal_flags_parsed)
+    monkeypatch.setattr(validator_endpoint, "get_competition_policy", fake_get_competition_policy)
     monkeypatch.setattr(validator_endpoint, "record_validator_heartbeat", lambda _validator: None)
     monkeypatch.setattr(
         validator_endpoint,
@@ -750,6 +760,7 @@ async def test_validator_request_evaluation_falls_through_to_next_competition(
         return "https://example.com/upload"
 
     monkeypatch.setattr(validator_endpoint, "get_internal_flags_parsed", fake_flags)
+    monkeypatch.setattr(validator_endpoint, "get_competition_policy", _async_none)
     monkeypatch.setattr(validator_endpoint, "record_validator_heartbeat", lambda _validator: None)
     monkeypatch.setattr(validator_endpoint, "get_evaluation_candidates_for_validator_hotkey", fake_get_candidates)
     monkeypatch.setattr(validator_endpoint, "get_agent_by_id", fake_get_agent)
@@ -775,3 +786,76 @@ async def test_validator_request_evaluation_falls_through_to_next_competition(
     assert validator.current_agent is not None
     assert validator.current_agent.agent_id == second_agent_id
     assert issued == [(batch.candidates[1], 12)]
+
+
+def _competition_policy(*, max_concurrent_evaluation_runs: int) -> CompetitionPolicy:
+    return CompetitionPolicy(
+        scoring_mode="consensus",
+        screener_1_threshold=0.4,
+        screener_2_threshold=0.4,
+        prune_threshold=0.4,
+        required_validator_count=3,
+        max_concurrent_evaluation_runs=max_concurrent_evaluation_runs,
+        pre_screening_enabled=False,
+        auto_approval_enabled=False,
+        hardcoding_policy_version="hardcoding-v1",
+        incentive_enabled=False,
+        incentive_performance_threshold=0.03,
+        incentive_cost_threshold=0.06,
+        incentive_reward_half_life_hours=336.0,
+        incentive_time_multiplier_scale_hours=12.0,
+    )
+
+
+@pytest.mark.anyio
+async def test_validator_request_evaluation_sends_competition_concurrency(monkeypatch) -> None:
+    validator_hotkey = "screener-1-test"
+    _patch_validator_dependencies(
+        monkeypatch,
+        agent_id=uuid4(),
+        validator_hotkey=validator_hotkey,
+        openrouter_secrets=None,
+        competition_policy=_competition_policy(max_concurrent_evaluation_runs=4),
+    )
+    validator = validator_endpoint.Validator(
+        session_id=uuid4(),
+        name="validator",
+        hotkey=validator_hotkey,
+        time_connected=datetime.now(timezone.utc),
+        ip_address="127.0.0.1",
+    )
+
+    response = await validator_endpoint.validator_request_evaluation(
+        ValidatorRequestEvaluationRequest(),
+        validator=validator,
+    )
+
+    assert response is not None
+    assert response.max_concurrent_evaluation_runs == 4
+
+
+@pytest.mark.anyio
+async def test_validator_request_evaluation_omits_concurrency_without_policy(monkeypatch) -> None:
+    validator_hotkey = "screener-1-test"
+    _patch_validator_dependencies(
+        monkeypatch,
+        agent_id=uuid4(),
+        validator_hotkey=validator_hotkey,
+        openrouter_secrets=None,
+        competition_policy=None,
+    )
+    validator = validator_endpoint.Validator(
+        session_id=uuid4(),
+        name="validator",
+        hotkey=validator_hotkey,
+        time_connected=datetime.now(timezone.utc),
+        ip_address="127.0.0.1",
+    )
+
+    response = await validator_endpoint.validator_request_evaluation(
+        ValidatorRequestEvaluationRequest(),
+        validator=validator,
+    )
+
+    assert response is not None
+    assert response.max_concurrent_evaluation_runs is None

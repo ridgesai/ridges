@@ -24,6 +24,7 @@ VALID_POLICY = {
     "screener_2_threshold": 0.5,
     "prune_threshold": 0.9,
     "required_validator_count": 3,
+    "max_concurrent_evaluation_runs": 8,
     "pre_screening_enabled": True,
     "auto_approval_enabled": False,
     "hardcoding_policy_version": "hardcoding-v1",

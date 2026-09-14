@@ -43,6 +43,7 @@ async def _seed(conn, *, paused: bool = False):
             is_paused = $1,
             screener_1_threshold = 0.4, screener_2_threshold = 0.4,
             prune_threshold = 0.4, required_validator_count = 1,
+            max_concurrent_evaluation_runs = 8,
             pre_screening_enabled = true, auto_approval_enabled = false,
             hardcoding_policy_version = 'hardcoding-v1', incentive_enabled = false,
             incentive_performance_threshold = 0.03, incentive_cost_threshold = 0.06,
