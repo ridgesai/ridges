@@ -412,22 +412,3 @@ async def check_if_evaluation_run_logs_exist(
         evaluation_run_id,
         type.value,
     )
-
-
-@db_operation
-async def get_evaluation_run_logs_by_id(
-    conn: DatabaseConnection, evaluation_run_id: UUID, type: EvaluationRunLogType
-) -> Optional[str]:
-    logs = await conn.fetchval(
-        """
-        SELECT logs FROM evaluation_run_logs
-        WHERE type = $1
-        and evaluation_run_id = $2
-        ORDER BY attempt_number DESC
-        LIMIT 1
-        """,
-        type,
-        evaluation_run_id,
-    )
-
-    return logs
