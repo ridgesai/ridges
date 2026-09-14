@@ -23,6 +23,7 @@ def _policy() -> CompetitionPolicy:
         screener_2_threshold=0.42,
         prune_threshold=0.53,
         required_validator_count=2,
+        max_concurrent_evaluation_runs=8,
         pre_screening_enabled=True,
         auto_approval_enabled=False,
         hardcoding_policy_version="hardcoding-v1",
@@ -69,6 +70,7 @@ async def _insert_competition(
             screener_2_threshold,
             prune_threshold,
             required_validator_count,
+            max_concurrent_evaluation_runs,
             pre_screening_enabled,
             auto_approval_enabled,
             hardcoding_policy_version,
@@ -79,7 +81,7 @@ async def _insert_competition(
             incentive_time_multiplier_scale_hours
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-            $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+            $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
         )
         """,
         set_id,

@@ -94,15 +94,16 @@ async def _insert_competition(conn, *, set_id: int, required_validator_count: in
         """
         INSERT INTO competitions (
             set_id, start_date, scoring_mode, screener_1_threshold, screener_2_threshold,
-            prune_threshold, required_validator_count, pre_screening_enabled,
+            prune_threshold, required_validator_count, max_concurrent_evaluation_runs, pre_screening_enabled,
             auto_approval_enabled, hardcoding_policy_version, incentive_enabled,
             incentive_performance_threshold, incentive_cost_threshold,
             incentive_reward_half_life_hours, incentive_time_multiplier_scale_hours
-        ) VALUES ($1, NOW(), 'consensus', 0.4, 0.4, 0.4, $2, true, true,
+        ) VALUES ($1, NOW(), 'consensus', 0.4, 0.4, 0.4, $2, 8, true, true,
                   'hardcoding-v1', false, 0.03, 0.06, 336, 12)
         ON CONFLICT (set_id) DO UPDATE
         SET start_date = EXCLUDED.start_date,
             required_validator_count = EXCLUDED.required_validator_count,
+            max_concurrent_evaluation_runs = EXCLUDED.max_concurrent_evaluation_runs,
             scoring_mode = EXCLUDED.scoring_mode,
             screener_1_threshold = EXCLUDED.screener_1_threshold,
             screener_2_threshold = EXCLUDED.screener_2_threshold,
@@ -351,6 +352,7 @@ async def test_queue_views_include_only_processable_competitions():
                 screener_2_threshold = NULL,
                 prune_threshold = NULL,
                 required_validator_count = NULL,
+                max_concurrent_evaluation_runs = NULL,
                 pre_screening_enabled = NULL,
                 auto_approval_enabled = NULL,
                 hardcoding_policy_version = NULL,

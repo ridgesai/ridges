@@ -28,6 +28,7 @@ def _policy(*, pre_screening_enabled: bool = False) -> CompetitionPolicy:
         screener_2_threshold=0.4,
         prune_threshold=0.4,
         required_validator_count=2,
+        max_concurrent_evaluation_runs=8,
         pre_screening_enabled=pre_screening_enabled,
         auto_approval_enabled=False,
         hardcoding_policy_version="hardcoding-v1",
@@ -47,13 +48,14 @@ async def _insert_competition(set_id: int, *, pre_screening_enabled: bool = Fals
             INSERT INTO competitions (
                 set_id, name, start_date, scoring_mode, screener_1_threshold,
                 screener_2_threshold, prune_threshold, required_validator_count,
+                max_concurrent_evaluation_runs,
                 pre_screening_enabled, auto_approval_enabled,
                 hardcoding_policy_version, incentive_enabled,
                 incentive_performance_threshold, incentive_cost_threshold,
                 incentive_reward_half_life_hours, incentive_time_multiplier_scale_hours
             ) VALUES (
                 $1, $2, clock_timestamp() - INTERVAL '1 day', $3, $4, $5, $6,
-                $7, $8, $9, $10, $11, $12, $13, $14, $15
+                $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
             )
             """,
             set_id,
@@ -63,6 +65,7 @@ async def _insert_competition(set_id: int, *, pre_screening_enabled: bool = Fals
             values["screener_2_threshold"],
             values["prune_threshold"],
             values["required_validator_count"],
+            values["max_concurrent_evaluation_runs"],
             values["pre_screening_enabled"],
             values["auto_approval_enabled"],
             values["hardcoding_policy_version"],

@@ -7,6 +7,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
+import asyncpg
 import pytest
 
 import utils.database as _db
@@ -87,6 +88,7 @@ def _policy(**overrides) -> CompetitionPolicy:
         "screener_2_threshold": 0.4,
         "prune_threshold": 0.4,
         "required_validator_count": 2,
+        "max_concurrent_evaluation_runs": 8,
         "pre_screening_enabled": True,
         "auto_approval_enabled": True,
         "hardcoding_policy_version": "hardcoding-v1",
@@ -139,14 +141,15 @@ async def _seed_competition(
             screener_2_threshold = $10,
             prune_threshold = $11,
             required_validator_count = $12,
-            pre_screening_enabled = $13,
-            auto_approval_enabled = $14,
-            hardcoding_policy_version = $15,
-            incentive_enabled = $16,
-            incentive_performance_threshold = $17,
-            incentive_cost_threshold = $18,
-            incentive_reward_half_life_hours = $19,
-            incentive_time_multiplier_scale_hours = $20
+            max_concurrent_evaluation_runs = $13,
+            pre_screening_enabled = $14,
+            auto_approval_enabled = $15,
+            hardcoding_policy_version = $16,
+            incentive_enabled = $17,
+            incentive_performance_threshold = $18,
+            incentive_cost_threshold = $19,
+            incentive_reward_half_life_hours = $20,
+            incentive_time_multiplier_scale_hours = $21
         WHERE set_id = $1
         """,
         set_id,
@@ -1122,3 +1125,32 @@ async def test_concurrent_allocation_updates_serialize_without_partial_vectors()
     assert stored_vector in possible_vectors
     assert len(events) == 2
     assert all(len(json.loads(event["after_state"])["allocations"]) == 2 for event in events)
+
+
+async def test_policy_completeness_constraint_covers_max_concurrent_evaluation_runs() -> None:
+    """A policy is all-or-nothing: the new column cannot be left behind or stand alone."""
+    async with _db.pool.acquire() as conn:
+        await conn.execute("INSERT INTO competitions (set_id) VALUES (4242)")
+        policy_values = _policy().model_dump()
+        assignments = ", ".join(
+            f"{column} = ${index}" for index, column in enumerate(CompetitionPolicy.model_fields, start=2)
+        )
+
+        # A complete 14-column policy is accepted.
+        await conn.execute(
+            f"UPDATE competitions SET {assignments} WHERE set_id = $1",
+            4242,
+            *(policy_values[column] for column in CompetitionPolicy.model_fields),
+        )
+        stored = await conn.fetchval("SELECT max_concurrent_evaluation_runs FROM competitions WHERE set_id = 4242")
+        assert stored == policy_values["max_concurrent_evaluation_runs"]
+
+        # Clearing only the new column leaves 13 of 14 and must be rejected.
+        with pytest.raises(asyncpg.exceptions.CheckViolationError):
+            await conn.execute("UPDATE competitions SET max_concurrent_evaluation_runs = NULL WHERE set_id = 4242")
+
+        # It must also be positive.
+        with pytest.raises(asyncpg.exceptions.CheckViolationError):
+            await conn.execute("UPDATE competitions SET max_concurrent_evaluation_runs = 0 WHERE set_id = 4242")
+
+        await conn.execute("DELETE FROM competitions WHERE set_id = 4242")
