@@ -15,7 +15,7 @@ from models.agent import (
     PublicAgent,
 )
 from models.competition import CompetitionState
-from models.evaluation import Evaluation, EvaluationWithRuns
+from models.evaluation import Evaluation, PublicEvaluationWithRuns
 from models.queue import QueueStage
 from queries.agent import (
     get_agent_by_id,
@@ -36,7 +36,7 @@ from queries.competition import (
 from queries.evaluation import get_approved_leader_ranking_for_set, get_evaluations_for_agent_id
 from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
 from utils.incentives import calculate_time_multiplier
-from utils.problem_alias import add_test_aliases, make_problem_alias
+from utils.public_view import to_public_run
 from utils.s3 import download_text_file_from_s3
 from utils.ttl import ttl_cache
 
@@ -184,31 +184,16 @@ async def agents_by_coldkey(miner_coldkey: str) -> dict[str, List[PublicAgent]]:
 # TODO ADAM: optimize
 # /retrieval/evaluations-for-agent?agent_id=
 @router.get("/evaluations-for-agent")
-async def evaluations_for_agent(agent_id: UUID) -> List[EvaluationWithRuns]:
+async def evaluations_for_agent(agent_id: UUID) -> List[PublicEvaluationWithRuns]:
     evaluations: List[Evaluation] = await get_evaluations_for_agent_id(agent_id=agent_id)
 
     runs_per_eval = await asyncio.gather(
         *[get_all_evaluation_runs_in_evaluation_id(evaluation_id=e.evaluation_id) for e in evaluations]
     )
 
-    enriched_runs = [
-        [
-            run.model_copy(
-                update={
-                    "problem_alias": make_problem_alias(run.problem_name, run.benchmark_family),
-                    "test_results": add_test_aliases(
-                        run.test_results,
-                        problem_name=run.problem_name,
-                        benchmark_family=run.benchmark_family,
-                    ),
-                }
-            )
-            for run in runs
-        ]
-        for runs in runs_per_eval
-    ]
+    public_runs = [[to_public_run(run) for run in runs] for runs in runs_per_eval]
 
-    return [EvaluationWithRuns(**e.model_dump(), runs=runs) for e, runs in zip(evaluations, enriched_runs)]
+    return [PublicEvaluationWithRuns(**e.model_dump(), runs=runs) for e, runs in zip(evaluations, public_runs)]
 
 
 async def _code_hiding_score_cutoff(set_id: int) -> Optional[float]:

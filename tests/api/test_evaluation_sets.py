@@ -35,12 +35,6 @@ async def remove_caching(monkeypatch):
     monkeypatch.setattr(
         evaluation_sets_endpoint, "_cached_build_past_overview", evaluation_sets_endpoint._build_overview
     )
-    monkeypatch.setattr(
-        evaluation_sets_endpoint, "_cached_build_live_problems", evaluation_sets_endpoint._build_problems
-    )
-    monkeypatch.setattr(
-        evaluation_sets_endpoint, "_cached_build_past_problems", evaluation_sets_endpoint._build_problems
-    )
     yield
     clear_all_ttl_caches()
 
@@ -1622,29 +1616,6 @@ async def test_overview_cache_classification_uses_fresh_competition_lifecycle(mo
         await conn.execute("UPDATE competitions SET end_date = NOW() WHERE set_id = 1")
 
     assert await evaluation_sets_endpoint.evaluation_set_overview(set_id=1) is ended_result
-
-
-@pytest.mark.anyio
-async def test_problem_routes_use_explicit_competition_without_draft_fallback():
-    async with _db.pool.acquire() as conn:
-        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
-        await conn.execute(
-            """
-            INSERT INTO evaluation_sets (set_id, set_group, problem_name, created_at)
-            VALUES (2, 'validator', 'private-draft-problem', $1)
-            """,
-            SET_2_CREATED,
-        )
-
-    explicit = await evaluation_sets_endpoint.evaluation_set_problems(set_id=1)
-
-    assert [problem.problem_name for problem in explicit] == ["problem-a"]
-    with pytest.raises(HTTPException) as draft:
-        await evaluation_sets_endpoint.resolve_explicit_set_id(2)
-    assert draft.value.status_code == 404
-    with pytest.raises(HTTPException) as fallback:
-        await evaluation_sets_endpoint.resolve_explicit_set_id(-1)
-    assert fallback.value.status_code == 404
 
 
 @pytest.mark.anyio

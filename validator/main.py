@@ -38,7 +38,7 @@ from execution.types import TrialSnapshot
 from models.evaluation_run import EvaluationRunErrorCode, EvaluationRunStatus
 from models.openrouter import OpenRouterRuntimeConfig
 from models.problem import ProblemTestResultStatus
-from utils.docker import cleanup_harbor_docker_resources, prune_docker_disk_resources
+from utils.docker import cleanup_harbor_docker_resources, prune_docker_disk_resources, sweep_leaked_harbor_images
 from utils.git import COMMIT_HASH, reset_local_repo
 from utils.logger import setup_logging
 from utils.system_metrics import get_system_metrics
@@ -97,6 +97,7 @@ async def _run_startup_tasks() -> None:
         if config.CLEANUP_ENABLED and config.CLEANUP_DOCKER_ENABLED:
             dry_run = config.CLEANUP_DOCKER_DRY_RUN
             containers = {"count": 0, "names": [], "errors": 0}
+            images = {"count": 0, "names": [], "errors": 0}
             prune = {"image_bytes": 0, "build_bytes": 0, "errors": 0}
             disk_percent = None
             errors = 0
@@ -121,6 +122,19 @@ async def _run_startup_tasks() -> None:
                 errors += 1
                 logger.warning(f"Janitor startup container cleanup failed (best-effort): {type(e).__name__}: {e}")
 
+            logger.info("Janitor startup: sweeping image tags...")
+            try:
+                images = await asyncio.to_thread(
+                    sweep_leaked_harbor_images,
+                    tag_grace_sec=config.CLEANUP_IMAGE_TAG_GRACE_HOURS * 3600,
+                    dry_run=dry_run,
+                    disk_used_percent=disk_percent,
+                    pulled_image_pressure_percent=config.CLEANUP_PULLED_IMAGE_DISK_PERCENT,
+                )
+            except Exception as e:
+                errors += 1
+                logger.warning(f"Janitor startup image cleanup failed (best-effort): {type(e).__name__}: {e}")
+
             include_build_cache = disk_percent is not None and disk_percent >= config.CLEANUP_DISK_PRESSURE_PERCENT
             logger.info(
                 f"Janitor startup: pruning dangling images (until=1h, "
@@ -137,11 +151,13 @@ async def _run_startup_tasks() -> None:
                 errors += 1
                 logger.warning(f"Janitor startup prune failed (best-effort): {type(e).__name__}: {e}")
 
-            errors += containers.get("errors", 0) + prune.get("errors", 0)
+            errors += sum(summary.get("errors", 0) for summary in (containers, images, prune))
             disk_display = f"{disk_percent:.0f}" if disk_percent is not None else "unknown"
-            names_display = ",".join((containers.get("names") or [])[:20]) or "-"
+            candidate_names = (containers.get("names") or []) + (images.get("names") or [])
+            names_display = ",".join(candidate_names[:20]) or "-"
             logger.info(
                 f"Janitor startup: containers={containers.get('count', 0)} "
+                f"images={images.get('count', 0)} "
                 f"prune_bytes={prune.get('image_bytes', 0)} "
                 f"build_bytes={prune.get('build_bytes', 0)} disk_percent={disk_display} "
                 f"errors={errors} dry_run={str(dry_run).lower()} names={names_display}"

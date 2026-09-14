@@ -28,6 +28,12 @@ class ProblemTestResult(BaseModel):
     status: ProblemTestResultStatus
 
 
+class PublicProblemTestResult(BaseModel):
+    test_alias: str
+    category: ProblemTestCategory
+    status: ProblemTestResultStatus
+
+
 class ProblemDifficulty(str, Enum):
     EASY = "easy"
     MEDIUM = "medium"

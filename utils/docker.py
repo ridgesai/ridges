@@ -13,6 +13,12 @@ SWEBENCH_DOCKER_PREFIX = "sweb"
 HARBOR_CONTAINER_NAME_PATTERN = re.compile(r".+__.+-(main|sandbox-proxy)-1$")
 HARBOR_NETWORK_NAME_PATTERN = re.compile(r".+__.+_sandbox_(internal|egress)$")
 HARBOR_IMAGE_REPO_PATTERN = re.compile(r".+__.+-(main|env-main|sandbox-proxy)$")
+HARBOR_COMPOSE_PROJECT_PATTERN = re.compile(r"[a-z0-9][a-z0-9_-]*__[a-z0-9]{7}(?:__env|__verifier__[a-z0-9_-]+)")
+HARBOR_COMPOSE_IMAGE_REPO_PATTERN = re.compile(rf"{HARBOR_COMPOSE_PROJECT_PATTERN.pattern}-[a-z0-9][a-z0-9_.-]*")
+HARBOR_CONTENT_IMAGE_REPO_PATTERN = re.compile(r"hb__[0-9a-f]{32}")
+COMPOSE_PROJECT_LABEL = "com.docker.compose.project"
+COMPOSE_SERVICE_LABEL = "com.docker.compose.service"
+COMPOSE_NETWORK_LABEL = "com.docker.compose.network"
 DOCKER_AUTOGEN_NAME_PATTERN = re.compile(r"^[a-z]+_[a-z]+[0-9]*$")
 FULL_IMAGE_ID_PATTERN = re.compile(r"^(sha256:)?[0-9a-f]{64}$")
 SWEAP_IMAGE_PREFIX = "jefzda/sweap-images"
@@ -50,7 +56,15 @@ def image_ref_is_harbor_built(ref: str | None) -> bool:
     if not ref:
         return False
     repo = _repo_from_image_ref(ref)
-    return bool(repo and "/" not in repo and HARBOR_IMAGE_REPO_PATTERN.fullmatch(repo))
+    return bool(
+        repo
+        and "/" not in repo
+        and (
+            HARBOR_IMAGE_REPO_PATTERN.fullmatch(repo)
+            or HARBOR_COMPOSE_IMAGE_REPO_PATTERN.fullmatch(repo)
+            or HARBOR_CONTENT_IMAGE_REPO_PATTERN.fullmatch(repo)
+        )
+    )
 
 
 def image_ref_is_pulled_eval(ref: str | None) -> bool:
@@ -104,11 +118,26 @@ def _container_runs_untagged_intermediate(container, client) -> bool:
 def is_janitor_container(container, client) -> bool:
     """Classify only containers with strong Harbor/eval provenance.
 
-    Harbor Compose names are explicit ownership. Docker-generated names require
-    both a non-restarting policy and either an allowlisted eval image or the
-    strict classic-builder intermediate signature.
+    Current Compose services require a Harbor project signature, matching
+    project/service labels and the generated container name. This covers DB
+    sidecars without relying on their image or a fixed list of service names.
+    Legacy main/proxy names remain supported. Docker-generated names require a
+    non-restarting policy plus eval-image or classic-builder provenance.
     """
-    if HARBOR_CONTAINER_NAME_PATTERN.fullmatch(container.name):
+    labels = (container.attrs.get("Config") or {}).get("Labels") or {}
+    project = labels.get(COMPOSE_PROJECT_LABEL) or ""
+    service = labels.get(COMPOSE_SERVICE_LABEL) or ""
+    if project or service:
+        if (
+            (
+                HARBOR_COMPOSE_PROJECT_PATTERN.fullmatch(project)
+                or HARBOR_CONTAINER_NAME_PATTERN.fullmatch(container.name)
+            )
+            and service
+            and re.fullmatch(rf"{re.escape(project)}-{re.escape(service)}-[1-9][0-9]*", container.name)
+        ):
+            return True
+    elif HARBOR_CONTAINER_NAME_PATTERN.fullmatch(container.name):
         return True
     if not _is_docker_autogen_name(container.name):
         return False
@@ -117,6 +146,28 @@ def is_janitor_container(container, client) -> bool:
     if any(image_ref_is_janitor_target(ref) for ref in _container_image_refs(container)):
         return True
     return _container_runs_untagged_intermediate(container, client)
+
+
+def _is_janitor_network(network) -> bool:
+    labels = network.attrs.get("Labels") or {}
+    project = labels.get(COMPOSE_PROJECT_LABEL) or ""
+    compose_network = labels.get(COMPOSE_NETWORK_LABEL) or ""
+    if project:
+        return bool(
+            (
+                HARBOR_COMPOSE_PROJECT_PATTERN.fullmatch(project)
+                or (
+                    HARBOR_NETWORK_NAME_PATTERN.fullmatch(network.name)
+                    and compose_network in ("sandbox_internal", "sandbox_egress")
+                )
+            )
+            and compose_network
+            and network.name == f"{project}_{compose_network}"
+        )
+    return bool(
+        HARBOR_NETWORK_NAME_PATTERN.fullmatch(network.name)
+        and compose_network in ("sandbox_internal", "sandbox_egress")
+    )
 
 
 def get_prune_timeout_seconds() -> int:
@@ -261,7 +312,7 @@ def cleanup_harbor_docker_resources(
             if dry_run:
                 logger.info(f"Janitor startup (dry-run): would remove container {container.name}")
             else:
-                container.remove(force=True)
+                container.remove(force=True, v=True)
                 logger.info(f"Janitor startup: removed container {container.name}")
             removed += 1
             if len(names) < 20:
@@ -284,15 +335,11 @@ def cleanup_harbor_docker_resources(
             if network.name in ("bridge", "host", "none"):
                 continue
 
-            if not HARBOR_NETWORK_NAME_PATTERN.fullmatch(network.name):
+            if not _is_janitor_network(network):
                 continue
 
             network.reload()
-            if network.attrs.get("Containers"):
-                continue
-
-            compose_network = (network.attrs.get("Labels") or {}).get("com.docker.compose.network")
-            if compose_network not in ("sandbox_internal", "sandbox_egress"):
+            if not _is_janitor_network(network) or network.attrs.get("Containers"):
                 continue
 
             if dry_run:
@@ -466,7 +513,7 @@ def sweep_stale_harbor_containers(
                     f"(status={container.status}, created={container.attrs.get('Created')})"
                 )
             else:
-                container.remove(force=container.status == "running")
+                container.remove(force=container.status == "running", v=True)
                 logger.info(f"Janitor: removed leaked container {container.name} (status={container.status})")
             removed += 1
             if len(removed_names) < 20:
@@ -488,16 +535,16 @@ def sweep_stale_harbor_containers(
         try:
             if network.name in ("bridge", "host", "none"):
                 continue
-            if not HARBOR_NETWORK_NAME_PATTERN.fullmatch(network.name):
+            if not _is_janitor_network(network):
                 continue
             age = _age_seconds(_parse_docker_time(network.attrs.get("Created")), now)
             if age is None or age <= stopped_grace_sec:
                 continue
             network.reload()
-            if network.attrs.get("Containers"):
+            if not _is_janitor_network(network) or network.attrs.get("Containers"):
                 continue
-            compose_network = (network.attrs.get("Labels") or {}).get("com.docker.compose.network")
-            if compose_network not in ("sandbox_internal", "sandbox_egress"):
+            age = _age_seconds(_parse_docker_time(network.attrs.get("Created")), now)
+            if age is None or age <= stopped_grace_sec:
                 continue
             if dry_run:
                 logger.info(f"Janitor (dry-run): would remove network {network.name}")
@@ -579,6 +626,12 @@ def sweep_leaked_harbor_images(
                     current_image = docker_client.images.get(tag)
                     if current_image.id != image_id:
                         continue
+                    if tag in harbor_tags:
+                        current_age = _age_seconds(
+                            _parse_docker_time((current_image.attrs.get("Metadata") or {}).get("LastTagTime")), now
+                        )
+                        if current_age is None or current_age <= tag_grace_sec:
+                            continue
 
                     if dry_run:
                         logger.info(f"Janitor (dry-run): would untag leaked image {tag} ({size_mb:.0f} MB)")
