@@ -447,3 +447,84 @@ async def test_projector_rejects_stale_candidate_without_overwriting_judge_verdi
     assert state["system_summary"] == "Candidate no longer meets the relative improvement threshold"
     assert job["aggregate_verdict"] == "approved"
     assert job["projected_at"] is not None
+
+
+@pytest.mark.anyio
+async def test_projector_stores_zero_reward_score_for_owner_baseline_agent(monkeypatch) -> None:
+    """An owner-uploaded baseline is approved normally but earns no emissions."""
+
+    monkeypatch.setattr(config, "OWNER_HOTKEY", "owner-hk")
+    now = datetime.now(timezone.utc)
+    async with _db.pool.acquire() as conn:
+        leader_id = await _insert_agent_score(
+            conn,
+            hotkey="leader-hk",
+            coldkey="leader-ck",
+            final_score=0.5,
+            approved=True,
+            approved_at=now - timedelta(hours=72),
+            initial_reward_score=0.25,
+        )
+        candidate_id = await _insert_agent_score(
+            conn,
+            hotkey="owner-hk",
+            coldkey="owner-ck",
+            final_score=0.52,
+            approved=False,
+        )
+        await _insert_completed_approval_job(conn, candidate_id)
+
+    assert await project_next_approval_job_state() is True
+
+    async with _db.pool.acquire() as conn:
+        approved = await conn.fetchrow("SELECT * FROM approved_agents WHERE agent_id = $1", candidate_id)
+        state = await conn.fetchrow("SELECT * FROM agent_approval_states WHERE agent_id = $1", candidate_id)
+
+    # Approval itself is unchanged: same baseline, same deltas, same improvement snapshot.
+    assert approved is not None
+    assert approved["baseline_agent_id"] == leader_id
+    assert approved["performance_delta"] == pytest.approx(0.04)
+    expected_units = math.log1p(0.04) / math.log1p(config.INCENTIVE_PERFORMANCE_THRESHOLD)
+    assert approved["relative_improvement_units"] == pytest.approx(expected_units)
+    assert approved["time_multiplier"] == pytest.approx(MULTIPLIER_AT_72H, rel=1e-3)
+    assert state["published_verdict"] == "approved"
+
+    # Only the reward score is zeroed, so the owner receives no emissions.
+    assert approved["initial_reward_score"] == 0.0
+
+
+@pytest.mark.anyio
+async def test_projector_owner_baseline_still_sets_the_bar_for_later_candidates(monkeypatch) -> None:
+    """A zero-reward owner baseline remains the leader that the next candidate must beat."""
+
+    monkeypatch.setattr(config, "OWNER_HOTKEY", "owner-hk")
+    now = datetime.now(timezone.utc)
+    async with _db.pool.acquire() as conn:
+        owner_id = await _insert_agent_score(
+            conn,
+            hotkey="owner-hk",
+            coldkey="owner-ck",
+            final_score=0.5,
+            approved=True,
+            approved_at=now - timedelta(hours=72),
+            initial_reward_score=0.0,
+        )
+        candidate_id = await _insert_agent_score(
+            conn,
+            hotkey="candidate-hk",
+            coldkey="candidate-ck",
+            final_score=0.52,
+            approved=False,
+        )
+        await _insert_completed_approval_job(conn, candidate_id)
+
+    assert await project_next_approval_job_state() is True
+
+    async with _db.pool.acquire() as conn:
+        approved = await conn.fetchrow("SELECT * FROM approved_agents WHERE agent_id = $1", candidate_id)
+
+    assert approved is not None
+    assert approved["baseline_agent_id"] == owner_id
+    assert approved["performance_delta"] == pytest.approx(0.04)
+    expected_units = math.log1p(0.04) / math.log1p(config.INCENTIVE_PERFORMANCE_THRESHOLD)
+    assert approved["initial_reward_score"] == pytest.approx(expected_units * MULTIPLIER_AT_72H, rel=1e-3)
