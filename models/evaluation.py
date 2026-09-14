@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from models.evaluation_run import EvaluationRun
+from models.evaluation_run import PublicEvaluationRun
 from models.evaluation_set import EvaluationSetGroup
 
 
@@ -25,8 +25,8 @@ class Evaluation(BaseModel):
     finished_at: Optional[datetime] = None
 
 
-class EvaluationWithRuns(Evaluation):
-    runs: list[EvaluationRun]
+class PublicEvaluationWithRuns(Evaluation):
+    runs: list[PublicEvaluationRun]
 
 
 class HydratedEvaluation(Evaluation):
