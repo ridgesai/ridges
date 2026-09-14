@@ -3,7 +3,6 @@ import hashlib
 import hmac
 import os
 
-from models.problem import ProblemTestResult
 from utils.test_alias_words import TEST_ALIAS_ADJECTIVES, TEST_ALIAS_NOUNS
 
 
@@ -63,27 +62,3 @@ def make_test_alias(
     suffix = _base32_digest(digest)[:3]
 
     return f"{adjective}-{noun}-{suffix}".upper()
-
-
-def add_test_aliases(
-    test_results: list[ProblemTestResult] | None,
-    *,
-    benchmark_family: str | None,
-    problem_name: str,
-) -> list[ProblemTestResult] | None:
-    if test_results is None:
-        return None
-
-    return [
-        test_result.model_copy(
-            update={
-                "test_alias": make_test_alias(
-                    benchmark_family=benchmark_family,
-                    problem_name=problem_name,
-                    test_name=test_result.name,
-                    test_category=test_result.category.value,
-                )
-            }
-        )
-        for test_result in test_results
-    ]
