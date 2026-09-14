@@ -164,8 +164,8 @@ async def test_evaluation_run_get_by_id_endpoint_omits_secrets(monkeypatch) -> N
 
 
 AGENT_CRASH_MESSAGE = (
-    "The agent raised an exception while being run: RuntimeError: agent_main() "
-    "returned an empty patch at /installed-agent/ridges_miner_runtime.py"
+    "The agent did not return a patch or raised an exception while being run: RuntimeError: "
+    "agent_main() returned an empty patch at /installed-agent/ridges_miner_runtime.py"
 )
 
 
@@ -182,7 +182,7 @@ def test_agent_fault_run_reports_only_the_enum_message() -> None:
 
     _assert_no_secrets(public_run.model_dump_json())
     assert AGENT_CRASH_MESSAGE not in public_run.model_dump_json()
-    assert public_run.error_message == EvaluationRunErrorCode.AGENT_EXCEPTION_RUNNING_AGENT.message
+    assert public_run.error_message == "The agent did not return a patch or raised an exception while being run"
 
 
 def test_validator_fault_run_reports_only_the_enum_message() -> None:

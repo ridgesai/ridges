@@ -26,7 +26,7 @@ class EvaluationRunErrorCode(IntEnum):
         return obj
 
     # 1xxx - Agent Errors
-    AGENT_EXCEPTION_RUNNING_AGENT = (1000, "The agent raised an exception while being run")
+    AGENT_EXCEPTION_RUNNING_AGENT = (1000, "The agent did not return a patch or raised an exception while being run")
     AGENT_EXCEPTION_RUNNING_EVAL = (1010, "The agent raised an exception while being evaluated")
     AGENT_TIMEOUT_RUNNING_AGENT = (1020, "The agent timed out while being run")
     AGENT_TIMEOUT_RUNNING_EVAL = (1030, "The agent timed out while being evaluated")
