@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import bittensor
+import dotenv
 import pytest
 from testcontainers.postgres import PostgresContainer
 
@@ -15,6 +16,10 @@ from utils.database import deinitialize_database, initialize_database
 # upload.py instantiates Subtensor at module level; replace the class before
 # any test module is collected so the WebSocket connection is never attempted.
 bittensor.Subtensor = MagicMock
+
+# Make sure the tests ignore any local .env files and only use the values
+# defined on TEST_ENV_DEFAULTS
+dotenv.load_dotenv = lambda *args, **kwargs: False
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,6 +41,7 @@ TEST_ENV_DEFAULTS = {
     "HOST": "0.0.0.0",
     "INCLUDE_SOLUTIONS": "false",
     "INCENTIVE_START_SET_ID": "999999",
+    "MAX_CONCURRENT_EVALUATION_RUNS": "15",
     "MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS": "60",
     "MODE": "screener",
     "NETUID": "1",
