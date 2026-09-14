@@ -43,3 +43,25 @@ def test_request_evaluation_interval_is_hardcoded(monkeypatch) -> None:
     config = _load_config(monkeypatch, mode="screener", ridges_max_cost_usd="9")
 
     assert config.REQUEST_EVALUATION_INTERVAL_SECONDS == 60
+
+
+def test_validator_mode_ignores_max_concurrent_evaluation_runs_env(monkeypatch) -> None:
+    """Validators take concurrency from the competition, not the environment."""
+    monkeypatch.setenv("MAX_CONCURRENT_EVALUATION_RUNS", "99")
+    config = _load_config(monkeypatch, mode="validator", ridges_max_cost_usd="0.01")
+
+    assert config.MAX_CONCURRENT_EVALUATION_RUNS == config.DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS
+
+
+def test_screener_mode_still_reads_max_concurrent_evaluation_runs_env(monkeypatch) -> None:
+    monkeypatch.setenv("MAX_CONCURRENT_EVALUATION_RUNS", "30")
+    config = _load_config(monkeypatch, mode="screener", ridges_max_cost_usd="0.01")
+
+    assert config.MAX_CONCURRENT_EVALUATION_RUNS == 30
+
+
+def test_screener_mode_falls_back_to_default_when_env_missing(monkeypatch) -> None:
+    monkeypatch.delenv("MAX_CONCURRENT_EVALUATION_RUNS", raising=False)
+    config = _load_config(monkeypatch, mode="screener", ridges_max_cost_usd="0.01")
+
+    assert config.MAX_CONCURRENT_EVALUATION_RUNS == config.SCREENER_DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS

@@ -26,11 +26,11 @@ async def clean_tables(postgres_db, monkeypatch):
             """
             INSERT INTO competitions (
                 set_id, start_date, scoring_mode, screener_1_threshold, screener_2_threshold,
-                prune_threshold, required_validator_count, pre_screening_enabled,
+                prune_threshold, required_validator_count, max_concurrent_evaluation_runs, pre_screening_enabled,
                 auto_approval_enabled, hardcoding_policy_version, incentive_enabled,
                 incentive_performance_threshold, incentive_cost_threshold,
                 incentive_reward_half_life_hours, incentive_time_multiplier_scale_hours
-            ) VALUES ($1, NOW(), 'consensus', 0.4, 0.4, 0.4, $2, true, true,
+            ) VALUES ($1, NOW(), 'consensus', 0.4, 0.4, 0.4, $2, 8, true, true,
                       'hardcoding-v1', true, $3, $4, 336, $5)
             """,
             SET_ID,

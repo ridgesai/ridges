@@ -254,6 +254,7 @@ async def test_agent_versions_validate_context_and_pin_legacy_evidence() -> None
                 screener_2_threshold = 0.4,
                 prune_threshold = 0.4,
                 required_validator_count = 1,
+                max_concurrent_evaluation_runs = 8,
                 pre_screening_enabled = FALSE,
                 auto_approval_enabled = FALSE,
                 hardcoding_policy_version = 'hardcoding-v1',

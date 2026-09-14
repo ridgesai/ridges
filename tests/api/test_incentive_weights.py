@@ -27,6 +27,7 @@ def _policy(*, incentive_enabled: bool, required_validator_count: int = 3, half_
         screener_2_threshold=0.4,
         prune_threshold=0.9,
         required_validator_count=required_validator_count,
+        max_concurrent_evaluation_runs=8,
         pre_screening_enabled=True,
         auto_approval_enabled=True,
         hardcoding_policy_version="hardcoding-v1",

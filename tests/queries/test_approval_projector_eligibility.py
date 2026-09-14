@@ -43,14 +43,14 @@ async def test_projector_skips_ineligible_legacy_jobs_without_blocking_valid_wor
             """
             INSERT INTO competitions (
                 set_id, start_date, scoring_mode, screener_1_threshold, screener_2_threshold,
-                prune_threshold, required_validator_count, pre_screening_enabled,
+                prune_threshold, required_validator_count, max_concurrent_evaluation_runs, pre_screening_enabled,
                 auto_approval_enabled, hardcoding_policy_version, incentive_enabled,
                 incentive_performance_threshold, incentive_cost_threshold,
                 incentive_reward_half_life_hours, incentive_time_multiplier_scale_hours
             ) VALUES
-                (2, NOW(), 'consensus', 0.4, 0.4, 0.4, 3, true, true,
+                (2, NOW(), 'consensus', 0.4, 0.4, 0.4, 3, 8, true, true,
                  'hardcoding-v1', false, 0.03, 0.06, 336, 12),
-                (3, NOW(), 'consensus', 0.4, 0.4, 0.4, 3, true, true,
+                (3, NOW(), 'consensus', 0.4, 0.4, 0.4, 3, 8, true, true,
                  'hardcoding-v1', false, 0.03, 0.06, 336, 12)
             """
         )

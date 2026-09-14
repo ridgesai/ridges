@@ -55,6 +55,7 @@ def _policy(**overrides) -> CompetitionPolicy:
         "screener_2_threshold": 0.42,
         "prune_threshold": 0.43,
         "required_validator_count": 3,
+        "max_concurrent_evaluation_runs": 8,
         "pre_screening_enabled": False,
         "auto_approval_enabled": False,
         "hardcoding_policy_version": "policy-stored-v1",
@@ -94,6 +95,7 @@ async def _insert_competition(
             screener_2_threshold,
             prune_threshold,
             required_validator_count,
+            max_concurrent_evaluation_runs,
             pre_screening_enabled,
             auto_approval_enabled,
             hardcoding_policy_version,
@@ -105,7 +107,7 @@ async def _insert_competition(
         )
         VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-            $11, $12, $13, $14, $15, $16, $17, $18, $19
+            $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
         )
         """,
         set_id,
@@ -119,6 +121,7 @@ async def _insert_competition(
         values["screener_2_threshold"],
         values["prune_threshold"],
         values["required_validator_count"],
+        values["max_concurrent_evaluation_runs"],
         values["pre_screening_enabled"],
         values["auto_approval_enabled"],
         values["hardcoding_policy_version"],
@@ -207,6 +210,7 @@ async def test_initializer_fills_policy_once_and_ignores_higher_draft(monkeypatc
     monkeypatch.setattr(config, "SCREENER_2_THRESHOLD", 0.52)
     monkeypatch.setattr(config, "PRUNE_THRESHOLD", 0.53)
     monkeypatch.setattr(config, "NUM_EVALS_PER_AGENT", 7)
+    monkeypatch.setattr(config, "MAX_CONCURRENT_EVALUATION_RUNS", 8)
     monkeypatch.setattr(config, "PRE_SCREENING_JUDGE_ENABLED", True)
     monkeypatch.setattr(config, "AUTO_APPROVAL_ENABLED", True)
     monkeypatch.setattr(config, "HARDCODING_POLICY_VERSION", "configured-v1")
@@ -226,6 +230,7 @@ async def test_initializer_fills_policy_once_and_ignores_higher_draft(monkeypatc
         screener_2_threshold=0.52,
         prune_threshold=0.53,
         required_validator_count=7,
+        max_concurrent_evaluation_runs=8,
         pre_screening_enabled=True,
         auto_approval_enabled=True,
         hardcoding_policy_version="configured-v1",
@@ -411,14 +416,15 @@ async def test_evaluation_issuance_uses_agent_membership_and_rejects_conflicts()
                 screener_2_threshold = $3,
                 prune_threshold = $4,
                 required_validator_count = $5,
-                pre_screening_enabled = $6,
-                auto_approval_enabled = $7,
-                hardcoding_policy_version = $8,
-                incentive_enabled = $9,
-                incentive_performance_threshold = $10,
-                incentive_cost_threshold = $11,
-                incentive_reward_half_life_hours = $12,
-                incentive_time_multiplier_scale_hours = $13
+                max_concurrent_evaluation_runs = $6,
+                pre_screening_enabled = $7,
+                auto_approval_enabled = $8,
+                hardcoding_policy_version = $9,
+                incentive_enabled = $10,
+                incentive_performance_threshold = $11,
+                incentive_cost_threshold = $12,
+                incentive_reward_half_life_hours = $13,
+                incentive_time_multiplier_scale_hours = $14
             WHERE set_id IN (10, 99)
             """,
             *(policy[column] for column in CompetitionPolicy.model_fields),
