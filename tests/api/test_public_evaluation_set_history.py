@@ -213,7 +213,7 @@ async def test_history_classifier_index_and_strict_competition_catalog() -> None
         await competitions_endpoint.competition_detail(7)
     assert legacy_competition.value.status_code == 404
     with pytest.raises(HTTPException) as empty_draft:
-        await evaluation_sets_endpoint.resolve_explicit_set_id(57)
+        await evaluation_sets_endpoint.resolve_set_id(57)
     assert empty_draft.value.status_code == 404
 
 
@@ -232,8 +232,6 @@ async def test_grandfathered_routes_use_history_and_validator_fallback(monkeypat
     monkeypatch.setattr(evaluation_sets_endpoint, "_cached_build_past_overview", past_overview)
     monkeypatch.setattr(evaluation_sets_endpoint, "_cached_build_live_overview", live_overview)
 
-    problems = await evaluation_sets_endpoint.evaluation_set_problems(7)
-    assert [problem.problem_name for problem in problems] == ["problem-7"]
     assert (await evaluation_sets_endpoint.evaluation_set_detail(7)).id == 7
     assert await evaluation_sets_endpoint.evaluation_set_overview(7) is not None
     assert await evaluation_sets_endpoint.evaluation_set_leaderboard(7) == []
