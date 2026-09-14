@@ -248,23 +248,6 @@ async def get_all_evaluation_set_problems_in_set_group_in_set_id(
 
 
 @db_operation
-async def get_all_evaluation_set_problems_for_set_id(
-    conn: DatabaseConnection, set_id: int
-) -> list[EvaluationSetProblem]:
-    results = await conn.fetch(
-        """
-        SELECT *
-        FROM evaluation_sets
-        WHERE set_id = $1
-        ORDER BY set_group, problem_name
-        """,
-        set_id,
-    )
-
-    return [_parse_evaluation_set_problem_from_row(result) for result in results]
-
-
-@db_operation
 async def create_evaluation_set_problems(
     conn: DatabaseConnection,
     set_id: int,

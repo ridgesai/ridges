@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from models.problem import ProblemTestResult
+from models.problem import ProblemTestResult, PublicProblemTestResult
 
 
 class EvaluationRunErrorCode(IntEnum):
@@ -26,7 +26,7 @@ class EvaluationRunErrorCode(IntEnum):
         return obj
 
     # 1xxx - Agent Errors
-    AGENT_EXCEPTION_RUNNING_AGENT = (1000, "The agent raised an exception while being run")
+    AGENT_EXCEPTION_RUNNING_AGENT = (1000, "The agent did not return a patch or raised an exception while being run")
     AGENT_EXCEPTION_RUNNING_EVAL = (1010, "The agent raised an exception while being evaluated")
     AGENT_TIMEOUT_RUNNING_AGENT = (1020, "The agent timed out while being run")
     AGENT_TIMEOUT_RUNNING_EVAL = (1030, "The agent timed out while being evaluated")
@@ -183,8 +183,31 @@ class EvaluationRun(BaseModel):
     finished_or_errored_at: Optional[datetime] = None
 
 
-class EvaluationRunDetail(EvaluationRun):
-    """EvaluationRun enriched with peer-comparison metrics."""
+class PublicEvaluationRun(BaseModel):
+    evaluation_run_id: UUID
+    evaluation_id: UUID
+    problem_alias: str
+    benchmark_family: str | None = None
+
+    status: EvaluationRunStatus
+
+    test_results: Optional[List[PublicProblemTestResult]] = None
+    verifier_reward: Optional[float] = None
+
+    error_code: Optional[EvaluationRunErrorCode] = None
+    error_message: Optional[str] = None
+    cost_usd: Optional[float] = None
+
+    created_at: datetime
+    started_initializing_agent_at: Optional[datetime] = None
+    started_running_agent_at: Optional[datetime] = None
+    started_initializing_eval_at: Optional[datetime] = None
+    started_running_eval_at: Optional[datetime] = None
+    finished_or_errored_at: Optional[datetime] = None
+
+
+class PublicEvaluationRunDetail(PublicEvaluationRun):
+    """PublicEvaluationRun enriched with peer-comparison metrics."""
 
     run_time_seconds: float | None = None
     problem_total_runs: int | None = None

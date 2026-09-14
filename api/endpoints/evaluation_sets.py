@@ -22,7 +22,6 @@ from models.evaluation_set import (
     EvaluationSetOverviewPerformanceImprovementPoint,
     EvaluationSetOverviewPreScreening,
     EvaluationSetOverviewScoreBucket,
-    EvaluationSetProblem,
 )
 from queries.competition import (
     PublicEvaluationSetContext,
@@ -31,7 +30,6 @@ from queries.competition import (
     resolve_compatibility_competition_set_id,
 )
 from queries.evaluation_set import (
-    get_all_evaluation_set_problems_for_set_id,
     get_all_evaluation_sets,
     get_approved_agents_for_set,
     get_evaluation_set_leaderboard_summary,
@@ -61,14 +59,6 @@ async def resolve_set_id(set_id: int) -> int:
     return resolved_set_id
 
 
-async def resolve_explicit_set_id(set_id: int) -> int:
-    """Validate a new explicit route without applying compatibility fallback."""
-    context = None if set_id == -1 else await get_public_evaluation_set_context(set_id)
-    if context is None:
-        raise HTTPException(status_code=404, detail="No evaluation sets found.")
-    return context.set_id
-
-
 async def _public_evaluation_set_or_404(set_id: int) -> PublicEvaluationSetContext:
     context = await get_public_evaluation_set_context(set_id)
     if context is None:
@@ -80,24 +70,6 @@ async def _public_evaluation_set_or_404(set_id: int) -> PublicEvaluationSetConte
 async def evaluation_sets_list() -> list[EvaluationSet]:
     """Retrieve all evaluation sets."""
     return await get_all_evaluation_sets()
-
-
-async def _build_problems(set_id: int) -> list[EvaluationSetProblem]:
-    return await get_all_evaluation_set_problems_for_set_id(set_id)
-
-
-_cached_build_live_problems = ttl_cache(ttl_seconds=CACHE_LIVE_SET_OVERVIEW_TTL_SECONDS)(_build_problems)
-_cached_build_past_problems = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECONDS)(_build_problems)
-
-
-@router.get("/{set_id}/problems")
-async def evaluation_set_problems(
-    set_id: Annotated[int, Depends(resolve_explicit_set_id)],
-) -> list[EvaluationSetProblem]:
-    context = await _public_evaluation_set_or_404(set_id)
-    if context.use_historical_cache:
-        return await _cached_build_past_problems(set_id)
-    return await _cached_build_live_problems(set_id)
 
 
 #

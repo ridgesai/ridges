@@ -13,7 +13,6 @@ from queries.evaluation_run import (
     create_evaluation_runs,
     get_all_evaluation_runs_in_evaluation_id,
     get_evaluation_run_by_id,
-    get_evaluation_run_logs_by_id,
     get_evaluation_run_metrics_by_id,
     get_evaluation_run_status_and_attempt_by_id,
     update_evaluation_run_by_id,
@@ -210,12 +209,16 @@ async def test_logs_are_attempt_scoped(postgres_db):
     assert await check_if_evaluation_run_logs_exist(run.evaluation_run_id, EvaluationRunLogType.agent) is False
     await create_evaluation_run_log(run.evaluation_run_id, EvaluationRunLogType.agent, "attempt 2 logs")
 
-    # Reads return the latest attempt's logs; attempt 1 logs remain in the table.
-    assert await get_evaluation_run_logs_by_id(run.evaluation_run_id, EvaluationRunLogType.agent) == "attempt 2 logs"
+    # The new insert lands on attempt 2; attempt 1 logs remain in the table.
     async with _db.pool.acquire() as conn:
+        latest_logs = await conn.fetchval(
+            "SELECT logs FROM evaluation_run_logs WHERE evaluation_run_id = $1 ORDER BY attempt_number DESC LIMIT 1",
+            run.evaluation_run_id,
+        )
         count = await conn.fetchval(
             "SELECT COUNT(*) FROM evaluation_run_logs WHERE evaluation_run_id = $1", run.evaluation_run_id
         )
+    assert latest_logs == "attempt 2 logs"
     assert count == 2
 
 

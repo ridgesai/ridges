@@ -67,3 +67,9 @@ async def test_evaluation_run_get_by_id_adds_test_aliases(monkeypatch) -> None:
     assert response.test_results[0].test_alias == "VALID-MODULE-A56"
     assert evaluation_run.test_results is not None
     assert evaluation_run.test_results[0].test_alias is None
+
+    serialized = response.model_dump()
+    for secret_field in ("problem_name", "patch", "execution_spec"):
+        assert secret_field not in serialized
+    assert serialized["error_message"] is None
+    assert "name" not in serialized["test_results"][0]
