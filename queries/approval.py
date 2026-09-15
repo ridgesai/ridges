@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 import asyncpg
 
+import api.config as config
 from models.agent import AgentStatus
 from models.approval import (
     ApprovalEvaluationContext,
@@ -301,7 +302,7 @@ async def _insert_incentive_approval(
 
     agent = await conn.fetchrow(
         """
-        SELECT miner_coldkey, status
+        SELECT miner_hotkey, miner_coldkey, status
         FROM agents
         WHERE agent_id = $1
         FOR UPDATE
@@ -353,10 +354,15 @@ async def _insert_incentive_approval(
         scale_hours=policy.incentive_time_multiplier_scale_hours,
     )
 
-    initial_reward_score = calculate_initial_reward_score(
-        relative_improvement_units=improvement.relative_improvement_units,
-        time_multiplier=time_multiplier,
-    )
+    # Baseline agents uploaded by the owner hotkey are approved and ranked like any other
+    # agent, but they earn no emissions, so their stored reward score is always zero.
+    if agent["miner_hotkey"] == config.OWNER_HOTKEY:
+        initial_reward_score = 0.0
+    else:
+        initial_reward_score = calculate_initial_reward_score(
+            relative_improvement_units=improvement.relative_improvement_units,
+            time_multiplier=time_multiplier,
+        )
 
     await conn.execute(
         """
