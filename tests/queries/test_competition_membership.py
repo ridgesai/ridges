@@ -434,21 +434,21 @@ async def test_evaluation_issuance_uses_agent_membership_and_rejects_conflicts()
         conflicting_agent = await _insert_agent_row(conn, set_id=10, miner_hotkey="conflicting", status="evaluating")
         null_member = await _insert_agent_row(conn, set_id=None, miner_hotkey="legacy")
 
-    evaluation, runs = await create_new_evaluation_and_evaluation_runs(
+    assignment = await create_new_evaluation_and_evaluation_runs(
         EvaluationCandidate(agent_id=active_agent, set_id=10),
         "validator-hotkey",
         None,
     )
 
-    assert evaluation.set_id == 10
-    assert [run.problem_name for run in runs] == ["active-problem"]
+    assert assignment.evaluation.set_id == 10
+    assert [run.problem_name for run in assignment.evaluation_runs] == ["active-problem"]
     matching_override = await create_new_evaluation_and_evaluation_runs(
         EvaluationCandidate(agent_id=matching_agent, set_id=10),
         "matching-validator-hotkey",
         10,
     )
     assert matching_override is not None
-    assert matching_override[0].set_id == 10
+    assert matching_override.evaluation.set_id == 10
 
     async with _db.pool.acquire() as conn:
         await conn.execute("UPDATE competitions SET start_date = NOW() WHERE set_id = 99")

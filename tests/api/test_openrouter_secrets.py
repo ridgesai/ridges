@@ -27,6 +27,7 @@ from queries.agent import (
     EvaluationCandidate,
     EvaluationCandidateBatch,
 )
+from queries.evaluation import EvaluationAssignment
 from utils.agent_secrets import AgentKeyDecryptError, AgentKeyEncryptionConfigError, decrypt_agent_secret
 
 
@@ -539,7 +540,13 @@ def _patch_validator_dependencies(
     async def fake_create_bundle(_candidate, _validator_hotkey, _observed_last_served_set_id):
         if created_evaluations is not None:
             created_evaluations.append((_candidate.agent_id, _validator_hotkey))
-        return evaluation, evaluation_runs
+        return EvaluationAssignment(
+            evaluation,
+            evaluation_runs,
+            competition_policy.max_concurrent_evaluation_runs
+            if competition_policy is not None and not validator_hotkey.startswith("screener-")
+            else None,
+        )
 
     async def fake_generate_upload_url(_s3_key: str):
         return "https://example.com/upload"
@@ -754,7 +761,7 @@ async def test_validator_request_evaluation_falls_through_to_next_competition(
 
     async def fake_issue(candidate, _hotkey, observed_cursor):
         issued.append((candidate, observed_cursor))
-        return evaluation, evaluation_runs
+        return EvaluationAssignment(evaluation, evaluation_runs, None)
 
     async def fake_upload_url(_key: str):
         return "https://example.com/upload"
@@ -809,7 +816,7 @@ def _competition_policy(*, max_concurrent_evaluation_runs: int) -> CompetitionPo
 
 @pytest.mark.anyio
 async def test_validator_request_evaluation_sends_competition_concurrency(monkeypatch) -> None:
-    validator_hotkey = "screener-1-test"
+    validator_hotkey = "validator-test"
     _patch_validator_dependencies(
         monkeypatch,
         agent_id=uuid4(),
@@ -817,6 +824,11 @@ async def test_validator_request_evaluation_sends_competition_concurrency(monkey
         openrouter_secrets=None,
         competition_policy=_competition_policy(max_concurrent_evaluation_runs=4),
     )
+
+    async def reject_policy_reread(_set_id):
+        raise AssertionError("Concurrency must come from the committed assignment")
+
+    monkeypatch.setattr(validator_endpoint, "get_competition_policy", reject_policy_reread)
     validator = validator_endpoint.Validator(
         session_id=uuid4(),
         name="validator",
@@ -835,14 +847,14 @@ async def test_validator_request_evaluation_sends_competition_concurrency(monkey
 
 
 @pytest.mark.anyio
-async def test_validator_request_evaluation_omits_concurrency_without_policy(monkeypatch) -> None:
-    validator_hotkey = "screener-1-test"
+@pytest.mark.parametrize("validator_hotkey", ["screener-1-test", "screener-2-test"])
+async def test_screener_request_evaluation_omits_concurrency(monkeypatch, validator_hotkey) -> None:
     _patch_validator_dependencies(
         monkeypatch,
         agent_id=uuid4(),
         validator_hotkey=validator_hotkey,
         openrouter_secrets=None,
-        competition_policy=None,
+        competition_policy=_competition_policy(max_concurrent_evaluation_runs=4),
     )
     validator = validator_endpoint.Validator(
         session_id=uuid4(),

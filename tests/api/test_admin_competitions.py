@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
 import api.config as config
@@ -34,6 +35,7 @@ from queries.competition import (
 )
 from queries.errors import CompetitionAdminConflictError, CompetitionNotFoundError
 from utils.ttl import clear_all_ttl_caches, ttl_cache
+from utils.validator_hotkeys import WHITELISTED_VALIDATORS
 
 pytestmark = pytest.mark.anyio
 
@@ -707,3 +709,116 @@ async def test_metadata_stays_editable_after_a_competition_ends(clean_competitio
 async def test_metadata_update_on_missing_competition_raises_not_found(clean_competitions) -> None:
     with pytest.raises(CompetitionNotFoundError):
         await replace_competition_metadata(set_id=999, target=_metadata_request(), actor=ADMIN_ACTOR)
+
+
+# Per-validator concurrency overrides share the competition admin audit transaction.
+
+CONCURRENCY_HOTKEY = WHITELISTED_VALIDATORS[1]["hotkey"]
+OTHER_CONCURRENCY_HOTKEY = WHITELISTED_VALIDATORS[0]["hotkey"]
+
+
+async def _set_concurrency(set_id, value, hotkey=CONCURRENCY_HOTKEY):
+    return await competition_queries.set_competition_validator_concurrency(
+        set_id=set_id,
+        validator_hotkey=hotkey,
+        max_concurrent_evaluation_runs=value,
+        reason="hardware capacity",
+        actor=ADMIN_ACTOR,
+    )
+
+
+async def test_concurrency_independent_overrides_inheritance_and_audit(clean_competitions, db):
+    for set_id in (10, 20):
+        await _seed_competition(db, set_id=set_id, policy=_policy(max_concurrent_evaluation_runs=15))
+    low = await _set_concurrency(10, 10)
+    high = await _set_concurrency(10, 25, OTHER_CONCURRENCY_HOTKEY)
+    other_set = await _set_concurrency(20, 7)
+    assert [s.effective_max_concurrent_evaluation_runs for s in (low, high, other_set)] == [10, 25, 7]
+    await _set_concurrency(10, 10)
+    assert await db.fetchval("SELECT count(*) FROM competition_admin_events") == 3
+    await replace_competition_policy(
+        set_id=10, target=_policy_request(max_concurrent_evaluation_runs=18), actor=ADMIN_ACTOR
+    )
+    snapshot = await competition_queries.get_competition_validator_concurrency(set_id=10)
+    values = {v.validator_hotkey: v for v in snapshot.validators}
+    assert values[CONCURRENCY_HOTKEY].effective_max_concurrent_evaluation_runs == 10
+    assert values[OTHER_CONCURRENCY_HOTKEY].effective_max_concurrent_evaluation_runs == 25
+    inherited = next(v for v in snapshot.validators if v.override_max_concurrent_evaluation_runs is None)
+    assert inherited.effective_max_concurrent_evaluation_runs == 18
+    removed = await _set_concurrency(10, None)
+    assert removed.override_max_concurrent_evaluation_runs is None
+    assert removed.effective_max_concurrent_evaluation_runs == 18
+    await _set_concurrency(10, None)
+    assert (
+        await db.fetchval("SELECT count(*) FROM competition_admin_events WHERE operation = 'validator_concurrency'")
+        == 4
+    )
+    event = await db.fetchrow(
+        "SELECT * FROM competition_admin_events WHERE operation = 'validator_concurrency' ORDER BY created_at DESC LIMIT 1"
+    )
+    assert event["actor"] == ADMIN_ACTOR and event["reason"] == "hardware capacity"
+    assert json.loads(event["before_state"])["override_max_concurrent_evaluation_runs"] == 10
+    assert json.loads(event["after_state"])["effective_max_concurrent_evaluation_runs"] == 18
+    assert (
+        await competition_queries.get_competition_validator_concurrency(set_id=20)
+    ).validators != snapshot.validators
+
+
+async def test_concurrency_mutation_and_audit_are_atomic(clean_competitions, db, monkeypatch):
+    await _seed_competition(db, set_id=10, policy=_policy())
+    monkeypatch.setattr(
+        competition_queries, "_insert_competition_admin_event", AsyncMock(side_effect=RuntimeError("audit failed"))
+    )
+    with pytest.raises(RuntimeError, match="audit failed"):
+        await _set_concurrency(10, 10)
+    assert await db.fetchval("SELECT count(*) FROM competition_validator_concurrency") == 0
+
+
+@pytest.fixture
+async def concurrency_client(monkeypatch):
+    monkeypatch.setattr(config, "COLDKEY_BAN_ADMIN_API_KEY", "concurrency-test")
+    app = FastAPI()
+    app.include_router(admin_router, prefix="/admin")
+    register_exception_handlers(app)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        yield client
+
+
+async def test_concurrency_admin_endpoints(clean_competitions, db, concurrency_client, monkeypatch):
+    client = concurrency_client
+    base = "/admin/competitions/10/validator-concurrency"
+    path = f"{base}/{CONCURRENCY_HOTKEY}"
+    auth = {"Authorization": "Bearer concurrency-test"}
+    payload = {"max_concurrent_evaluation_runs": 25, "reason": "more RAM"}
+    for method, url, body in [("GET", base, None), ("PUT", path, payload), ("DELETE", path, {"reason": "inherit"})]:
+        for headers in ({}, {"Authorization": "Bearer wrong"}):
+            assert (await client.request(method, url, json=body, headers=headers)).status_code == 401
+        assert (await client.request(method, url, json=body, headers=auth)).status_code == 404
+    await _seed_competition(db, set_id=10)
+    assert (await client.get(base, headers=auth)).status_code == 409
+    assert (await client.put(path, json=payload, headers=auth)).status_code == 409
+    assert (await client.request("DELETE", path, json={"reason": "inherit"}, headers=auth)).status_code == 409
+    await replace_competition_policy(
+        set_id=10, target=_policy_request(max_concurrent_evaluation_runs=15), actor=ADMIN_ACTOR
+    )
+    for invalid in (0, -1, 51, True, 1.5, "10", None):
+        assert (
+            await client.put(path, json={**payload, "max_concurrent_evaluation_runs": invalid}, headers=auth)
+        ).status_code == 422
+    assert (await client.put(path, json={**payload, "reason": " "}, headers=auth)).status_code == 422
+    assert (await client.request("DELETE", path, json={}, headers=auth)).status_code == 422
+    assert (await client.put(f"{base}/screener-1-test", json=payload, headers=auth)).status_code == 400
+    response = await client.put(path, json=payload, headers=auth)
+    assert response.status_code == 200
+    assert response.json()["effective_max_concurrent_evaluation_runs"] == 25
+    # Retirement does not hide stored overrides or prevent removing them.
+    monkeypatch.setattr(admin_endpoint, "is_validator_hotkey_whitelisted", lambda _: False)
+    monkeypatch.setattr(competition_queries, "WHITELISTED_VALIDATORS", [])
+    assert (await client.put(path, json=payload, headers=auth)).status_code == 400
+    rows = (await client.get(base, headers=auth)).json()["validators"]
+    retired = next(row for row in rows if row["validator_hotkey"] == CONCURRENCY_HOTKEY)
+    assert retired["validator_name"] is None and retired["effective_max_concurrent_evaluation_runs"] == 25
+    removed = await client.request("DELETE", path, json={"reason": "inherit"}, headers=auth)
+    assert removed.status_code == 200 and removed.json()["effective_max_concurrent_evaluation_runs"] == 15
+    monkeypatch.setattr(config, "COLDKEY_BAN_ADMIN_API_KEY", None)
+    assert (await client.get(base, headers=auth)).status_code == 503

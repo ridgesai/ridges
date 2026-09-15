@@ -463,7 +463,7 @@ async def test_concurrent_stale_observation_allows_exactly_one_issuance() -> Non
 
     successful = [result for result in results if result is not None]
     assert len(successful) == 1
-    issued_set_id = successful[0][0].set_id
+    issued_set_id = successful[0].evaluation.set_id
     async with _db.pool.acquire() as conn:
         assert await conn.fetchval("SELECT count(*) FROM evaluations") == 1
         assert (
@@ -1154,3 +1154,117 @@ async def test_policy_completeness_constraint_covers_max_concurrent_evaluation_r
             await conn.execute("UPDATE competitions SET max_concurrent_evaluation_runs = 0 WHERE set_id = 4242")
 
         await conn.execute("DELETE FROM competitions WHERE set_id = 4242")
+
+
+@pytest.mark.parametrize(
+    "hotkey,status,override,expected",
+    [
+        ("validator-a", AgentStatus.evaluating, None, 8),
+        ("validator-a", AgentStatus.evaluating, 3, 3),
+        ("validator-a", AgentStatus.evaluating, 20, 20),
+        ("screener-1-1", AgentStatus.screening_1, None, None),
+        ("screener-2-1", AgentStatus.screening_2, None, None),
+    ],
+)
+async def test_assignment_captures_effective_validator_concurrency(hotkey, status, override, expected):
+    async with _db.pool.acquire() as conn:
+        await _seed_competition(conn, set_id=10)
+        agent = await _insert_agent(conn, set_id=10, status=status)
+        if override is not None:
+            await conn.execute(
+                "INSERT INTO competition_validator_concurrency (set_id, validator_hotkey, max_concurrent_evaluation_runs) VALUES (10, $1, $2)",
+                hotkey,
+                override,
+            )
+    assignment = await create_new_evaluation_and_evaluation_runs(
+        EvaluationCandidate(agent_id=agent, set_id=10), hotkey, None
+    )
+    assert assignment is not None
+    assert assignment.max_concurrent_evaluation_runs == expected
+
+
+async def test_concurrency_admin_transaction_first_skips_assignment_until_commit():
+    from queries.competition import set_competition_validator_concurrency
+
+    async with _db.pool.acquire() as conn:
+        await _seed_competition(conn, set_id=10)
+        agent = await _insert_agent(conn, set_id=10, status=AgentStatus.evaluating)
+    candidate = EvaluationCandidate(agent_id=agent, set_id=10)
+    async with _db.pool.acquire() as conn:
+        async with conn.transaction():
+            await set_competition_validator_concurrency.__wrapped__(
+                DatabaseConnection(conn, "admin-first"),
+                set_id=10,
+                validator_hotkey="validator-a",
+                max_concurrent_evaluation_runs=20,
+                reason="hardware",
+                actor=ADMIN_ACTOR,
+            )
+            # FOR SHARE SKIP LOCKED skips a competition while its admin write is open.
+            assert await create_new_evaluation_and_evaluation_runs(candidate, "validator-a", None) is None
+    assignment = await create_new_evaluation_and_evaluation_runs(candidate, "validator-a", None)
+    assert assignment.max_concurrent_evaluation_runs == 20
+
+
+async def test_concurrency_assignment_first_keeps_snapshot_and_admin_waits(monkeypatch):
+    import queries.competition as competition_queries
+
+    async with _db.pool.acquire() as conn:
+        await _seed_competition(conn, set_id=10)
+        first_agent = await _insert_agent(conn, set_id=10, status=AgentStatus.evaluating)
+        second_agent = await _insert_agent(conn, set_id=10, status=AgentStatus.evaluating)
+    attempted = asyncio.Event()
+    admin_pid = None
+    original_lock = competition_queries._get_concurrency_default
+
+    async def observe_lock(conn, set_id, *, for_update):
+        nonlocal admin_pid
+        admin_pid = await conn.fetchval("SELECT pg_backend_pid()")
+        attempted.set()
+        return await original_lock(conn, set_id, for_update=for_update)
+
+    monkeypatch.setattr(competition_queries, "_get_concurrency_default", observe_lock)
+    admin_task = None
+    try:
+        async with _db.pool.acquire() as conn:
+            async with conn.transaction():
+                db_conn = DatabaseConnection(conn, "assignment-first")
+                token = _db._per_context_conn.set(db_conn)
+                try:
+                    first = await create_new_evaluation_and_evaluation_runs(
+                        EvaluationCandidate(agent_id=first_agent, set_id=10),
+                        "validator-a",
+                        None,
+                    )
+                finally:
+                    _db._per_context_conn.reset(token)
+                admin_task = asyncio.create_task(
+                    competition_queries.set_competition_validator_concurrency(
+                        set_id=10,
+                        validator_hotkey="validator-a",
+                        max_concurrent_evaluation_runs=3,
+                        reason="hardware",
+                        actor=ADMIN_ACTOR,
+                    )
+                )
+                await asyncio.wait_for(attempted.wait(), 2)
+
+                async def wait_for_database_lock():
+                    while not await conn.fetchval("SELECT cardinality(pg_blocking_pids($1)) > 0", admin_pid):
+                        await asyncio.sleep(0.01)
+
+                await asyncio.wait_for(wait_for_database_lock(), 2)
+                assert not admin_task.done()
+                assert first.max_concurrent_evaluation_runs == 8
+        await asyncio.wait_for(admin_task, 2)
+        second = await create_new_evaluation_and_evaluation_runs(
+            EvaluationCandidate(agent_id=second_agent, set_id=10),
+            "validator-a",
+            10,
+        )
+        assert first.max_concurrent_evaluation_runs == 8
+        assert second.max_concurrent_evaluation_runs == 3
+    finally:
+        if admin_task is not None and not admin_task.done():
+            admin_task.cancel()
+            await asyncio.gather(admin_task, return_exceptions=True)
