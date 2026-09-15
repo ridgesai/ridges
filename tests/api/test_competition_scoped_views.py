@@ -31,6 +31,7 @@ def _policy(*, threshold: float, validator_count: int, scale_hours: float) -> Co
         screener_2_threshold=threshold + 0.01,
         prune_threshold=threshold + 0.02,
         required_validator_count=validator_count,
+        max_concurrent_evaluation_runs=8,
         pre_screening_enabled=True,
         auto_approval_enabled=False,
         hardcoding_policy_version=f"hardcoding-v{validator_count}",
@@ -55,14 +56,14 @@ async def _insert_competition(
         INSERT INTO competitions (
             set_id, created_at, start_date, end_date,
             scoring_mode, screener_1_threshold, screener_2_threshold,
-            prune_threshold, required_validator_count, pre_screening_enabled,
+            prune_threshold, required_validator_count, max_concurrent_evaluation_runs, pre_screening_enabled,
             auto_approval_enabled, hardcoding_policy_version, incentive_enabled,
             incentive_performance_threshold, incentive_cost_threshold,
             incentive_reward_half_life_hours, incentive_time_multiplier_scale_hours
         ) VALUES (
             $1, $2::timestamptz, $2::timestamptz,
             CASE WHEN $3 THEN $2::timestamptz ELSE NULL::timestamptz END,
-            $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+            $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
         )
         """,
         set_id,

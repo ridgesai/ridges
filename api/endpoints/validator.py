@@ -475,7 +475,9 @@ async def validator_request_evaluation(
                 if evaluation_bundle is None:
                     continue
 
-                evaluation, evaluation_runs = evaluation_bundle
+                evaluation = evaluation_bundle.evaluation
+                evaluation_runs = evaluation_bundle.evaluation_runs
+                max_concurrent_evaluation_runs = evaluation_bundle.max_concurrent_evaluation_runs
                 agent_id = candidate.agent_id
                 break
             else:
@@ -489,6 +491,11 @@ async def validator_request_evaluation(
     validator.current_evaluation_id = evaluation.evaluation_id
     validator.current_evaluation = evaluation
     validator.current_agent = agent
+
+    logger.info(
+        f"Assigned evaluation {evaluation.evaluation_id} in competition {evaluation.set_id} "
+        f"to {validator.hotkey} with max concurrent runs {max_concurrent_evaluation_runs}"
+    )
 
     logger.info(f"Validator '{validator.name}' requested an evaluation")
     logger.info(f"  Agent ID: {agent_id}")
@@ -528,6 +535,7 @@ async def validator_request_evaluation(
         evaluation_runs=response_runs,
         artifact_upload_urls=artifact_upload_urls,
         openrouter_config=openrouter_config,
+        max_concurrent_evaluation_runs=max_concurrent_evaluation_runs,
     )
 
 
@@ -940,6 +948,13 @@ async def validator_update_evaluation_run(
             status_code=403,
             detail=f"The evaluation run with ID {request.evaluation_run_id} is not associated with the validator's current evaluation.",
         )
+
+    if request.updated_status is not EvaluationRunStatus.pending and evaluation_run.status == request.updated_status:
+        logger.info(
+            f"Ignoring duplicate evaluation-run update from validator '{validator.name}': "
+            f"run {request.evaluation_run_id} is already {request.updated_status}"
+        )
+        return ValidatorUpdateEvaluationRunResponse()
 
     # The logic differs based on the updated status of the evaluation run
     match request.updated_status:

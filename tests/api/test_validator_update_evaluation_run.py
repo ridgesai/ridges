@@ -352,3 +352,134 @@ async def test_error_ignores_duplicate_agent_and_eval_logs(monkeypatch) -> None:
     assert evaluation_run.error_code == 1234
     assert evaluation_run.error_message == "boom"
     assert capture["created_logs"] == []
+
+
+_INTERMEDIATE_DUPLICATES = [
+    (EvaluationRunStatus.initializing_agent, "started_initializing_agent_at"),
+    (EvaluationRunStatus.running_agent, "started_running_agent_at"),
+    (EvaluationRunStatus.initializing_eval, "started_initializing_eval_at"),
+    (EvaluationRunStatus.running_eval, "started_running_eval_at"),
+]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("status,timestamp_field", _INTERMEDIATE_DUPLICATES)
+async def test_duplicate_intermediate_transition_is_a_no_op(monkeypatch, status, timestamp_field) -> None:
+    earlier = datetime.now(timezone.utc) - timedelta(minutes=1)
+    evaluation_run = _make_evaluation_run(status=status, patch="existing patch", **{timestamp_field: earlier})
+    capture = _install_endpoint_capture(monkeypatch, evaluation_run, existing_logs={EvaluationRunLogType.agent})
+    validator = _make_validator(evaluation_run.evaluation_id)
+
+    response = await _call_update(
+        ValidatorUpdateEvaluationRunRequest(
+            evaluation_run_id=evaluation_run.evaluation_run_id,
+            updated_status=status,
+            patch="replayed patch",
+            agent_logs="replayed agent logs",
+        ),
+        validator,
+    )
+
+    assert response.retry is False
+    assert capture["updated_runs"] == []
+    assert capture["created_logs"] == []
+    assert evaluation_run.status is status
+    assert evaluation_run.patch == "existing patch"
+    assert getattr(evaluation_run, timestamp_field) == earlier
+
+
+@pytest.mark.anyio
+async def test_pending_to_pending_is_still_rejected(monkeypatch) -> None:
+    evaluation_run = _make_evaluation_run(status=EvaluationRunStatus.pending)
+    capture = _install_endpoint_capture(monkeypatch, evaluation_run)
+    validator = _make_validator(evaluation_run.evaluation_id)
+
+    with pytest.raises(HTTPException) as excinfo:
+        await _call_update(
+            ValidatorUpdateEvaluationRunRequest(
+                evaluation_run_id=evaluation_run.evaluation_run_id,
+                updated_status=EvaluationRunStatus.pending,
+            ),
+            validator,
+        )
+
+    assert excinfo.value.status_code == 400
+    assert capture["updated_runs"] == []
+
+
+def _install_terminal_side_effect_spies(monkeypatch):
+    spies = {"pruning": [], "retry": []}
+
+    async def fake_maybe_stop_agent_by_score_bound(evaluation):
+        spies["pruning"].append(evaluation)
+        return False
+
+    async def fake_maybe_grant_retry(validator, evaluation_run):
+        spies["retry"].append(evaluation_run)
+        return None
+
+    monkeypatch.setattr(validator_endpoint, "_maybe_stop_agent_by_score_bound", fake_maybe_stop_agent_by_score_bound)
+    monkeypatch.setattr(validator_endpoint, "_maybe_grant_retry", fake_maybe_grant_retry)
+    return spies
+
+
+@pytest.mark.anyio
+async def test_duplicate_finished_skips_write_and_pruning(monkeypatch) -> None:
+    earlier = datetime.now(timezone.utc) - timedelta(minutes=1)
+    evaluation_run = _make_evaluation_run(
+        status=EvaluationRunStatus.finished,
+        patch="existing patch",
+        started_initializing_agent_at=earlier - timedelta(minutes=3),
+        started_running_agent_at=earlier - timedelta(minutes=2),
+        started_initializing_eval_at=earlier - timedelta(minutes=1),
+        started_running_eval_at=earlier,
+    )
+    capture = _install_endpoint_capture(monkeypatch, evaluation_run, existing_logs={EvaluationRunLogType.agent})
+    validator = _make_validator(evaluation_run.evaluation_id)
+    validator.current_evaluation = object()
+    spies = _install_terminal_side_effect_spies(monkeypatch)
+
+    response = await _call_update(
+        ValidatorUpdateEvaluationRunRequest(
+            evaluation_run_id=evaluation_run.evaluation_run_id,
+            updated_status=EvaluationRunStatus.finished,
+            verifier_reward=1.0,
+            test_results=[_test_result()],
+            eval_logs="eval logs",
+        ),
+        validator,
+    )
+
+    assert response.retry is False
+    assert capture["updated_runs"] == []
+    assert capture["created_logs"] == []
+    assert spies["pruning"] == []
+    assert spies["retry"] == []
+
+
+@pytest.mark.anyio
+async def test_duplicate_error_skips_write_pruning_and_retry_grant(monkeypatch) -> None:
+    evaluation_run = _make_evaluation_run(status=EvaluationRunStatus.error, patch="existing patch")
+    evaluation_run.error_code = 2000
+    evaluation_run.error_message = "first delivery"
+    capture = _install_endpoint_capture(monkeypatch, evaluation_run, existing_logs={EvaluationRunLogType.agent})
+    validator = _make_validator(evaluation_run.evaluation_id)
+    validator.current_evaluation = object()
+    spies = _install_terminal_side_effect_spies(monkeypatch)
+
+    response = await _call_update(
+        ValidatorUpdateEvaluationRunRequest(
+            evaluation_run_id=evaluation_run.evaluation_run_id,
+            updated_status=EvaluationRunStatus.error,
+            error_code=2000,
+            error_message="replayed delivery",
+        ),
+        validator,
+    )
+
+    assert response.retry is False
+    assert capture["updated_runs"] == []
+    assert capture["created_logs"] == []
+    assert evaluation_run.error_message == "first delivery"
+    assert spies["pruning"] == []
+    assert spies["retry"] == []
