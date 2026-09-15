@@ -35,6 +35,7 @@ from execution.artifacts import _read_proxy_cost
 from execution.engine import ExecutionEngine
 from execution.errors import EvaluationRunException
 from execution.types import TrialSnapshot
+from models.competition import MAX_CONCURRENCY
 from models.evaluation_run import EvaluationRunErrorCode, EvaluationRunStatus
 from models.openrouter import OpenRouterRuntimeConfig
 from models.problem import ProblemTestResultStatus
@@ -669,11 +670,9 @@ def _create_evaluation_run_tasks(request_evaluation_response: ValidatorRequestEv
     """
 
     tasks = []
-    # The platform sends the competition's concurrency; fall back to our own default when it
-    # doesn't (competition without a policy, or an older platform).
-    max_concurrent_evaluation_runs = (
-        request_evaluation_response.max_concurrent_evaluation_runs or config.MAX_CONCURRENT_EVALUATION_RUNS
-    )
+    max_concurrent_evaluation_runs = config.MAX_CONCURRENT_EVALUATION_RUNS
+    if config.MODE == "validator" and request_evaluation_response.max_concurrent_evaluation_runs is not None:
+        max_concurrent_evaluation_runs = request_evaluation_response.max_concurrent_evaluation_runs
     logger.info(f"  Max Concurrent Evaluation Runs: {max_concurrent_evaluation_runs}")
     semaphore = asyncio.Semaphore(max_concurrent_evaluation_runs)
 
@@ -886,9 +885,10 @@ async def main():
     global execution_engine
 
     setup_logging()
+    max_runs = MAX_CONCURRENCY if config.MODE == "validator" else config.MAX_CONCURRENT_EVALUATION_RUNS
     asyncio.get_running_loop().set_default_executor(
         concurrent.futures.ThreadPoolExecutor(
-            max_workers=max(64, config.MAX_CONCURRENT_EVALUATION_RUNS * 2 + 32),
+            max_workers=max(64, max_runs * 2 + 32),
             thread_name_prefix="validator-worker",
         )
     )
