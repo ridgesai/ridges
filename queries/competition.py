@@ -19,7 +19,9 @@ from models.competition import (
     CompetitionPolicyUpdateRequest,
     CompetitionState,
     CompetitionStateUpdateRequest,
+    CompetitionValidatorConcurrencySnapshot,
     PublicCompetition,
+    ValidatorConcurrencySnapshot,
     derive_competition_capabilities,
     derive_competition_state,
     exact_decimal_sum,
@@ -30,6 +32,7 @@ from queries.errors import (
     CompetitionNotFoundError,
 )
 from utils.database import DatabaseConnection, db_operation
+from utils.validator_hotkeys import WHITELISTED_VALIDATORS
 
 POLICY_COLUMNS = (
     "scoring_mode",
@@ -37,6 +40,7 @@ POLICY_COLUMNS = (
     "screener_2_threshold",
     "prune_threshold",
     "required_validator_count",
+    "max_concurrent_evaluation_runs",
     "pre_screening_enabled",
     "auto_approval_enabled",
     "hardcoding_policy_version",
@@ -59,6 +63,7 @@ _COMPETITION_CONTEXT_SELECT = """
         screener_2_threshold::float8 AS screener_2_threshold,
         prune_threshold::float8 AS prune_threshold,
         required_validator_count,
+        max_concurrent_evaluation_runs,
         pre_screening_enabled,
         auto_approval_enabled,
         hardcoding_policy_version,
@@ -87,6 +92,7 @@ _ADMIN_COMPETITION_SELECT = """
         screener_2_threshold::float8 AS screener_2_threshold,
         prune_threshold::float8 AS prune_threshold,
         required_validator_count,
+        max_concurrent_evaluation_runs,
         pre_screening_enabled,
         auto_approval_enabled,
         hardcoding_policy_version,
@@ -355,6 +361,7 @@ def current_competition_policy_defaults(
         screener_2_threshold=config.SCREENER_2_THRESHOLD,
         prune_threshold=config.PRUNE_THRESHOLD,
         required_validator_count=config.NUM_EVALS_PER_AGENT,
+        max_concurrent_evaluation_runs=config.MAX_CONCURRENT_EVALUATION_RUNS,
         pre_screening_enabled=config.PRE_SCREENING_JUDGE_ENABLED,
         auto_approval_enabled=config.AUTO_APPROVAL_ENABLED,
         hardcoding_policy_version=config.HARDCODING_POLICY_VERSION,
@@ -442,6 +449,7 @@ async def _get_competition_policy(conn: DatabaseConnection, set_id: int) -> Comp
             screener_2_threshold::float8 AS screener_2_threshold,
             prune_threshold::float8 AS prune_threshold,
             required_validator_count,
+            max_concurrent_evaluation_runs,
             pre_screening_enabled,
             auto_approval_enabled,
             hardcoding_policy_version,
@@ -463,6 +471,109 @@ async def get_competition_policy(conn: DatabaseConnection, set_id: int) -> Compe
     return await _get_competition_policy(conn, set_id)
 
 
+async def _get_concurrency_default(conn: DatabaseConnection, set_id: int, *, for_update: bool) -> int:
+    lock = " FOR UPDATE" if for_update else ""
+    row = await conn.fetchrow(
+        f"SELECT max_concurrent_evaluation_runs FROM competitions WHERE set_id = $1{lock}", set_id
+    )
+    if row is None:
+        raise CompetitionNotFoundError(set_id)
+
+    if row["max_concurrent_evaluation_runs"] is None:
+        raise CompetitionAdminConflictError(f"Competition {set_id} has no initialized policy")
+    return row["max_concurrent_evaluation_runs"]
+
+
+def _validator_concurrency_snapshot(
+    set_id: int, hotkey: str, default: int, override: int | None
+) -> ValidatorConcurrencySnapshot:
+    return ValidatorConcurrencySnapshot(
+        set_id=set_id,
+        validator_hotkey=hotkey,
+        validator_name=next((v["name"] for v in WHITELISTED_VALIDATORS if v["hotkey"] == hotkey), None),
+        default_max_concurrent_evaluation_runs=default,
+        override_max_concurrent_evaluation_runs=override,
+        effective_max_concurrent_evaluation_runs=default if override is None else override,
+    )
+
+
+@db_operation
+async def get_competition_validator_concurrency(
+    conn: DatabaseConnection, *, set_id: int
+) -> CompetitionValidatorConcurrencySnapshot:
+    default = await _get_concurrency_default(conn, set_id, for_update=False)
+    rows = await conn.fetch(
+        "SELECT validator_hotkey, max_concurrent_evaluation_runs "
+        "FROM competition_validator_concurrency WHERE set_id = $1",
+        set_id,
+    )
+    overrides = {row["validator_hotkey"]: row["max_concurrent_evaluation_runs"] for row in rows}
+    hotkeys = {v["hotkey"] for v in WHITELISTED_VALIDATORS} | overrides.keys()
+    return CompetitionValidatorConcurrencySnapshot(
+        set_id=set_id,
+        default_max_concurrent_evaluation_runs=default,
+        validators=[
+            _validator_concurrency_snapshot(set_id, hotkey, default, overrides.get(hotkey))
+            for hotkey in sorted(hotkeys)
+        ],
+    )
+
+
+@db_operation
+async def set_competition_validator_concurrency(
+    conn: DatabaseConnection,
+    *,
+    set_id: int,
+    validator_hotkey: str,
+    max_concurrent_evaluation_runs: int | None,
+    reason: str,
+    actor: str,
+) -> ValidatorConcurrencySnapshot:
+    """Set an explicit override, or remove it when the requested value is None."""
+    async with conn.conn.transaction():
+        default = await _get_concurrency_default(conn, set_id, for_update=True)
+        previous = await conn.fetchval(
+            "SELECT max_concurrent_evaluation_runs FROM competition_validator_concurrency "
+            "WHERE set_id = $1 AND validator_hotkey = $2",
+            set_id,
+            validator_hotkey,
+        )
+        before = _validator_concurrency_snapshot(set_id, validator_hotkey, default, previous)
+        if previous == max_concurrent_evaluation_runs:
+            return before
+
+        if max_concurrent_evaluation_runs is None:
+            await conn.execute(
+                "DELETE FROM competition_validator_concurrency WHERE set_id = $1 AND validator_hotkey = $2",
+                set_id,
+                validator_hotkey,
+            )
+        else:
+            await conn.execute(
+                """
+                INSERT INTO competition_validator_concurrency
+                    (set_id, validator_hotkey, max_concurrent_evaluation_runs)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (set_id, validator_hotkey) DO UPDATE
+                SET max_concurrent_evaluation_runs = EXCLUDED.max_concurrent_evaluation_runs,
+                    updated_at = clock_timestamp()
+                """,
+                set_id,
+                validator_hotkey,
+                max_concurrent_evaluation_runs,
+            )
+        after = _validator_concurrency_snapshot(set_id, validator_hotkey, default, max_concurrent_evaluation_runs)
+        await _insert_competition_admin_event(
+            conn,
+            operation="validator_concurrency",
+            actor=actor,
+            reason=reason,
+            before_state=before.model_dump(mode="json"),
+            after_state=after.model_dump(mode="json"),
+        )
+        return after
+
+
 @db_operation
 async def initialize_current_competition_policy(conn: DatabaseConnection) -> CompetitionContext | None:
     """Initialize the current N=1 competition once, preserving stored edits."""
@@ -481,14 +592,15 @@ async def initialize_current_competition_policy(conn: DatabaseConnection) -> Com
                 screener_2_threshold = $4,
                 prune_threshold = $5,
                 required_validator_count = $6,
-                pre_screening_enabled = $7,
-                auto_approval_enabled = $8,
-                hardcoding_policy_version = $9,
-                incentive_enabled = $10,
-                incentive_performance_threshold = $11,
-                incentive_cost_threshold = $12,
-                incentive_reward_half_life_hours = $13,
-                incentive_time_multiplier_scale_hours = $14
+                max_concurrent_evaluation_runs = $7,
+                pre_screening_enabled = $8,
+                auto_approval_enabled = $9,
+                hardcoding_policy_version = $10,
+                incentive_enabled = $11,
+                incentive_performance_threshold = $12,
+                incentive_cost_threshold = $13,
+                incentive_reward_half_life_hours = $14,
+                incentive_time_multiplier_scale_hours = $15
             WHERE set_id = $1
             RETURNING
                 set_id,
@@ -501,6 +613,7 @@ async def initialize_current_competition_policy(conn: DatabaseConnection) -> Com
                 screener_2_threshold::float8 AS screener_2_threshold,
                 prune_threshold::float8 AS prune_threshold,
                 required_validator_count,
+                max_concurrent_evaluation_runs,
                 pre_screening_enabled,
                 auto_approval_enabled,
                 hardcoding_policy_version,
@@ -516,6 +629,7 @@ async def initialize_current_competition_policy(conn: DatabaseConnection) -> Com
             policy.screener_2_threshold,
             policy.prune_threshold,
             policy.required_validator_count,
+            policy.max_concurrent_evaluation_runs,
             policy.pre_screening_enabled,
             policy.auto_approval_enabled,
             policy.hardcoding_policy_version,
@@ -531,7 +645,7 @@ async def initialize_current_competition_policy(conn: DatabaseConnection) -> Com
 async def _insert_competition_admin_event(
     conn: DatabaseConnection,
     *,
-    operation: Literal["state", "policy", "allocation", "metadata"],
+    operation: Literal["state", "policy", "allocation", "metadata", "validator_concurrency"],
     actor: str,
     reason: str,
     before_state: dict[str, object],
@@ -729,14 +843,15 @@ async def update_competition_state(
                 screener_2_threshold = $9,
                 prune_threshold = $10,
                 required_validator_count = $11,
-                pre_screening_enabled = $12,
-                auto_approval_enabled = $13,
-                hardcoding_policy_version = $14,
-                incentive_enabled = $15,
-                incentive_performance_threshold = $16,
-                incentive_cost_threshold = $17,
-                incentive_reward_half_life_hours = $18,
-                incentive_time_multiplier_scale_hours = $19
+                max_concurrent_evaluation_runs = $12,
+                pre_screening_enabled = $13,
+                auto_approval_enabled = $14,
+                hardcoding_policy_version = $15,
+                incentive_enabled = $16,
+                incentive_performance_threshold = $17,
+                incentive_cost_threshold = $18,
+                incentive_reward_half_life_hours = $19,
+                incentive_time_multiplier_scale_hours = $20
             WHERE set_id = $1
             """,
             set_id,
@@ -801,14 +916,15 @@ async def replace_competition_policy(
                 screener_2_threshold = $4,
                 prune_threshold = $5,
                 required_validator_count = $6,
-                pre_screening_enabled = $7,
-                auto_approval_enabled = $8,
-                hardcoding_policy_version = $9,
-                incentive_enabled = $10,
-                incentive_performance_threshold = $11,
-                incentive_cost_threshold = $12,
-                incentive_reward_half_life_hours = $13,
-                incentive_time_multiplier_scale_hours = $14
+                max_concurrent_evaluation_runs = $7,
+                pre_screening_enabled = $8,
+                auto_approval_enabled = $9,
+                hardcoding_policy_version = $10,
+                incentive_enabled = $11,
+                incentive_performance_threshold = $12,
+                incentive_cost_threshold = $13,
+                incentive_reward_half_life_hours = $14,
+                incentive_time_multiplier_scale_hours = $15
             WHERE set_id = $1
             """,
             set_id,

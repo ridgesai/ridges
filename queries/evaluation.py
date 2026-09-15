@@ -1,7 +1,7 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import List, Optional
 from uuid import UUID, uuid4
 
 import api.config as config
@@ -44,6 +44,13 @@ class LocalEvaluationScoreBound:
     upper_bound: float
 
 
+@dataclass(slots=True, frozen=True)
+class EvaluationAssignment:
+    evaluation: Evaluation
+    evaluation_runs: list[EvaluationRun]
+    max_concurrent_evaluation_runs: int | None
+
+
 @db_operation
 async def create_evaluation(conn: DatabaseConnection, agent_id: UUID, validator_hotkey: str, set_id: int) -> UUID:
     evaluation_id = uuid4()
@@ -76,7 +83,8 @@ async def create_evaluation(conn: DatabaseConnection, agent_id: UUID, validator_
 async def _lock_processable_competition(conn: DatabaseConnection, set_id: int):
     row = await conn.fetchrow(
         """
-        SELECT start_date, end_date, is_paused, scoring_mode, required_validator_count
+        SELECT start_date, end_date, is_paused, scoring_mode, required_validator_count,
+               max_concurrent_evaluation_runs
         FROM competitions
         WHERE set_id = $1
         FOR SHARE SKIP LOCKED
@@ -184,7 +192,7 @@ async def create_new_evaluation_and_evaluation_runs(
     candidate: EvaluationCandidate,
     validator_hotkey: str,
     observed_last_served_set_id: int | None,
-) -> Optional[Tuple[Evaluation, List[EvaluationRun]]]:
+) -> EvaluationAssignment | None:
     async with conn.conn.transaction():
         set_group = EvaluationSetGroup.from_validator_hotkey(validator_hotkey)
         if not await _lock_matching_work_cursor(
@@ -293,7 +301,21 @@ async def create_new_evaluation_and_evaluation_runs(
             candidate.set_id,
         )
 
-        return await get_evaluation_by_id(evaluation_id), await get_all_evaluation_runs_in_evaluation_id(evaluation_id)
+        concurrency = None
+        if set_group is EvaluationSetGroup.validator:
+            override = await conn.fetchval(
+                "SELECT max_concurrent_evaluation_runs FROM competition_validator_concurrency "
+                "WHERE set_id = $1 AND validator_hotkey = $2",
+                candidate.set_id,
+                validator_hotkey,
+            )
+            concurrency = competition["max_concurrent_evaluation_runs"] if override is None else override
+
+        return EvaluationAssignment(
+            evaluation=await get_evaluation_by_id(evaluation_id),
+            evaluation_runs=await get_all_evaluation_runs_in_evaluation_id(evaluation_id),
+            max_concurrent_evaluation_runs=concurrency,
+        )
 
 
 @db_operation

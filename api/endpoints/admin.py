@@ -17,19 +17,26 @@ from models.competition import (
     CompetitionMetadataUpdateRequest,
     CompetitionPolicyUpdateRequest,
     CompetitionStateUpdateRequest,
+    CompetitionValidatorConcurrencySnapshot,
+    ValidatorConcurrencyDeleteRequest,
+    ValidatorConcurrencySnapshot,
+    ValidatorConcurrencyUpdateRequest,
 )
 from models.upload_credit import UploadCredit
 from queries.banned_coldkey import ban_coldkey, unban_coldkey
 from queries.competition import (
+    get_competition_validator_concurrency,
     replace_competition_allocations,
     replace_competition_metadata,
     replace_competition_policy,
+    set_competition_validator_concurrency,
     update_competition_state,
 )
 from queries.internal_flag import add_hotkey_to_blacklist, remove_hotkey_from_blacklist, set_internal_flag
 from queries.upload_credit import grant_upload_credit
 from utils.debug_lock import DebugLock
 from utils.ttl import clear_all_ttl_caches
+from utils.validator_hotkeys import is_validator_hotkey_whitelisted
 
 router = APIRouter(tags=["admin"])
 admin_bearer = HTTPBearer(auto_error=False)
@@ -111,6 +118,55 @@ async def put_competition_policy(
     snapshot = await replace_competition_policy(set_id=set_id, target=request, actor=actor)
     clear_all_ttl_caches()
     return snapshot
+
+
+@router.get(
+    "/competitions/{set_id}/validator-concurrency",
+    response_model=CompetitionValidatorConcurrencySnapshot,
+    dependencies=[Depends(require_coldkey_ban_admin)],
+)
+async def get_validator_concurrency(set_id: int) -> CompetitionValidatorConcurrencySnapshot:
+    return await get_competition_validator_concurrency(set_id=set_id)
+
+
+@router.put(
+    "/competitions/{set_id}/validator-concurrency/{validator_hotkey}", response_model=ValidatorConcurrencySnapshot
+)
+async def put_validator_concurrency(
+    set_id: int,
+    validator_hotkey: str,
+    request: ValidatorConcurrencyUpdateRequest,
+    actor: Annotated[str, Depends(require_coldkey_ban_admin)],
+) -> ValidatorConcurrencySnapshot:
+    validate_hotkey(validator_hotkey)
+    if not is_validator_hotkey_whitelisted(validator_hotkey):
+        raise HTTPException(status_code=400, detail="Validator hotkey is not whitelisted")
+    return await set_competition_validator_concurrency(
+        set_id=set_id,
+        validator_hotkey=validator_hotkey,
+        max_concurrent_evaluation_runs=request.max_concurrent_evaluation_runs,
+        reason=request.reason,
+        actor=actor,
+    )
+
+
+@router.delete(
+    "/competitions/{set_id}/validator-concurrency/{validator_hotkey}", response_model=ValidatorConcurrencySnapshot
+)
+async def delete_validator_concurrency(
+    set_id: int,
+    validator_hotkey: str,
+    request: ValidatorConcurrencyDeleteRequest,
+    actor: Annotated[str, Depends(require_coldkey_ban_admin)],
+) -> ValidatorConcurrencySnapshot:
+    validate_hotkey(validator_hotkey)
+    return await set_competition_validator_concurrency(
+        set_id=set_id,
+        validator_hotkey=validator_hotkey,
+        max_concurrent_evaluation_runs=None,
+        reason=request.reason,
+        actor=actor,
+    )
 
 
 @router.put("/competition-allocations", response_model=CompetitionAllocationSnapshot)

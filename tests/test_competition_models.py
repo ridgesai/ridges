@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from models.competition import (
     CompetitionAllocationUpdateRequest,
     CompetitionPolicy,
+    CompetitionPolicyUpdateRequest,
     CompetitionState,
     derive_competition_capabilities,
     derive_competition_state,
@@ -24,6 +25,7 @@ VALID_POLICY = {
     "screener_2_threshold": 0.5,
     "prune_threshold": 0.9,
     "required_validator_count": 3,
+    "max_concurrent_evaluation_runs": 8,
     "pre_screening_enabled": True,
     "auto_approval_enabled": False,
     "hardcoding_policy_version": "hardcoding-v1",
@@ -196,3 +198,10 @@ def test_allocation_model_rejects_a_microscopically_overallocated_vector() -> No
 def test_exact_decimal_sum_preserves_empty_and_microscopic_values() -> None:
     assert exact_decimal_sum([]) == Decimal("0")
     assert exact_decimal_sum([Decimal("1"), Decimal("1e-400")]) > 1
+
+
+def test_policy_ceiling_applies_to_admin_input_only() -> None:
+    above_ceiling = {**VALID_POLICY, "max_concurrent_evaluation_runs": 60}
+    assert CompetitionPolicy(**above_ceiling).max_concurrent_evaluation_runs == 60
+    with pytest.raises(ValidationError):
+        CompetitionPolicyUpdateRequest(**above_ceiling, reason="test")

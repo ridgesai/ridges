@@ -98,6 +98,9 @@ UnitInterval = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
 OpenUnitInterval = Annotated[float, Field(gt=0, lt=1, allow_inf_nan=False)]
 PositiveFiniteFloat = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 PositiveStrictInt = Annotated[int, Field(strict=True, gt=0)]
+
+MAX_CONCURRENCY = 50
+ConcurrencyLimit = Annotated[int, Field(strict=True, gt=0, le=MAX_CONCURRENCY)]
 NonBlankStrictString = Annotated[
     str,
     StringConstraints(strict=True, strip_whitespace=True, min_length=1),
@@ -116,6 +119,9 @@ class CompetitionPolicy(BaseModel):
     screener_2_threshold: UnitInterval
     prune_threshold: UnitInterval
     required_validator_count: PositiveStrictInt
+    # Validator-only: how many evaluation runs a validator executes concurrently.
+    # Screeners keep reading MAX_CONCURRENT_EVALUATION_RUNS from their own env.
+    max_concurrent_evaluation_runs: PositiveStrictInt
     pre_screening_enabled: StrictBool
     auto_approval_enabled: StrictBool
     hardcoding_policy_version: NonBlankStrictString
@@ -144,7 +150,36 @@ class CompetitionStateUpdateRequest(BaseModel):
 
 
 class CompetitionPolicyUpdateRequest(CompetitionPolicy):
+    max_concurrent_evaluation_runs: ConcurrencyLimit
     reason: AdminReason
+
+
+class ValidatorConcurrencyUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    max_concurrent_evaluation_runs: ConcurrencyLimit
+    reason: AdminReason
+
+
+class ValidatorConcurrencyDeleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    reason: AdminReason
+
+
+class ValidatorConcurrencySnapshot(BaseModel):
+    set_id: int
+    validator_hotkey: str
+    validator_name: str | None
+    default_max_concurrent_evaluation_runs: PositiveStrictInt
+    override_max_concurrent_evaluation_runs: PositiveStrictInt | None
+    effective_max_concurrent_evaluation_runs: PositiveStrictInt
+
+
+class CompetitionValidatorConcurrencySnapshot(BaseModel):
+    set_id: int
+    default_max_concurrent_evaluation_runs: PositiveStrictInt
+    validators: list[ValidatorConcurrencySnapshot]
 
 
 class CompetitionMetadata(BaseModel):

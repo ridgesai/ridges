@@ -289,7 +289,7 @@ async def _insert_competition(
                     set_id, name, start_date, submissions_closed_at, is_paused,
                     emissions_end_at, end_date, raw_emission_weight,
                     scoring_mode, screener_1_threshold, screener_2_threshold,
-                    prune_threshold, required_validator_count, pre_screening_enabled,
+                    prune_threshold, required_validator_count, max_concurrent_evaluation_runs, pre_screening_enabled,
                     auto_approval_enabled, hardcoding_policy_version, incentive_enabled,
                     incentive_performance_threshold, incentive_cost_threshold,
                     incentive_reward_half_life_hours, incentive_time_multiplier_scale_hours
@@ -299,7 +299,7 @@ async def _insert_competition(
                     CASE WHEN $4::timestamptz IS NULL THEN NULL ELSE $4::timestamptz END,
                     $6, 0,
                     scoring_mode, screener_1_threshold, screener_2_threshold,
-                    prune_threshold, required_validator_count, pre_screening_enabled,
+                    prune_threshold, required_validator_count, max_concurrent_evaluation_runs, pre_screening_enabled,
                     auto_approval_enabled, hardcoding_policy_version, incentive_enabled,
                     incentive_performance_threshold, incentive_cost_threshold,
                     incentive_reward_half_life_hours, incentive_time_multiplier_scale_hours

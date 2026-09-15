@@ -43,6 +43,7 @@ async def _insert_competition(
                 screener_2_threshold = 0.4,
                 prune_threshold = 0.4,
                 required_validator_count = $3,
+                max_concurrent_evaluation_runs = 8,
                 pre_screening_enabled = true,
                 auto_approval_enabled = true,
                 hardcoding_policy_version = 'hardcoding-v1',

@@ -475,7 +475,9 @@ async def validator_request_evaluation(
                 if evaluation_bundle is None:
                     continue
 
-                evaluation, evaluation_runs = evaluation_bundle
+                evaluation = evaluation_bundle.evaluation
+                evaluation_runs = evaluation_bundle.evaluation_runs
+                max_concurrent_evaluation_runs = evaluation_bundle.max_concurrent_evaluation_runs
                 agent_id = candidate.agent_id
                 break
             else:
@@ -489,6 +491,11 @@ async def validator_request_evaluation(
     validator.current_evaluation_id = evaluation.evaluation_id
     validator.current_evaluation = evaluation
     validator.current_agent = agent
+
+    logger.info(
+        f"Assigned evaluation {evaluation.evaluation_id} in competition {evaluation.set_id} "
+        f"to {validator.hotkey} with max concurrent runs {max_concurrent_evaluation_runs}"
+    )
 
     logger.info(f"Validator '{validator.name}' requested an evaluation")
     logger.info(f"  Agent ID: {agent_id}")
@@ -528,6 +535,7 @@ async def validator_request_evaluation(
         evaluation_runs=response_runs,
         artifact_upload_urls=artifact_upload_urls,
         openrouter_config=openrouter_config,
+        max_concurrent_evaluation_runs=max_concurrent_evaluation_runs,
     )
 
 
