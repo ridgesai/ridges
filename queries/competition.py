@@ -19,7 +19,9 @@ from models.competition import (
     CompetitionPolicyUpdateRequest,
     CompetitionState,
     CompetitionStateUpdateRequest,
+    CompetitionValidatorConcurrencySnapshot,
     PublicCompetition,
+    ValidatorConcurrencySnapshot,
     derive_competition_capabilities,
     derive_competition_state,
     exact_decimal_sum,
@@ -30,6 +32,7 @@ from queries.errors import (
     CompetitionNotFoundError,
 )
 from utils.database import DatabaseConnection, db_operation
+from utils.validator_hotkeys import WHITELISTED_VALIDATORS
 
 POLICY_COLUMNS = (
     "scoring_mode",
@@ -468,6 +471,109 @@ async def get_competition_policy(conn: DatabaseConnection, set_id: int) -> Compe
     return await _get_competition_policy(conn, set_id)
 
 
+async def _get_concurrency_default(conn: DatabaseConnection, set_id: int, *, for_update: bool) -> int:
+    lock = " FOR UPDATE" if for_update else ""
+    row = await conn.fetchrow(
+        f"SELECT max_concurrent_evaluation_runs FROM competitions WHERE set_id = $1{lock}", set_id
+    )
+    if row is None:
+        raise CompetitionNotFoundError(set_id)
+
+    if row["max_concurrent_evaluation_runs"] is None:
+        raise CompetitionAdminConflictError(f"Competition {set_id} has no initialized policy")
+    return row["max_concurrent_evaluation_runs"]
+
+
+def _validator_concurrency_snapshot(
+    set_id: int, hotkey: str, default: int, override: int | None
+) -> ValidatorConcurrencySnapshot:
+    return ValidatorConcurrencySnapshot(
+        set_id=set_id,
+        validator_hotkey=hotkey,
+        validator_name=next((v["name"] for v in WHITELISTED_VALIDATORS if v["hotkey"] == hotkey), None),
+        default_max_concurrent_evaluation_runs=default,
+        override_max_concurrent_evaluation_runs=override,
+        effective_max_concurrent_evaluation_runs=default if override is None else override,
+    )
+
+
+@db_operation
+async def get_competition_validator_concurrency(
+    conn: DatabaseConnection, *, set_id: int
+) -> CompetitionValidatorConcurrencySnapshot:
+    default = await _get_concurrency_default(conn, set_id, for_update=False)
+    rows = await conn.fetch(
+        "SELECT validator_hotkey, max_concurrent_evaluation_runs "
+        "FROM competition_validator_concurrency WHERE set_id = $1",
+        set_id,
+    )
+    overrides = {row["validator_hotkey"]: row["max_concurrent_evaluation_runs"] for row in rows}
+    hotkeys = {v["hotkey"] for v in WHITELISTED_VALIDATORS} | overrides.keys()
+    return CompetitionValidatorConcurrencySnapshot(
+        set_id=set_id,
+        default_max_concurrent_evaluation_runs=default,
+        validators=[
+            _validator_concurrency_snapshot(set_id, hotkey, default, overrides.get(hotkey))
+            for hotkey in sorted(hotkeys)
+        ],
+    )
+
+
+@db_operation
+async def set_competition_validator_concurrency(
+    conn: DatabaseConnection,
+    *,
+    set_id: int,
+    validator_hotkey: str,
+    max_concurrent_evaluation_runs: int | None,
+    reason: str,
+    actor: str,
+) -> ValidatorConcurrencySnapshot:
+    """Set an explicit override, or remove it when the requested value is None."""
+    async with conn.conn.transaction():
+        default = await _get_concurrency_default(conn, set_id, for_update=True)
+        previous = await conn.fetchval(
+            "SELECT max_concurrent_evaluation_runs FROM competition_validator_concurrency "
+            "WHERE set_id = $1 AND validator_hotkey = $2",
+            set_id,
+            validator_hotkey,
+        )
+        before = _validator_concurrency_snapshot(set_id, validator_hotkey, default, previous)
+        if previous == max_concurrent_evaluation_runs:
+            return before
+
+        if max_concurrent_evaluation_runs is None:
+            await conn.execute(
+                "DELETE FROM competition_validator_concurrency WHERE set_id = $1 AND validator_hotkey = $2",
+                set_id,
+                validator_hotkey,
+            )
+        else:
+            await conn.execute(
+                """
+                INSERT INTO competition_validator_concurrency
+                    (set_id, validator_hotkey, max_concurrent_evaluation_runs)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (set_id, validator_hotkey) DO UPDATE
+                SET max_concurrent_evaluation_runs = EXCLUDED.max_concurrent_evaluation_runs,
+                    updated_at = clock_timestamp()
+                """,
+                set_id,
+                validator_hotkey,
+                max_concurrent_evaluation_runs,
+            )
+        after = _validator_concurrency_snapshot(set_id, validator_hotkey, default, max_concurrent_evaluation_runs)
+        await _insert_competition_admin_event(
+            conn,
+            operation="validator_concurrency",
+            actor=actor,
+            reason=reason,
+            before_state=before.model_dump(mode="json"),
+            after_state=after.model_dump(mode="json"),
+        )
+        return after
+
+
 @db_operation
 async def initialize_current_competition_policy(conn: DatabaseConnection) -> CompetitionContext | None:
     """Initialize the current N=1 competition once, preserving stored edits."""
@@ -539,7 +645,7 @@ async def initialize_current_competition_policy(conn: DatabaseConnection) -> Com
 async def _insert_competition_admin_event(
     conn: DatabaseConnection,
     *,
-    operation: Literal["state", "policy", "allocation", "metadata"],
+    operation: Literal["state", "policy", "allocation", "metadata", "validator_concurrency"],
     actor: str,
     reason: str,
     before_state: dict[str, object],

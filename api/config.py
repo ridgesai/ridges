@@ -5,6 +5,7 @@ import uuid
 
 from dotenv import load_dotenv
 
+from models.competition import MAX_CONCURRENCY
 from utils.logger import setup_logging
 
 setup_logging()
@@ -212,8 +213,8 @@ NUM_EVALS_PER_AGENT = int(NUM_EVALS_PER_AGENT)
 # Validators receive the per-competition value on /validator/request-evaluation; screeners
 # keep reading MAX_CONCURRENT_EVALUATION_RUNS from their own environment.
 MAX_CONCURRENT_EVALUATION_RUNS = int(os.getenv("MAX_CONCURRENT_EVALUATION_RUNS", "15"))
-if MAX_CONCURRENT_EVALUATION_RUNS <= 0:
-    raise ValueError("MAX_CONCURRENT_EVALUATION_RUNS must be positive")
+if not 1 <= MAX_CONCURRENT_EVALUATION_RUNS <= MAX_CONCURRENCY:
+    raise ValueError(f"MAX_CONCURRENT_EVALUATION_RUNS must be between 1 and {MAX_CONCURRENCY}")
 
 MAX_ATTEMPTS_PER_EVALUATION_RUN = int(os.getenv("MAX_ATTEMPTS_PER_EVALUATION_RUN", "3"))
 
