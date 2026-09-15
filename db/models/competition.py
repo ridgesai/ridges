@@ -125,6 +125,23 @@ class Competition(Base, CreatedAtMixin):
     )
 
 
+class CompetitionValidatorConcurrency(Base, CreatedAtMixin):
+    __tablename__ = "competition_validator_concurrency"
+
+    set_id: Mapped[int] = mapped_column(
+        sa.Integer, sa.ForeignKey("competitions.set_id", ondelete="CASCADE"), primary_key=True
+    )
+    validator_hotkey: Mapped[str] = mapped_column(sa.Text, primary_key=True)
+    max_concurrent_evaluation_runs: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")
+    )
+
+    __table_args__ = (
+        sa.CheckConstraint("max_concurrent_evaluation_runs > 0", name="ck_competition_validator_concurrency_positive"),
+    )
+
+
 class CompetitionAdminEvent(Base, CreatedAtMixin):
     __tablename__ = "competition_admin_events"
 
@@ -141,7 +158,7 @@ class CompetitionAdminEvent(Base, CreatedAtMixin):
 
     __table_args__ = (
         sa.CheckConstraint(
-            "operation IN ('state', 'policy', 'allocation', 'metadata')",
+            "operation IN ('state', 'policy', 'allocation', 'metadata', 'validator_concurrency')",
             name="ck_competition_admin_events_operation",
         ),
         sa.CheckConstraint(
