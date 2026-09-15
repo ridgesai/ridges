@@ -949,6 +949,13 @@ async def validator_update_evaluation_run(
             detail=f"The evaluation run with ID {request.evaluation_run_id} is not associated with the validator's current evaluation.",
         )
 
+    if request.updated_status is not EvaluationRunStatus.pending and evaluation_run.status == request.updated_status:
+        logger.info(
+            f"Ignoring duplicate evaluation-run update from validator '{validator.name}': "
+            f"run {request.evaluation_run_id} is already {request.updated_status}"
+        )
+        return ValidatorUpdateEvaluationRunResponse()
+
     # The logic differs based on the updated status of the evaluation run
     match request.updated_status:
         case EvaluationRunStatus.pending:

@@ -60,6 +60,7 @@ environment_build_timeout_multiplier = None
 
 execution_engine = None
 STATUS_HOOK_TIMEOUT_SECONDS = 5
+CANCELLATION_CLEANUP_TIMEOUT_SECONDS = 180
 _shutdown_requested = False
 _healthz_task: asyncio.Task | None = None
 
@@ -729,22 +730,33 @@ async def _wait_for_runs_or_cancellation(
     return run_tasks_task, cancellation_wait_task
 
 
-async def _cancel_evaluation_run_tasks(run_tasks: list[asyncio.Task], run_tasks_task: asyncio.Task) -> None:
-    """Cancel unfinished problem-run tasks.
+async def _cancel_evaluation_run_tasks(run_tasks: list[asyncio.Task], run_tasks_task: asyncio.Task) -> bool:
+    """Cancel unfinished problem-run tasks and wait a bounded time for them to unwind.
 
     Args:
         run_tasks: Local problem-run tasks.
         run_tasks_task: Wrapper task waiting for all problem-run tasks.
+
+    Returns:
+        True when at least one task was still running after the cleanup budget expired.
     """
 
     for task in run_tasks:
         if not task.done():
             task.cancel()
-    await asyncio.gather(*run_tasks, return_exceptions=True)
-
     if not run_tasks_task.done():
         run_tasks_task.cancel()
-    await asyncio.gather(run_tasks_task, return_exceptions=True)
+
+    _, still_running = await asyncio.wait(
+        [*run_tasks, run_tasks_task],
+        timeout=CANCELLATION_CLEANUP_TIMEOUT_SECONDS,
+    )
+    if still_running:
+        logger.warning(
+            f"{len(still_running)} evaluation task(s) did not finish cancelling within "
+            f"{CANCELLATION_CLEANUP_TIMEOUT_SECONDS}s; acknowledging the platform cancellation anyway"
+        )
+    return bool(still_running)
 
 
 async def _acknowledge_platform_cancellation(
@@ -830,8 +842,13 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
         if cancellation_event.is_set():
             reason = cancellation_reason["reason"] or "The platform cancelled this evaluation."
             logger.info(f"Platform requested evaluation cancellation: {reason}")
-            await _cancel_evaluation_run_tasks(tasks, run_tasks_task)
-            await _acknowledge_platform_cancellation(request_evaluation_response, reason)
+            cleanup_timed_out = await _cancel_evaluation_run_tasks(tasks, run_tasks_task)
+            try:
+                await _acknowledge_platform_cancellation(request_evaluation_response, reason)
+            finally:
+                if cleanup_timed_out:
+                    logger.error("Cancellation cleanup timed out; exiting to clean up stale processes")
+                    os._exit(1)
             logger.info("Cancelled evaluation")
             return
 
