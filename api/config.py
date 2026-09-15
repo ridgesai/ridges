@@ -37,6 +37,10 @@ SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK")
 if not SUBTENSOR_NETWORK:
     logger.fatal("SUBTENSOR_NETWORK is not set in .env")
 
+# Ceiling on each chain RPC and the first process initialize(). Reconnect uses a short
+# hardcoded bound so a wedged socket is not waited on for this full duration again.
+SUBTENSOR_TIMEOUT_SECONDS = int(os.getenv("SUBTENSOR_TIMEOUT_SECONDS", "30"))
+
 
 OWNER_HOTKEY = os.getenv("OWNER_HOTKEY")
 if not OWNER_HOTKEY:
@@ -294,6 +298,7 @@ if DISALLOW_UPLOADS:
     logger.warning(f"Uploads are disallowed: {DISALLOW_UPLOADS_REASON}")
     logger.info("-------------------------")
 
+logger.info(f"Subtensor Timeout: {SUBTENSOR_TIMEOUT_SECONDS} second(s)")
 logger.info(f"Environment: {'Production' if ENV == 'prod' else 'Development'}")
 logger.info("-------------------------")
 

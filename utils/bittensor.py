@@ -1,6 +1,8 @@
+import asyncio
+import contextlib
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from bittensor.core.async_subtensor import AsyncSubtensor
 from bittensor.core.chain_data.metagraph_info import SelectiveMetagraphIndex
@@ -13,6 +15,19 @@ if TYPE_CHECKING:
     from bittensor.core.types import BlockInfo
 
 logger = logging.getLogger(__name__)
+
+# Rebuild must not inherit SUBTENSOR_TIMEOUT_SECONDS: after a hung RPC we drop the socket
+# quickly rather than waiting another full request budget.
+_RECONNECT_TIMEOUT_SECONDS = 5
+_CLOSE_TIMEOUT_SECONDS = 2
+
+
+class SubtensorUnavailableError(RuntimeError):
+    """A chain call could not be completed because the connection is unavailable or timed out.
+
+    Raised instead of hanging. The underlying substrate client polls response futures in an
+    unbounded loop, so without an enforced timeout a wedged websocket blocks the caller forever.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,12 +72,32 @@ class SubtensorClient:
 
     def __init__(self) -> None:
         self._subtensor: AsyncSubtensor | None = None
+        self._reconnect_lock = asyncio.Lock()
 
-    async def initialize(self) -> None:
-        """Initialize connection to the Subtensor network."""
-        self._subtensor = AsyncSubtensor(network=config.SUBTENSOR_NETWORK)
-        await self._subtensor.initialize()
-        logger.info("Subtensor connection initialized")
+    async def initialize(self, *, timeout: float | None = None) -> None:
+        """Initialize connection to the Subtensor network.
+
+        ``network`` is the configured websocket URL so the process dials that node instead of
+        bittensor's named-network default (which ignored ``SUBTENSOR_ADDRESS``). Idle sockets use
+        the library default shutdown timer and reopen on the next RPC.
+
+        First connect and per-request RPCs use ``SUBTENSOR_TIMEOUT_SECONDS``. Rebuilds pass a
+        short reconnect timeout so a dead socket is replaced quickly.
+        """
+        bound = timeout if timeout is not None else config.SUBTENSOR_TIMEOUT_SECONDS
+        subtensor = AsyncSubtensor(network=config.SUBTENSOR_ADDRESS)
+        try:
+            await asyncio.wait_for(subtensor.initialize(), timeout=bound)
+        except (TimeoutError, asyncio.TimeoutError) as exc:
+            with contextlib.suppress(Exception):
+                await subtensor.close()
+            raise SubtensorUnavailableError(f"Subtensor connection timed out after {bound}s") from exc
+        self._subtensor = subtensor
+        logger.info(
+            "Subtensor connection initialized chain_endpoint=%s network=%s",
+            subtensor.chain_endpoint,
+            subtensor.network,
+        )
 
     async def close(self) -> None:
         """Close connection to the Subtensor network."""
@@ -70,6 +105,56 @@ class SubtensorClient:
             await self._subtensor.close()
             self._subtensor = None
             logger.info("Subtensor connection closed")
+
+    async def reconnect(self) -> None:
+        """Tear down the current connection and build a fresh one.
+
+        Recovers the permanently wedged state the substrate library can reach after exhausting its
+        internal reconnect attempts, where the socket may still report OPEN but no response future
+        will ever resolve again.
+
+        Held under a lock so that concurrent callers collapse into a single rebuild rather than
+        racing to replace each other's connections.
+        """
+        async with self._reconnect_lock:
+            old, self._subtensor = self._subtensor, None
+            if old is not None:
+                # A wedged connection can hang on close too, so bound it and move on regardless.
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(old.close(), timeout=_CLOSE_TIMEOUT_SECONDS)
+            await self.initialize(timeout=_RECONNECT_TIMEOUT_SECONDS)
+
+    async def _call(
+        self,
+        name: str,
+        coro_factory: Callable[[AsyncSubtensor], Awaitable[Any]],
+        timeout: float | None = None,
+    ) -> Any:
+        """Run one chain call under a hard timeout.
+
+        Every chain method goes through here. Without it a stalled websocket blocks the awaiting
+        request indefinitely, since the substrate layer applies no timeout of its own.
+        """
+        subtensor = self._subtensor
+        assert subtensor is not None, "Subtensor client is not initialized"
+        effective_timeout = timeout if timeout is not None else config.SUBTENSOR_TIMEOUT_SECONDS
+        try:
+            return await asyncio.wait_for(coro_factory(subtensor), timeout=effective_timeout)
+        except (TimeoutError, asyncio.TimeoutError) as exc:
+            message = f"Subtensor call {name} timed out after {effective_timeout}s"
+            logger.error(message, exc_info=exc)
+            try:
+                await self.reconnect()
+            except Exception as reconnect_exc:
+                raise SubtensorUnavailableError(message) from reconnect_exc
+            retry_subtensor = self._subtensor
+            assert retry_subtensor is not None, "Subtensor client is not initialized"
+            try:
+                return await asyncio.wait_for(coro_factory(retry_subtensor), timeout=effective_timeout)
+            except (TimeoutError, asyncio.TimeoutError) as retry_exc:
+                retry_message = f"Subtensor call {name} timed out after reconnect after {effective_timeout}s"
+                logger.error(retry_message, exc_info=retry_exc)
+                raise SubtensorUnavailableError(retry_message) from retry_exc
 
     async def is_hotkey_registered(self, hotkey: str) -> bool:
         """Check if provided hotkey is registered on the
@@ -85,9 +170,11 @@ class SubtensorClient:
         bool
             Returns True if the hotkey is registered on the subnet, False otherwise.
         """
-        assert self._subtensor is not None, "Subtensor client is not initialized"
         logger.info(f"Checking if hotkey {hotkey} is registered on subnet {config.NETUID}...")
-        result = await self._subtensor.is_hotkey_registered(hotkey_ss58=hotkey, netuid=config.NETUID)
+        result = await self._call(
+            "is_hotkey_registered",
+            lambda subtensor: subtensor.is_hotkey_registered(hotkey_ss58=hotkey, netuid=config.NETUID),
+        )
         logger.info(f"Hotkey {hotkey} is {'registered' if result else 'not registered'} on subnet {config.NETUID}")
         return result
 
@@ -98,13 +185,15 @@ class SubtensorClient:
     ) -> dict[str, HotkeySubnetInfo]:
         """Return every subnet hotkey's UID and emission from one selective metagraph call."""
 
-        assert self._subtensor is not None, "Subtensor client is not initialized"
-        metagraph = await self._subtensor.get_metagraph_info(
-            netuid=netuid,
-            selected_indices=[
-                SelectiveMetagraphIndex.Hotkeys,
-                SelectiveMetagraphIndex.Emission,
-            ],
+        metagraph = await self._call(
+            "get_subnet_hotkey_info",
+            lambda subtensor: subtensor.get_metagraph_info(
+                netuid=netuid,
+                selected_indices=[
+                    SelectiveMetagraphIndex.Hotkeys,
+                    SelectiveMetagraphIndex.Emission,
+                ],
+            ),
         )
         if metagraph is None or metagraph.hotkeys is None:
             raise RuntimeError(f"Could not retrieve hotkeys for subnet {netuid}")
@@ -135,8 +224,10 @@ class SubtensorClient:
         str | None
             The owner of the specified hotkey, or None if not found.
         """
-        assert self._subtensor is not None, "Subtensor client is not initialized"
-        return await self._subtensor.get_hotkey_owner(hotkey_ss58=hotkey, block=block)
+        return await self._call(
+            "get_hotkey_owner",
+            lambda subtensor: subtensor.get_hotkey_owner(hotkey_ss58=hotkey, block=block),
+        )
 
     async def get_balance(self, address: str) -> Balance:
         """Retrieve the balance of a wallet with a specific
@@ -152,8 +243,7 @@ class SubtensorClient:
         Balance
             Wallet balance object.
         """
-        assert self._subtensor is not None, "Subtensor client is not initialized"
-        return await self._subtensor.get_balance(address=address)
+        return await self._call("get_balance", lambda subtensor: subtensor.get_balance(address=address))
 
     async def get_alpha_stake_availability(
         self,
@@ -181,19 +271,26 @@ class SubtensorClient:
         AlphaStakeAvailability
             Position, subnet-wide, locked, available, and burnable amounts in rao.
         """
-        assert self._subtensor is not None, "Subtensor client is not initialized"
-
-        block_hash = await self._subtensor.substrate.get_chain_head()
-        position = await self._subtensor.get_stake(
-            coldkey_ss58=coldkey,
-            hotkey_ss58=hotkey,
-            netuid=netuid,
-            block_hash=block_hash,
+        block_hash = await self._call(
+            "get_alpha_stake_availability.get_chain_head",
+            lambda subtensor: subtensor.substrate.get_chain_head(),
         )
-        availability = await self._subtensor.get_stake_availability_for_coldkeys(
-            [coldkey],
-            netuids=[netuid],
-            block_hash=block_hash,
+        position = await self._call(
+            "get_alpha_stake_availability.get_stake",
+            lambda subtensor: subtensor.get_stake(
+                coldkey_ss58=coldkey,
+                hotkey_ss58=hotkey,
+                netuid=netuid,
+                block_hash=block_hash,
+            ),
+        )
+        availability = await self._call(
+            "get_alpha_stake_availability.get_stake_availability_for_coldkeys",
+            lambda subtensor: subtensor.get_stake_availability_for_coldkeys(
+                [coldkey],
+                netuids=[netuid],
+                block_hash=block_hash,
+            ),
         )
 
         if not isinstance(availability, dict):
@@ -237,8 +334,10 @@ class SubtensorClient:
         float
             Alpha price denominated in TAO.
         """
-        assert self._subtensor is not None, "Subtensor client is not initialized"
-        price = await self._subtensor.get_subnet_price(netuid=netuid, block=block)
+        price = await self._call(
+            "get_alpha_price_tao",
+            lambda subtensor: subtensor.get_subnet_price(netuid=netuid, block=block),
+        )
         return float(price.tao)
 
     async def get_block(self, block_hash: str) -> dict | None:
@@ -254,13 +353,17 @@ class SubtensorClient:
         dict | None
             The block data, or None if not found.
         """
-        assert self._subtensor is not None, "Subtensor client is not initialized"
-        return await self._subtensor.substrate.get_block(block_hash=block_hash)
+        return await self._call(
+            "get_block",
+            lambda subtensor: subtensor.substrate.get_block(block_hash=block_hash),
+        )
 
     async def get_block_info(self, block_hash: str) -> "BlockInfo | None":
         """Retrieve decoded block information by its hash."""
-        assert self._subtensor is not None, "Subtensor client is not initialized"
-        return await self._subtensor.get_block_info(block_hash=block_hash)
+        return await self._call(
+            "get_block_info",
+            lambda subtensor: subtensor.get_block_info(block_hash=block_hash),
+        )
 
     async def get_events(self, block_hash: str) -> list:
         """Retrieve events for a given block hash.
@@ -275,8 +378,10 @@ class SubtensorClient:
         list
             List of events in the block.
         """
-        assert self._subtensor is not None, "Subtensor client is not initialized"
-        return await self._subtensor.substrate.get_events(block_hash=block_hash)
+        return await self._call(
+            "get_events",
+            lambda subtensor: subtensor.substrate.get_events(block_hash=block_hash),
+        )
 
     async def get_emission(self, hotkey: str) -> float:
         """Retrieve the emission for a given hotkey on the configured subnet.
@@ -291,8 +396,10 @@ class SubtensorClient:
         float
             Emission value in TAO, or 0.0 if the hotkey is not registered.
         """
-        assert self._subtensor is not None, "Subtensor client is not initialized"
-        neuron = await self._subtensor.get_neuron_for_pubkey_and_subnet(hotkey_ss58=hotkey, netuid=config.NETUID)
+        neuron = await self._call(
+            "get_emission",
+            lambda subtensor: subtensor.get_neuron_for_pubkey_and_subnet(hotkey_ss58=hotkey, netuid=config.NETUID),
+        )
         if neuron is None or neuron.is_null:
             return 0.0
         return float(neuron.emission)
