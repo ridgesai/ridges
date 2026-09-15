@@ -475,7 +475,9 @@ async def validator_request_evaluation(
                 if evaluation_bundle is None:
                     continue
 
-                evaluation, evaluation_runs = evaluation_bundle
+                evaluation = evaluation_bundle.evaluation
+                evaluation_runs = evaluation_bundle.evaluation_runs
+                max_concurrent_evaluation_runs = evaluation_bundle.max_concurrent_evaluation_runs
                 agent_id = candidate.agent_id
                 break
             else:
@@ -490,16 +492,9 @@ async def validator_request_evaluation(
     validator.current_evaluation = evaluation
     validator.current_agent = agent
 
-    # Validators take their run concurrency from the competition this evaluation belongs to.
-    # A competition without a policy sends nothing, leaving the validator on its own default.
-    competition_policy = await get_competition_policy(evaluation.set_id)
-    if competition_policy is None:
-        logger.warning(
-            f"Competition {evaluation.set_id} has no policy; "
-            f"validator '{validator.name}' will use its default evaluation run concurrency"
-        )
-    max_concurrent_evaluation_runs = (
-        competition_policy.max_concurrent_evaluation_runs if competition_policy is not None else None
+    logger.info(
+        f"Assigned evaluation {evaluation.evaluation_id} in competition {evaluation.set_id} "
+        f"to {validator.hotkey} with max concurrent runs {max_concurrent_evaluation_runs}"
     )
 
     logger.info(f"Validator '{validator.name}' requested an evaluation")
