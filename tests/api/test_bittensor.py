@@ -7,7 +7,7 @@ import pytest
 from bittensor.core.chain_data.metagraph_info import SelectiveMetagraphIndex
 
 import api.config as config
-from api.loops import subtensor_keepalive
+import utils.bittensor as ridges_bittensor
 from utils.bittensor import HotkeySubnetInfo, SubtensorClient, SubtensorUnavailableError
 
 
@@ -149,7 +149,7 @@ async def test_alpha_stake_availability_treats_omitted_zero_subnet_as_zero() -> 
 
 
 #
-# Connection resilience: timeouts, reconnect, keepalive
+# Connection resilience: timeouts, reconnect
 #
 
 
@@ -192,6 +192,10 @@ def _restore_log_handlers():
         _cleanups.pop()()
 
 
+async def _never_returns(*args, **kwargs):
+    await asyncio.sleep(60)
+
+
 @pytest.mark.anyio
 async def test_chain_call_times_out_instead_of_hanging(monkeypatch) -> None:
     """A call that never returns must raise, not block the caller forever.
@@ -199,28 +203,38 @@ async def test_chain_call_times_out_instead_of_hanging(monkeypatch) -> None:
     This is the core regression: the substrate layer polls response futures in an unbounded loop,
     so without an enforced timeout a wedged websocket hangs the request indefinitely.
     """
-    monkeypatch.setattr(config, "SUBTENSOR_CALL_TIMEOUT_SECONDS", 0.05)
-
-    async def never_returns(*args, **kwargs):
-        await asyncio.sleep(60)
+    monkeypatch.setattr(config, "SUBTENSOR_TIMEOUT_SECONDS", 0.05)
 
     client = SubtensorClient()
-    client._subtensor = SimpleNamespace(get_metagraph_info=never_returns)
+    client._subtensor = SimpleNamespace(get_metagraph_info=_never_returns)
+    client.reconnect = AsyncMock()
 
     with pytest.raises(SubtensorUnavailableError):
         await asyncio.wait_for(client.get_subnet_hotkey_info(netuid=62), timeout=5)
 
 
 @pytest.mark.anyio
-async def test_timeout_is_logged_as_an_error_for_sentry(monkeypatch) -> None:
-    """A timed-out chain call must log at ERROR so it surfaces in Sentry."""
-    monkeypatch.setattr(config, "SUBTENSOR_CALL_TIMEOUT_SECONDS", 0.05)
-
-    async def never_returns(*args, **kwargs):
-        await asyncio.sleep(60)
+async def test_timed_out_call_rebuilds_the_connection(monkeypatch) -> None:
+    monkeypatch.setattr(config, "SUBTENSOR_TIMEOUT_SECONDS", 0.05)
 
     client = SubtensorClient()
-    client._subtensor = SimpleNamespace(get_metagraph_info=never_returns)
+    client._subtensor = SimpleNamespace(get_metagraph_info=_never_returns)
+    client.reconnect = AsyncMock()
+
+    with pytest.raises(SubtensorUnavailableError):
+        await client.get_subnet_hotkey_info(netuid=62)
+
+    client.reconnect.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_timeout_is_logged_as_an_error_for_sentry(monkeypatch) -> None:
+    """A timed-out chain call must log at ERROR so it surfaces in Sentry."""
+    monkeypatch.setattr(config, "SUBTENSOR_TIMEOUT_SECONDS", 0.05)
+
+    client = SubtensorClient()
+    client._subtensor = SimpleNamespace(get_metagraph_info=_never_returns)
+    client.reconnect = AsyncMock()
 
     records = _capture_bittensor_logs()
 
@@ -228,10 +242,32 @@ async def test_timeout_is_logged_as_an_error_for_sentry(monkeypatch) -> None:
         await client.get_subnet_hotkey_info(netuid=62)
 
     errors = [r for r in records if r.levelno == logging.ERROR]
-    assert len(errors) == 1
+    assert len(errors) >= 1
     assert "get_subnet_hotkey_info" in errors[0].getMessage()
     # exc_info gives Sentry a stack trace rather than a bare message.
     assert errors[0].exc_info is not None
+
+
+@pytest.mark.anyio
+async def test_timed_out_call_retries_once_on_the_new_connection(monkeypatch) -> None:
+    monkeypatch.setattr(config, "SUBTENSOR_TIMEOUT_SECONDS", 0.05)
+    metagraph = SimpleNamespace(
+        hotkeys=["hk"],
+        emission=[SimpleNamespace(tao=1.0)],
+    )
+
+    client = SubtensorClient()
+    client._subtensor = SimpleNamespace(get_metagraph_info=_never_returns)
+
+    async def fake_reconnect() -> None:
+        client._subtensor = SimpleNamespace(get_metagraph_info=AsyncMock(return_value=metagraph))
+
+    client.reconnect = fake_reconnect
+
+    result = await client.get_subnet_hotkey_info(netuid=62)
+
+    assert result["hk"].uid == 0
+    assert result["hk"].emission == 1.0
 
 
 @pytest.mark.anyio
@@ -245,7 +281,7 @@ async def test_concurrent_reconnects_never_overlap(monkeypatch) -> None:
     max_in_flight = 0
     builds = 0
 
-    async def fake_initialize(self) -> None:
+    async def fake_initialize(self, *, timeout: float | None = None) -> None:
         nonlocal in_flight, max_in_flight, builds
         in_flight += 1
         max_in_flight = max(max_in_flight, in_flight)
@@ -269,14 +305,14 @@ async def test_concurrent_reconnects_never_overlap(monkeypatch) -> None:
 @pytest.mark.anyio
 async def test_reconnect_survives_a_close_that_hangs(monkeypatch) -> None:
     """A wedged connection can hang on close; that must not block the rebuild."""
-    monkeypatch.setattr(config, "SUBTENSOR_PING_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(ridges_bittensor, "_CLOSE_TIMEOUT_SECONDS", 0.05)
 
     async def hanging_close():
         await asyncio.sleep(60)
 
     rebuilt = False
 
-    async def fake_initialize(self) -> None:
+    async def fake_initialize(self, *, timeout: float | None = None) -> None:
         nonlocal rebuilt
         rebuilt = True
         self._subtensor = SimpleNamespace(close=AsyncMock())
@@ -292,70 +328,26 @@ async def test_reconnect_survives_a_close_that_hangs(monkeypatch) -> None:
 
 
 @pytest.mark.anyio
-async def test_ping_reports_health(monkeypatch) -> None:
-    monkeypatch.setattr(config, "SUBTENSOR_PING_TIMEOUT_SECONDS", 0.05)
+async def test_initialize_dials_configured_address(monkeypatch) -> None:
+    created: dict[str, str] = {}
 
-    healthy = SubtensorClient()
-    healthy._subtensor = SimpleNamespace(substrate=SimpleNamespace(get_chain_head=AsyncMock(return_value="0xabc")))
-    assert await healthy.ping() is True
+    class FakeAsyncSubtensor:
+        def __init__(self, network: str) -> None:
+            created["network"] = network
+            self.chain_endpoint = network
+            self.network = "finney"
 
-    async def never_returns():
-        await asyncio.sleep(60)
+        async def initialize(self) -> None:
+            return None
 
-    wedged = SubtensorClient()
-    wedged._subtensor = SimpleNamespace(substrate=SimpleNamespace(get_chain_head=never_returns))
-    assert await wedged.ping() is False
+        async def close(self) -> None:
+            return None
 
+    monkeypatch.setattr(config, "SUBTENSOR_ADDRESS", "wss://lite.sub.latent.to:443")
+    monkeypatch.setattr("utils.bittensor.AsyncSubtensor", FakeAsyncSubtensor)
 
-@pytest.mark.anyio
-async def test_keepalive_loop_rebuilds_only_when_the_ping_fails(monkeypatch) -> None:
-    monkeypatch.setattr(config, "SUBTENSOR_KEEPALIVE_INTERVAL_SECONDS", 0)
+    client = SubtensorClient()
+    await client.initialize()
 
-    for ping_result, expected_reconnects in ((True, 0), (False, 1)):
-        reconnects = 0
-
-        async def ping() -> bool:
-            return ping_result
-
-        async def reconnect() -> None:
-            nonlocal reconnects
-            reconnects += 1
-
-        monkeypatch.setattr(subtensor_keepalive.subtensor_client, "ping", ping)
-        monkeypatch.setattr(subtensor_keepalive.subtensor_client, "reconnect", reconnect)
-
-        task = asyncio.create_task(subtensor_keepalive.subtensor_keepalive_loop())
-        await asyncio.sleep(0.05)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-
-        assert reconnects >= expected_reconnects
-        if expected_reconnects == 0:
-            assert reconnects == 0
-
-
-@pytest.mark.anyio
-async def test_keepalive_loop_survives_a_failing_reconnect(monkeypatch) -> None:
-    """One bad iteration must not kill the loop, or the connection never recovers."""
-    monkeypatch.setattr(config, "SUBTENSOR_KEEPALIVE_INTERVAL_SECONDS", 0)
-    attempts = 0
-
-    async def ping() -> bool:
-        return False
-
-    async def failing_reconnect() -> None:
-        nonlocal attempts
-        attempts += 1
-        raise RuntimeError("endpoint unreachable")
-
-    monkeypatch.setattr(subtensor_keepalive.subtensor_client, "ping", ping)
-    monkeypatch.setattr(subtensor_keepalive.subtensor_client, "reconnect", failing_reconnect)
-
-    task = asyncio.create_task(subtensor_keepalive.subtensor_keepalive_loop())
-    await asyncio.sleep(0.05)
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-
-    assert attempts > 1, "loop kept retrying after a failed reconnect"
+    assert created["network"] == "wss://lite.sub.latent.to:443"
+    assert client._subtensor is not None

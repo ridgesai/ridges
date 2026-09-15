@@ -16,6 +16,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Rebuild must not inherit SUBTENSOR_TIMEOUT_SECONDS: after a hung RPC we drop the socket
+# quickly rather than waiting another full request budget.
+_RECONNECT_TIMEOUT_SECONDS = 5
+_CLOSE_TIMEOUT_SECONDS = 2
+
 
 class SubtensorUnavailableError(RuntimeError):
     """A chain call could not be completed because the connection is unavailable or timed out.
@@ -69,28 +74,30 @@ class SubtensorClient:
         self._subtensor: AsyncSubtensor | None = None
         self._reconnect_lock = asyncio.Lock()
 
-    async def initialize(self) -> None:
+    async def initialize(self, *, timeout: float | None = None) -> None:
         """Initialize connection to the Subtensor network.
 
-        ``fallback_endpoints`` makes bittensor build a ``RetryAsyncSubstrate`` with failover and backoff instead of a bare ``AsyncSubstrateInterface``.
+        ``network`` is the configured websocket URL so the process dials that node instead of
+        bittensor's named-network default (which ignored ``SUBTENSOR_ADDRESS``). Idle sockets use
+        the library default shutdown timer and reopen on the next RPC.
 
-        ``websocket_shutdown_timer=None`` keeps the socket open instead of closing it a few seconds after the last response. The library documents this for long-running processes; the keepalive loop is what maintains liveness from here on.
+        First connect and per-request RPCs use ``SUBTENSOR_TIMEOUT_SECONDS``. Rebuilds pass a
+        short reconnect timeout so a dead socket is replaced quickly.
         """
-        subtensor = AsyncSubtensor(
-            network=config.SUBTENSOR_NETWORK,
-            fallback_endpoints=[config.SUBTENSOR_ADDRESS] if config.SUBTENSOR_ADDRESS else None,
-            websocket_shutdown_timer=None,
-        )
+        bound = timeout if timeout is not None else config.SUBTENSOR_TIMEOUT_SECONDS
+        subtensor = AsyncSubtensor(network=config.SUBTENSOR_ADDRESS)
         try:
-            await asyncio.wait_for(subtensor.initialize(), timeout=config.SUBTENSOR_CALL_TIMEOUT_SECONDS)
+            await asyncio.wait_for(subtensor.initialize(), timeout=bound)
         except (TimeoutError, asyncio.TimeoutError) as exc:
             with contextlib.suppress(Exception):
                 await subtensor.close()
-            raise SubtensorUnavailableError(
-                f"Subtensor connection timed out after {config.SUBTENSOR_CALL_TIMEOUT_SECONDS}s"
-            ) from exc
+            raise SubtensorUnavailableError(f"Subtensor connection timed out after {bound}s") from exc
         self._subtensor = subtensor
-        logger.info("Subtensor connection initialized")
+        logger.info(
+            "Subtensor connection initialized chain_endpoint=%s network=%s",
+            subtensor.chain_endpoint,
+            subtensor.network,
+        )
 
     async def close(self) -> None:
         """Close connection to the Subtensor network."""
@@ -114,8 +121,8 @@ class SubtensorClient:
             if old is not None:
                 # A wedged connection can hang on close too, so bound it and move on regardless.
                 with contextlib.suppress(Exception):
-                    await asyncio.wait_for(old.close(), timeout=config.SUBTENSOR_PING_TIMEOUT_SECONDS)
-            await self.initialize()
+                    await asyncio.wait_for(old.close(), timeout=_CLOSE_TIMEOUT_SECONDS)
+            await self.initialize(timeout=_RECONNECT_TIMEOUT_SECONDS)
 
     async def _call(
         self,
@@ -130,30 +137,24 @@ class SubtensorClient:
         """
         subtensor = self._subtensor
         assert subtensor is not None, "Subtensor client is not initialized"
-        effective_timeout = timeout if timeout is not None else config.SUBTENSOR_CALL_TIMEOUT_SECONDS
+        effective_timeout = timeout if timeout is not None else config.SUBTENSOR_TIMEOUT_SECONDS
         try:
             return await asyncio.wait_for(coro_factory(subtensor), timeout=effective_timeout)
         except (TimeoutError, asyncio.TimeoutError) as exc:
             message = f"Subtensor call {name} timed out after {effective_timeout}s"
-            # logger.error so this surfaces in Sentry: a timeout here means the websocket is
-            # wedged and requests are being dropped, which is exactly what we want alerting on.
             logger.error(message, exc_info=exc)
-            raise SubtensorUnavailableError(message) from exc
-
-    async def ping(self) -> bool:
-        """Return whether the connection can still complete a cheap chain read."""
-        try:
-            await self._call(
-                "ping",
-                lambda subtensor: subtensor.substrate.get_chain_head(),
-                timeout=config.SUBTENSOR_PING_TIMEOUT_SECONDS,
-            )
-            return True
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.warning(f"Subtensor ping failed: {type(e).__name__}: {e}")
-            return False
+            try:
+                await self.reconnect()
+            except Exception as reconnect_exc:
+                raise SubtensorUnavailableError(message) from reconnect_exc
+            retry_subtensor = self._subtensor
+            assert retry_subtensor is not None, "Subtensor client is not initialized"
+            try:
+                return await asyncio.wait_for(coro_factory(retry_subtensor), timeout=effective_timeout)
+            except (TimeoutError, asyncio.TimeoutError) as retry_exc:
+                retry_message = f"Subtensor call {name} timed out after reconnect after {effective_timeout}s"
+                logger.error(retry_message, exc_info=retry_exc)
+                raise SubtensorUnavailableError(retry_message) from retry_exc
 
     async def is_hotkey_registered(self, hotkey: str) -> bool:
         """Check if provided hotkey is registered on the

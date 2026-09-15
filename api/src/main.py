@@ -26,7 +26,6 @@ from api.endpoints.validator import router as validator_router
 from api.exception_handlers import register_exception_handlers
 from api.loops.approval_projector import approval_projector_loop
 from api.loops.pre_screening_judge import pre_screening_projector_loop
-from api.loops.subtensor_keepalive import subtensor_keepalive_loop
 from api.loops.validator_heartbeat_timeout import validator_heartbeat_timeout_loop
 from api.src.endpoints.upload import router as upload_router
 from api.src.middleware.request_interceptor import RequestInterceptorMiddleware
@@ -81,14 +80,6 @@ async def lifespan(app: FastAPI):
         _endpoint_url=config.S3_ENDPOINT_URL,
     )
     await subtensor_client.initialize()
-
-    # Not gated on SHOULD_RUN_LOOPS: any process that serves requests needs a healthy
-    # subtensor connection, not just the one running the projector loops.
-    _start_background_task(
-        background_tasks,
-        "subtensor_keepalive_loop",
-        subtensor_keepalive_loop(),
-    )
 
     if config.SHOULD_RUN_LOOPS:
         _start_background_task(
