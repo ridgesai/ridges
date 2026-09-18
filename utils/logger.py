@@ -107,15 +107,24 @@ def _configure_bittensor_logging(debug: bool) -> None:
     configuration silently undone. Importing here makes the ordering explicit:
     the machine is constructed before the loop below clears its handlers.
 
-    Levels alone are not enough for debug output — bittensor gates some call
+    Levels alone are not enough for debug output: bittensor gates some call
     sites behind its own state machine, so enable_debug() is needed to open them.
     """
     from bittensor.utils.btlogging import logging as bt_logging
 
     if debug:
-        # Re-adds QueueHandlers to every existing logger, which the handler
-        # rebuild in setup_logging() then strips back off.
-        bt_logging.enable_debug()
+        # The SDK's debug transition changes every existing logger's level.
+        # Preserve those levels; setup_logging configures our chosen namespaces below.
+        levels = [
+            (logger, logger.level)
+            for logger in list(logging.Logger.manager.loggerDict.values())
+            if isinstance(logger, logging.Logger)
+        ]
+        try:
+            bt_logging.enable_debug()
+        finally:
+            for logger, level in levels:
+                logger.setLevel(level)
 
 
 def setup_logging() -> None:
