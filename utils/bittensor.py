@@ -1,5 +1,4 @@
 import asyncio
-import contextlib
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
@@ -8,6 +7,8 @@ from bittensor.core.async_subtensor import AsyncSubtensor
 from bittensor.core.chain_data.metagraph_info import SelectiveMetagraphIndex
 from bittensor.utils.balance import Balance
 from bittensor_wallet.keypair import Keypair
+from websockets.exceptions import WebSocketException
+from websockets.protocol import State
 
 import api.config as config
 
@@ -20,13 +21,13 @@ logger = logging.getLogger(__name__)
 # quickly rather than waiting another full request budget.
 _RECONNECT_TIMEOUT_SECONDS = 5
 _CLOSE_TIMEOUT_SECONDS = 2
+_RECONNECT_COOLDOWN_SECONDS = 5
 
 
 class SubtensorUnavailableError(RuntimeError):
     """A chain call could not be completed because the connection is unavailable or timed out.
 
-    Raised instead of hanging. The underlying substrate client polls response futures in an
-    unbounded loop, so without an enforced timeout a wedged websocket blocks the caller forever.
+    Reports an unavailable connection or a read that failed despite one recovery attempt.
     """
 
 
@@ -73,6 +74,9 @@ class SubtensorClient:
     def __init__(self) -> None:
         self._subtensor: AsyncSubtensor | None = None
         self._reconnect_lock = asyncio.Lock()
+        self._reconnect_task: asyncio.Task[None] | None = None
+        self._retry_after = 0.0
+        self._stopping = False
 
     async def initialize(self, *, timeout: float | None = None) -> None:
         """Initialize connection to the Subtensor network.
@@ -84,45 +88,146 @@ class SubtensorClient:
         First connect and per-request RPCs use ``SUBTENSOR_TIMEOUT_SECONDS``. Rebuilds pass a
         short reconnect timeout so a dead socket is replaced quickly.
         """
-        bound = timeout if timeout is not None else config.SUBTENSOR_TIMEOUT_SECONDS
+        try:
+            await self.reconnect(None, timeout=timeout if timeout is not None else config.SUBTENSOR_TIMEOUT_SECONDS)
+        except (Exception, asyncio.CancelledError):
+            await self.close()
+            raise
+
+    async def _connect(self, timeout: float) -> AsyncSubtensor:
+        if self._stopping:
+            raise SubtensorUnavailableError("Subtensor client is shutting down")
+
         subtensor = AsyncSubtensor(network=config.SUBTENSOR_ADDRESS)
         try:
-            await asyncio.wait_for(subtensor.initialize(), timeout=bound)
-        except (TimeoutError, asyncio.TimeoutError) as exc:
-            with contextlib.suppress(Exception):
-                await subtensor.close()
-            raise SubtensorUnavailableError(f"Subtensor connection timed out after {bound}s") from exc
-        self._subtensor = subtensor
+            await asyncio.wait_for(subtensor.initialize(), timeout=timeout)
+            if self._stopping:
+                raise SubtensorUnavailableError("Subtensor client is shutting down")
+
+        except (Exception, asyncio.CancelledError) as exc:
+            await self._close_client(subtensor)
+            if isinstance(exc, (OSError, WebSocketException)):
+                raise SubtensorUnavailableError("Subtensor connection could not be initialized") from exc
+            raise
         logger.info(
-            "Subtensor connection initialized chain_endpoint=%s network=%s",
-            subtensor.chain_endpoint,
-            subtensor.network,
+            f"Subtensor connection initialized chain_endpoint={subtensor.chain_endpoint} network={subtensor.network}"
         )
+        return subtensor
+
+    async def _close_client(self, subtensor: AsyncSubtensor) -> None:
+        manager = getattr(getattr(subtensor, "substrate", None), "ws", None)
+        connection = getattr(manager, "ws", None)
+        handler = getattr(manager, "_send_recv_task", None)
+
+        # Cancel pending futures to prevent resource leaks before handler shutdown.
+        for response in tuple(getattr(manager, "_received", {}).values()):
+            if not response.done():
+                response.cancel()
+
+        failed = False
+        try:
+            await asyncio.wait_for(subtensor.close(), timeout=_CLOSE_TIMEOUT_SECONDS)
+        except Exception:
+            failed = True
+            logger.warning("Subtensor cleanup failed or timed out", exc_info=True)
+        finally:
+            # Ensure existing socket is tracked since shutdown can be skipped
+            current = getattr(manager, "ws", None)
+            sockets = {socket for socket in (connection, current) if socket is not None}
+            needs_fallback = (
+                failed
+                or any(socket.state != State.CLOSED for socket in sockets)
+                or (handler is not None and not handler.done())
+            )
+            if manager is not None and needs_fallback:
+                try:
+                    # Abort sockets first to avoid hanging connections.
+                    for socket in sockets:
+                        if socket.state != State.CLOSED:
+                            socket.transport.abort()
+                    await asyncio.wait_for(manager.shutdown(), timeout=_CLOSE_TIMEOUT_SECONDS)
+
+                except Exception:
+                    logger.warning("Fallback Subtensor shutdown failed or timed out", exc_info=True)
+
+                finally:
+                    current = getattr(manager, "ws", None)
+                    if current is not None:
+                        sockets.add(current)
+                    for socket in sockets:
+                        if socket.state != State.CLOSED:
+                            socket.transport.abort()
 
     async def close(self) -> None:
         """Close connection to the Subtensor network."""
-        if self._subtensor:
-            await self._subtensor.close()
-            self._subtensor = None
-            logger.info("Subtensor connection closed")
-
-    async def reconnect(self) -> None:
-        """Tear down the current connection and build a fresh one.
-
-        Recovers the permanently wedged state the substrate library can reach after exhausting its
-        internal reconnect attempts, where the socket may still report OPEN but no response future
-        will ever resolve again.
-
-        Held under a lock so that concurrent callers collapse into a single rebuild rather than
-        racing to replace each other's connections.
-        """
         async with self._reconnect_lock:
+            self._stopping = True
             old, self._subtensor = self._subtensor, None
+            recovery = self._reconnect_task
+
+        if recovery is not None:
+            try:
+                await self._wait_for_recovery(recovery, config.SUBTENSOR_TIMEOUT_SECONDS)
+            except Exception:
+                logger.warning("Subtensor recovery did not finish normally during shutdown", exc_info=True)
+
+        if old is not None:
+            await self._close_client(old)
+        logger.info("Subtensor client stopped")
+
+    async def reconnect(self, stale: AsyncSubtensor | None, *, timeout: float | None = None) -> None:
+        """Share one close-first recovery, replacing only the client that actually failed."""
+        bound = timeout if timeout is not None else _RECONNECT_TIMEOUT_SECONDS
+        async with self._reconnect_lock:
+            if self._stopping:
+                raise SubtensorUnavailableError("Subtensor client is shutting down")
+
+            recovery = self._reconnect_task
+            if recovery is None or recovery.done():
+                if self._subtensor is not None and self._subtensor is not stale:
+                    return
+
+                if asyncio.get_running_loop().time() < self._retry_after:
+                    raise SubtensorUnavailableError("Subtensor recovery failed; please retry shortly")
+
+                old, self._subtensor = self._subtensor, None
+                recovery = asyncio.create_task(self._recover(old, bound))
+                self._reconnect_task = recovery
+                recovery.add_done_callback(self._recovery_finished)
+        await self._wait_for_recovery(recovery, bound)
+
+    async def _recover(self, old: AsyncSubtensor | None, timeout: float) -> None:
+        try:
             if old is not None:
-                # A wedged connection can hang on close too, so bound it and move on regardless.
-                with contextlib.suppress(Exception):
-                    await asyncio.wait_for(old.close(), timeout=_CLOSE_TIMEOUT_SECONDS)
-            await self.initialize(timeout=_RECONNECT_TIMEOUT_SECONDS)
+                await self._close_client(old)
+
+            self._subtensor = await self._connect(timeout)
+            self._retry_after = 0.0
+        except (Exception, asyncio.CancelledError):
+            self._retry_after = asyncio.get_running_loop().time() + _RECONNECT_COOLDOWN_SECONDS
+            if not self._stopping:
+                logger.error("Subtensor recovery failed", exc_info=True)
+            raise
+
+    def _recovery_finished(self, task: asyncio.Task[None]) -> None:
+        if not task.cancelled():
+            task.exception()
+
+        if self._reconnect_task is task:
+            self._reconnect_task = None
+
+    async def _wait_for_recovery(self, task: asyncio.Task[None], timeout: float) -> None:
+        try:
+            # Budget for closing the old client, connecting, and cleaning up a failed candidate.
+            await asyncio.wait_for(asyncio.shield(task), timeout=timeout + 2 * _CLOSE_TIMEOUT_SECONDS)
+
+        except TimeoutError as exc:
+            raise SubtensorUnavailableError("Subtensor recovery is still in progress") from exc
+
+        except asyncio.CancelledError as exc:
+            if asyncio.current_task().cancelling():
+                raise
+            raise SubtensorUnavailableError("Subtensor recovery was interrupted") from exc
 
     async def _call(
         self,
@@ -130,31 +235,34 @@ class SubtensorClient:
         coro_factory: Callable[[AsyncSubtensor], Awaitable[Any]],
         timeout: float | None = None,
     ) -> Any:
-        """Run one chain call under a hard timeout.
+        """Run a read with cooperative cancellation and at most one retry after shared recovery."""
+        if self._stopping:
+            raise SubtensorUnavailableError("Subtensor client is shutting down")
 
-        Every chain method goes through here. Without it a stalled websocket blocks the awaiting
-        request indefinitely, since the substrate layer applies no timeout of its own.
-        """
+        if self._subtensor is None:
+            await self.reconnect(None)
+
         subtensor = self._subtensor
-        assert subtensor is not None, "Subtensor client is not initialized"
         effective_timeout = timeout if timeout is not None else config.SUBTENSOR_TIMEOUT_SECONDS
-        try:
-            return await asyncio.wait_for(coro_factory(subtensor), timeout=effective_timeout)
-        except (TimeoutError, asyncio.TimeoutError) as exc:
-            message = f"Subtensor call {name} timed out after {effective_timeout}s"
-            logger.error(message, exc_info=exc)
+        for attempt in range(2):
+            if subtensor is None or self._stopping:
+                raise SubtensorUnavailableError("Subtensor connection is unavailable")
+
             try:
-                await self.reconnect()
-            except Exception as reconnect_exc:
-                raise SubtensorUnavailableError(message) from reconnect_exc
-            retry_subtensor = self._subtensor
-            assert retry_subtensor is not None, "Subtensor client is not initialized"
-            try:
-                return await asyncio.wait_for(coro_factory(retry_subtensor), timeout=effective_timeout)
-            except (TimeoutError, asyncio.TimeoutError) as retry_exc:
-                retry_message = f"Subtensor call {name} timed out after reconnect after {effective_timeout}s"
-                logger.error(retry_message, exc_info=retry_exc)
-                raise SubtensorUnavailableError(retry_message) from retry_exc
+                return await asyncio.wait_for(coro_factory(subtensor), timeout=effective_timeout)
+            except (OSError, WebSocketException, asyncio.InvalidStateError, asyncio.CancelledError) as exc:
+                # Only handle cancellation if this task was explicitly cancelled.
+                if isinstance(exc, asyncio.CancelledError) and asyncio.current_task().cancelling():
+                    raise
+
+                reason = f"timed out after {effective_timeout}s" if isinstance(exc, TimeoutError) else repr(exc)
+                message = f"Subtensor call {name} failed: {reason}"
+                logger.error(message, exc_info=exc)
+                if attempt:
+                    raise SubtensorUnavailableError(f"{message} (after reconnect)") from exc
+
+            await self.reconnect(subtensor)
+            subtensor = self._subtensor
 
     async def is_hotkey_registered(self, hotkey: str) -> bool:
         """Check if provided hotkey is registered on the
@@ -209,8 +317,10 @@ class SubtensorClient:
         logger.info(f"Fetched UID and emission data for {len(result)} hotkeys on subnet {netuid}")
         return result
 
-    async def get_hotkey_owner(self, hotkey: str, block: int | None = None) -> str | None:
-        """Retrieve the owner of a given hotkey at a specific block (or latest if block is None).
+    async def get_hotkey_owner(
+        self, hotkey: str, block: int | None = None, *, block_hash: str | None = None
+    ) -> str | None:
+        """Retrieve the owner at a specific block, or latest if no block is supplied.
 
         Parameters
         ----------
@@ -218,6 +328,8 @@ class SubtensorClient:
             Hotkey for which to retrieve the owner.
         block : int | None, optional
             Block number at which to retrieve the owner, by default None.
+        block_hash : str | None, optional
+            Prefer a known hash to avoid the SDK's block-number cache retaining the client.
 
         Returns
         -------
@@ -226,7 +338,7 @@ class SubtensorClient:
         """
         return await self._call(
             "get_hotkey_owner",
-            lambda subtensor: subtensor.get_hotkey_owner(hotkey_ss58=hotkey, block=block),
+            lambda subtensor: subtensor.get_hotkey_owner(hotkey_ss58=hotkey, block=block, block_hash=block_hash),
         )
 
     async def get_balance(self, address: str) -> Balance:
