@@ -65,7 +65,7 @@ from queries.payments import (
 from queries.refund import is_payment_refunded
 from queries.upload_credit import get_exact_upload_credit_replay, get_upload_credit_by_id, get_upload_credit_for_check
 from utils.agent_secrets import encrypt_agent_secret
-from utils.bittensor import subtensor_client
+from utils.bittensor import SubtensorUnavailableError, subtensor_client
 from utils.s3 import upload_text_file_to_s3
 from utils.upload_ticket import (
     FUNDING_BURN,
@@ -453,6 +453,8 @@ async def _process_agent_upload(
             # Retrieve the burn block + events from the chain
             try:
                 payment_block_info = await subtensor_client.get_block_info(block_hash=payment_block_hash)
+            except SubtensorUnavailableError:
+                raise
             except Exception as e:
                 logger.error(f"Error retrieving payment block: {e}")
                 raise HTTPException(status_code=402, detail="Payment could not be verified")
@@ -468,7 +470,7 @@ async def _process_agent_upload(
             except (ValueError, TypeError, IndexError, AttributeError):
                 raise HTTPException(status_code=402, detail="Burn extrinsic could not be decoded") from None
 
-            coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey, block=int(payment_block_info.number))
+            coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey, block_hash=payment_block_hash)
             if coldkey is None:
                 raise HTTPException(status_code=402, detail="Hotkey owner not found at payment block")
             await check_coldkey_banned(coldkey)
@@ -652,6 +654,17 @@ async def _process_agent_upload(
 
     except PlatformFrozenError as e:
         logger.warning(f"Upload attempt rejected due to platform freeze: {e}")
+        raise
+
+    except SubtensorUnavailableError as e:
+        await record_upload_attempt(
+            upload_type="agent",
+            success=False,
+            error_type="internal_error",
+            error_message=str(e),
+            http_status_code=503,
+            **upload_data,
+        )
         raise
 
     except HTTPException as e:
