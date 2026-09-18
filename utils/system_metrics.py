@@ -1,4 +1,6 @@
 import logging
+import platform
+from pathlib import Path
 from typing import Optional
 
 import psutil
@@ -12,6 +14,10 @@ logger = logging.getLogger(__name__)
 class SystemMetrics(BaseModel):
     """
     cpu_percent: CPU percentage (0-100)
+    cpu_model: CPU model name when exposed by Linux
+    cpu_physical_cores: Physical CPU core count visible to the validator
+    cpu_logical_cpus: Logical CPU count (not adjusted for container CPU quotas)
+    cpu_architecture: Machine architecture
     ram_percent: RAM percentage (0-100)
     ram_total_gb: Total RAM in GB
     disk_percent: Disk percentage (0-100)
@@ -20,11 +26,24 @@ class SystemMetrics(BaseModel):
     """
 
     cpu_percent: Optional[float] = None
+    cpu_model: Optional[str] = None
+    cpu_physical_cores: Optional[int] = None
+    cpu_logical_cpus: Optional[int] = None
+    cpu_architecture: Optional[str] = None
     ram_percent: Optional[float] = None
     ram_total_gb: Optional[float] = None
     disk_percent: Optional[float] = None
     disk_total_gb: Optional[float] = None
     num_containers: Optional[int] = None
+
+
+def _read_cpu_model() -> str | None:
+    with Path("/proc/cpuinfo").open(encoding="utf-8", errors="replace") as cpuinfo:
+        for line in cpuinfo.read(16_384).splitlines():
+            key, separator, value = line.partition(":")
+            if separator and key.strip() == "model name":
+                return value.strip() or None
+    return None
 
 
 def collect_system_metrics() -> SystemMetrics:
@@ -52,6 +71,17 @@ def collect_system_metrics() -> SystemMetrics:
 
     except Exception as e:
         logger.warning(f"Error in get_system_metrics(): {e}")
+
+    for field, probe in (
+        ("cpu_model", _read_cpu_model),
+        ("cpu_physical_cores", lambda: psutil.cpu_count(logical=False)),
+        ("cpu_logical_cpus", lambda: psutil.cpu_count(logical=True)),
+        ("cpu_architecture", platform.machine),
+    ):
+        try:
+            setattr(metrics, field, probe() or None)
+        except Exception:
+            logger.debug("Could not collect optional metric %s", field, exc_info=True)
 
     return metrics
 
