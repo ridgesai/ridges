@@ -1,9 +1,13 @@
 import asyncio
+import gc
 import logging
+import weakref
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from async_substrate_interface.utils.cache import CachedFetcher
+from bittensor.core.async_subtensor import AsyncSubtensor
 from bittensor.core.chain_data.metagraph_info import SelectiveMetagraphIndex
 
 import api.config as config
@@ -259,7 +263,7 @@ async def test_timed_out_call_retries_once_on_the_new_connection(monkeypatch) ->
     client = SubtensorClient()
     client._subtensor = SimpleNamespace(get_metagraph_info=_never_returns)
 
-    async def fake_reconnect() -> None:
+    async def fake_reconnect(stale) -> None:
         client._subtensor = SimpleNamespace(get_metagraph_info=AsyncMock(return_value=metagraph))
 
     client.reconnect = fake_reconnect
@@ -271,35 +275,23 @@ async def test_timed_out_call_retries_once_on_the_new_connection(monkeypatch) ->
 
 
 @pytest.mark.anyio
-async def test_concurrent_reconnects_never_overlap(monkeypatch) -> None:
-    """The reconnect lock must serialize rebuilds.
-
-    Without it, concurrent callers interleave teardown and setup and can leave the client holding
-    a connection that another caller has already closed.
-    """
-    in_flight = 0
-    max_in_flight = 0
-    builds = 0
-
-    async def fake_initialize(self, *, timeout: float | None = None) -> None:
-        nonlocal in_flight, max_in_flight, builds
-        in_flight += 1
-        max_in_flight = max(max_in_flight, in_flight)
-        builds += 1
-        await asyncio.sleep(0.01)  # yield, so any overlap is observable
-        self._subtensor = SimpleNamespace(close=AsyncMock())
-        in_flight -= 1
-
-    monkeypatch.setattr(SubtensorClient, "initialize", fake_initialize)
-
+async def test_concurrent_timeouts_share_one_recovery(monkeypatch) -> None:
+    monkeypatch.setattr(config, "SUBTENSOR_TIMEOUT_SECONDS", 0.01)
+    replacement = _Connection()
+    factory = _install_connection(monkeypatch, replacement)
+    old = _Connection()
+    old.get_balance.side_effect = _never_returns
     client = SubtensorClient()
-    client._subtensor = SimpleNamespace(close=AsyncMock())
+    client._subtensor = old
 
-    await asyncio.gather(*(client.reconnect() for _ in range(5)))
+    results = await asyncio.gather(*(client.get_balance("address") for _ in range(5)))
 
-    assert max_in_flight == 1, "rebuilds overlapped; the reconnect lock is not holding"
-    assert builds == 5
-    assert client._subtensor is not None
+    assert results == [123] * 5
+    assert len(factory) == 1
+    old.close.assert_awaited_once()
+    replacement.close.assert_not_awaited()
+    assert client._reconnect_task is None
+    await client.close()
 
 
 @pytest.mark.anyio
@@ -310,21 +302,16 @@ async def test_reconnect_survives_a_close_that_hangs(monkeypatch) -> None:
     async def hanging_close():
         await asyncio.sleep(60)
 
-    rebuilt = False
-
-    async def fake_initialize(self, *, timeout: float | None = None) -> None:
-        nonlocal rebuilt
-        rebuilt = True
-        self._subtensor = SimpleNamespace(close=AsyncMock())
-
-    monkeypatch.setattr(SubtensorClient, "initialize", fake_initialize)
-
+    replacement = _Connection()
+    _install_connection(monkeypatch, replacement)
     client = SubtensorClient()
-    client._subtensor = SimpleNamespace(close=hanging_close)
+    old = SimpleNamespace(close=hanging_close)
+    client._subtensor = old
 
-    await asyncio.wait_for(client.reconnect(), timeout=5)
+    await asyncio.wait_for(client.reconnect(old), timeout=5)
 
-    assert rebuilt
+    assert client._subtensor is replacement
+    await client.close()
 
 
 @pytest.mark.anyio
@@ -351,3 +338,336 @@ async def test_initialize_dials_configured_address(monkeypatch) -> None:
 
     assert created["network"] == "wss://lite.sub.latent.to:443"
     assert client._subtensor is not None
+    await client.close()
+
+
+class _Connection:
+    def __init__(self):
+        self.chain_endpoint = "mock"
+        self.network = "mock"
+        self.initialize = AsyncMock()
+        self.close = AsyncMock()
+        self.get_balance = AsyncMock(return_value=123)
+
+
+def _install_connection(monkeypatch, *connections):
+    created = []
+
+    def factory(**kwargs):
+        connection = connections[len(created)]
+        created.append(connection)
+        return connection
+
+    monkeypatch.setattr(ridges_bittensor, "AsyncSubtensor", factory)
+    return created
+
+
+@pytest.mark.anyio
+async def test_late_failure_does_not_replace_fresh_connection(monkeypatch):
+    replacement = _Connection()
+    published = asyncio.Event()
+    replacement.initialize.side_effect = lambda: published.set()
+    created = _install_connection(monkeypatch, replacement)
+    old = _Connection()
+
+    async def old_read(*, address):
+        if address == "late":
+            await published.wait()
+        raise ConnectionError("old connection failed")
+
+    old.get_balance.side_effect = old_read
+    client = SubtensorClient()
+    client._subtensor = old
+    assert await asyncio.gather(client.get_balance("early"), client.get_balance("late")) == [123, 123]
+    assert len(created) == 1
+    replacement.close.assert_not_awaited()
+    await client.close()
+
+
+@pytest.mark.anyio
+async def test_failed_recovery_has_cooldown_and_later_recovers(monkeypatch):
+    monkeypatch.setattr(ridges_bittensor, "_RECONNECT_COOLDOWN_SECONDS", 0.02)
+    failed, replacement = _Connection(), _Connection()
+    failed.initialize.side_effect = ConnectionError("node offline")
+    created = _install_connection(monkeypatch, failed, replacement)
+    old = _Connection()
+    old.get_balance.side_effect = ConnectionError("connection lost")
+    client = SubtensorClient()
+    client._subtensor = old
+
+    results = await asyncio.gather(*(client.get_balance("address") for _ in range(5)), return_exceptions=True)
+    assert all(isinstance(result, SubtensorUnavailableError) for result in results)
+    assert len(created) == 1
+    assert client._subtensor is None
+    failed.close.assert_awaited_once()
+    with pytest.raises(SubtensorUnavailableError):
+        await client.get_balance("address")
+    assert len(created) == 1
+    await asyncio.sleep(0.025)
+    assert await client.get_balance("address") == 123
+    assert len(created) == 2
+    await client.close()
+
+
+@pytest.mark.anyio
+async def test_cancelling_triggering_request_does_not_cancel_recovery(monkeypatch):
+    started, release = asyncio.Event(), asyncio.Event()
+    replacement = _Connection()
+
+    async def initialize():
+        started.set()
+        await release.wait()
+
+    replacement.initialize.side_effect = initialize
+    created = _install_connection(monkeypatch, replacement)
+    old = _Connection()
+    old.get_balance.side_effect = ConnectionError("disconnected")
+    client = SubtensorClient()
+    client._subtensor = old
+    caller = asyncio.create_task(client.get_balance("address"))
+    await asyncio.wait_for(started.wait(), 1)
+    recovery = client._reconnect_task
+    caller.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await caller
+    assert recovery is not None and not recovery.done()
+    other = asyncio.create_task(client.get_balance("address"))
+    release.set()
+    assert await other == 123
+    assert len(created) == 1
+    assert client._reconnect_task is None
+    await client.close()
+
+
+@pytest.mark.anyio
+async def test_recovery_wait_timeout_keeps_single_owner(monkeypatch):
+    monkeypatch.setattr(ridges_bittensor, "_RECONNECT_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(ridges_bittensor, "_CLOSE_TIMEOUT_SECONDS", 0.005)
+    release = asyncio.Event()
+    replacement = _Connection()
+
+    async def slow_cancellation():
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            await release.wait()
+
+    replacement.initialize.side_effect = slow_cancellation
+    created = _install_connection(monkeypatch, replacement)
+    client = SubtensorClient()
+    try:
+        for _ in range(2):
+            with pytest.raises(SubtensorUnavailableError, match="still in progress"):
+                await asyncio.wait_for(client.get_balance("address"), 1)
+        assert len(created) == 1
+        recovery = client._reconnect_task
+        assert recovery is not None and not recovery.done()
+    finally:
+        release.set()
+        if client._reconnect_task is not None:
+            await client._reconnect_task
+        await client.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "failure",
+    [
+        ConnectionError("offline"),
+        ValueError("invalid initialization"),
+        asyncio.CancelledError(),
+        pytest.param(_never_returns, id="timeout"),
+    ],
+)
+async def test_failed_initialization_cleans_up_candidate(monkeypatch, failure):
+    candidate = _Connection()
+    candidate.initialize.side_effect = failure
+    _install_connection(monkeypatch, candidate)
+    client = SubtensorClient()
+    expected = ValueError if isinstance(failure, ValueError) else SubtensorUnavailableError
+    with pytest.raises(expected):
+        await client.initialize(timeout=0.01)
+    candidate.close.assert_awaited_once()
+    assert client._subtensor is None
+    assert client._reconnect_task is None
+
+
+@pytest.mark.anyio
+async def test_failed_startup_cannot_publish_a_late_connection(monkeypatch):
+    monkeypatch.setattr(config, "SUBTENSOR_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(ridges_bittensor, "_CLOSE_TIMEOUT_SECONDS", 0.005)
+    release = asyncio.Event()
+    candidate = _Connection()
+
+    async def slow_cancellation():
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            await release.wait()
+
+    candidate.initialize.side_effect = slow_cancellation
+    _install_connection(monkeypatch, candidate)
+    client = SubtensorClient()
+    try:
+        with pytest.raises(SubtensorUnavailableError):
+            await asyncio.wait_for(client.initialize(), 1)
+        assert client._stopping
+        assert client._subtensor is None
+    finally:
+        release.set()
+        if client._reconnect_task is not None:
+            await asyncio.gather(client._reconnect_task, return_exceptions=True)
+    assert client._subtensor is None
+    assert client._reconnect_task is None
+    candidate.close.assert_awaited_once()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("cancel_startup", [False, True])
+async def test_shutdown_during_initialization_never_publishes_candidate(monkeypatch, cancel_startup):
+    entered, release = asyncio.Event(), asyncio.Event()
+    candidate = _Connection()
+
+    async def initialize():
+        entered.set()
+        await release.wait()
+
+    candidate.initialize.side_effect = initialize
+    _install_connection(monkeypatch, candidate)
+    client = SubtensorClient()
+    startup = asyncio.create_task(client.initialize())
+    await asyncio.wait_for(entered.wait(), 1)
+    if cancel_startup:
+        startup.cancel()
+        shutdown = None
+    else:
+        shutdown = asyncio.create_task(client.close())
+    await asyncio.sleep(0)
+    release.set()
+    with pytest.raises(asyncio.CancelledError if cancel_startup else SubtensorUnavailableError):
+        await startup
+    if shutdown is not None:
+        await shutdown
+    assert client._subtensor is None
+    assert client._reconnect_task is None
+    candidate.close.assert_awaited_once()
+    with pytest.raises(SubtensorUnavailableError, match="shutting down"):
+        await client.get_balance("address")
+
+
+@pytest.mark.anyio
+async def test_shared_lookup_timeout_recovers_cancelled_peers_and_producer(monkeypatch):
+    """Exercise the pinned dependency's real shared-future cancellation behavior."""
+    monkeypatch.setattr(config, "SUBTENSOR_TIMEOUT_SECONDS", 1)
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def lookup(address):
+        entered.set()
+        await release.wait()
+        return 456
+
+    fetcher = CachedFetcher(max_size=2, method=lookup)
+
+    async def shared_read(*, address):
+        return await fetcher(address)
+
+    old = _Connection()
+    old.get_balance.side_effect = shared_read
+    old.close.side_effect = lambda: release.set()
+    replacement = _Connection()
+    created = _install_connection(monkeypatch, replacement)
+    client = SubtensorClient()
+    client._subtensor = old
+    producer = asyncio.create_task(client.get_balance("same"))
+    await asyncio.wait_for(entered.wait(), 1)
+    timed = asyncio.create_task(client._call("lookup", lambda conn: conn.get_balance(address="same"), timeout=0.01))
+    peer = asyncio.create_task(client.get_balance("same"))
+    results = await asyncio.wait_for(asyncio.gather(producer, timed, peer), 2)
+    assert results == [123, 123, 123]
+    assert len(created) == 1
+    old.close.assert_awaited_once()
+    await client.close()
+
+
+@pytest.mark.anyio
+async def test_real_caller_cancellation_propagates_without_reconnect(monkeypatch):
+    entered = asyncio.Event()
+
+    async def read(**kwargs):
+        entered.set()
+        await asyncio.Event().wait()
+
+    client = SubtensorClient()
+    old = _Connection()
+    old.get_balance.side_effect = read
+    client._subtensor = old
+    caller = asyncio.create_task(client.get_balance("address"))
+    await entered.wait()
+    caller.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await caller
+    assert client._subtensor is old
+    assert client._reconnect_task is None
+    await client.close()
+
+
+@pytest.mark.anyio
+async def test_programming_error_is_not_retried():
+    client = SubtensorClient()
+    client._subtensor = _Connection()
+    client._subtensor.get_balance.side_effect = ValueError("bad decode")
+    with pytest.raises(ValueError, match="bad decode"):
+        await client.get_balance("address")
+    client._subtensor.get_balance.assert_awaited_once()
+    assert client._reconnect_task is None
+    await client.close()
+
+
+@pytest.mark.anyio
+async def test_repeated_recovery_releases_old_clients_and_completed_tasks(monkeypatch):
+    # pytest's captured exception records themselves retain traceback locals; exclude that artifact.
+    monkeypatch.setattr(ridges_bittensor.logger, "disabled", True)
+    live = weakref.WeakSet()
+
+    def factory(**kwargs):
+        connection = _Connection()
+        live.add(connection)
+        return connection
+
+    monkeypatch.setattr(ridges_bittensor, "AsyncSubtensor", factory)
+    client = SubtensorClient()
+    await client.initialize()
+    for _ in range(10):
+        client._subtensor.get_balance.side_effect = ConnectionError("lost")
+        assert await client.get_balance("address") == 123
+        assert client._reconnect_task is None
+        gc.collect()
+        assert len(live) == 1
+    await client.close()
+    gc.collect()
+    assert len(live) == 0
+
+
+@pytest.mark.anyio
+async def test_historical_owner_hash_does_not_retain_closed_clients_in_sdk_cache():
+    live = weakref.WeakSet()
+    cache_size = AsyncSubtensor._get_block_hash.cache_info().currsize
+    for _ in range(12):
+        chain = AsyncSubtensor(network="ws://unused")
+        live.add(chain)
+        chain.substrate.get_block_hash = AsyncMock()
+        chain.substrate.query = AsyncMock(return_value=SimpleNamespace(value="owner"))
+        chain.does_hotkey_exist = AsyncMock(return_value=True)
+        client = SubtensorClient()
+        client._subtensor = chain
+        try:
+            assert await client.get_hotkey_owner("hotkey", block_hash="0xpayment") == "owner"
+            chain.substrate.get_block_hash.assert_not_awaited()
+            assert chain.substrate.query.call_args.kwargs["block_hash"] == "0xpayment"
+        finally:
+            await client.close()
+        del chain, client
+
+    gc.collect()
+    assert len(live) == 0
+    assert AsyncSubtensor._get_block_hash.cache_info().currsize == cache_size
