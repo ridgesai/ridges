@@ -37,9 +37,11 @@ SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK")
 if not SUBTENSOR_NETWORK:
     logger.fatal("SUBTENSOR_NETWORK is not set in .env")
 
-# Ceiling on each chain RPC and the first process initialize(). Reconnect uses a short
-# hardcoded bound so a wedged socket is not waited on for this full duration again.
+# Timeout for chain reads and initial connection; cancellation/cleanup is cooperative.
+# Reconnect uses a shorter timeout so requests do not spend another full read budget connecting.
 SUBTENSOR_TIMEOUT_SECONDS = int(os.getenv("SUBTENSOR_TIMEOUT_SECONDS", "30"))
+if SUBTENSOR_TIMEOUT_SECONDS <= 0:
+    raise ValueError("SUBTENSOR_TIMEOUT_SECONDS must be positive")
 
 
 OWNER_HOTKEY = os.getenv("OWNER_HOTKEY")
