@@ -37,6 +37,12 @@ SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK")
 if not SUBTENSOR_NETWORK:
     logger.fatal("SUBTENSOR_NETWORK is not set in .env")
 
+# Timeout for chain reads and initial connection; cancellation/cleanup is cooperative.
+# Reconnect uses a shorter timeout so requests do not spend another full read budget connecting.
+SUBTENSOR_TIMEOUT_SECONDS = int(os.getenv("SUBTENSOR_TIMEOUT_SECONDS", "30"))
+if SUBTENSOR_TIMEOUT_SECONDS <= 0:
+    raise ValueError("SUBTENSOR_TIMEOUT_SECONDS must be positive")
+
 
 OWNER_HOTKEY = os.getenv("OWNER_HOTKEY")
 if not OWNER_HOTKEY:
@@ -294,6 +300,7 @@ if DISALLOW_UPLOADS:
     logger.warning(f"Uploads are disallowed: {DISALLOW_UPLOADS_REASON}")
     logger.info("-------------------------")
 
+logger.info(f"Subtensor Timeout: {SUBTENSOR_TIMEOUT_SECONDS} second(s)")
 logger.info(f"Environment: {'Production' if ENV == 'prod' else 'Development'}")
 logger.info("-------------------------")
 

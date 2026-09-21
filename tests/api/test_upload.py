@@ -27,6 +27,7 @@ from queries.upload_credit import (
     credit_payment_identity,
     get_exact_upload_credit_replay,
 )
+from utils.bittensor import SubtensorUnavailableError
 
 # ── constants ─────────────────────────────────────────────────────────────────
 
@@ -636,6 +637,7 @@ async def test_fresh_upload_creates_completed_payment():
     response = await _call_post_agent(quote_id=quote_id)
 
     assert response.status == "success"
+    upload_module.subtensor_client.get_hotkey_owner.assert_awaited_once_with(FAKE_HOTKEY, block_hash=FAKE_BLOCK_HASH)
     payment = await retrieve_payment_by_hash(
         payment_block_hash=FAKE_BLOCK_HASH,
         payment_extrinsic_index=FAKE_EXTRINSIC_INDEX,
@@ -997,6 +999,29 @@ async def test_partial_failure_retry_succeeds():
         payment_extrinsic_index=FAKE_EXTRINSIC_INDEX,
     )
     assert payment.agent_id == _deterministic_id()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("method", ["get_block_info", "get_hotkey_owner", "get_events"])
+async def test_chain_outage_is_recorded_as_503_without_reserving_payment(monkeypatch, method):
+    monkeypatch.setattr(
+        upload_module.subtensor_client,
+        method,
+        AsyncMock(side_effect=SubtensorUnavailableError("connection unavailable")),
+    )
+    quote_id = await _insert_quote()
+    with pytest.raises(SubtensorUnavailableError):
+        await _call_post_agent(quote_id=quote_id)
+
+    async with _db.pool.acquire() as conn:
+        attempts = await conn.fetch("SELECT success, http_status_code FROM upload_attempts")
+    assert len(attempts) == 1
+    assert attempts[0]["success"] is False
+    assert attempts[0]["http_status_code"] == 503
+    assert (
+        await retrieve_payment_by_hash(payment_block_hash=FAKE_BLOCK_HASH, payment_extrinsic_index=FAKE_EXTRINSIC_INDEX)
+        is None
+    )
 
 
 @pytest.mark.anyio

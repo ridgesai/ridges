@@ -98,6 +98,35 @@ class RidgesLogger(logging.Logger):
 logging.setLoggerClass(RidgesLogger)
 
 
+def _configure_bittensor_logging(debug: bool) -> None:
+    """Force btlogging to initialise, then hand its records to our handler.
+
+    Importing bittensor builds a LoggingMachine that attaches a QueueHandler to
+    the "bittensor" logger and pins it to WARNING. That happens at import time,
+    so a setup_logging() call that runs first (api.config does) would have its
+    configuration silently undone. Importing here makes the ordering explicit:
+    the machine is constructed before the loop below clears its handlers.
+
+    Levels alone are not enough for debug output: bittensor gates some call
+    sites behind its own state machine, so enable_debug() is needed to open them.
+    """
+    from bittensor.utils.btlogging import logging as bt_logging
+
+    if debug:
+        # The SDK's debug transition changes every existing logger's level.
+        # Preserve those levels; setup_logging configures our chosen namespaces below.
+        levels = [
+            (logger, logger.level)
+            for logger in list(logging.Logger.manager.loggerDict.values())
+            if isinstance(logger, logging.Logger)
+        ]
+        try:
+            bt_logging.enable_debug()
+        finally:
+            for logger, level in levels:
+                logger.setLevel(level)
+
+
 def setup_logging() -> None:
     """Configure logging for the application.
 
@@ -109,6 +138,10 @@ def setup_logging() -> None:
     Safe to call multiple times (clears and rebuilds handlers each time).
     """
     level = logging.DEBUG if os.getenv("DEBUG", "false").lower() == "true" else logging.INFO
+    debug = level == logging.DEBUG
+
+    _configure_bittensor_logging(debug)
+
     handler = logging.StreamHandler()
     handler.setFormatter(ConsoleFormatter())
     handler.setLevel(level)
@@ -137,6 +170,12 @@ def setup_logging() -> None:
         "uvicorn": logging.INFO,
         "uvicorn.error": logging.INFO,
         "uvicorn.access": logging.WARNING,
+        # Bittensor and its substrate/websocket layers. Clearing their handlers
+        # below detaches btlogging's QueueHandler, so records reach our console
+        # formatter once instead of also going to bittensor's own stdout stream.
+        "bittensor": level,
+        "async_substrate_interface": level,
+        "websockets.client": logging.WARNING,
     }
 
     for name, level in logger_config.items():
