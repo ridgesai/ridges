@@ -1059,6 +1059,14 @@ async def get_code_hiding_score_cutoff(
 
 
 @db_operation
+async def is_agent_unapproved(conn: DatabaseConnection, agent_id: UUID) -> bool:
+    return await conn.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM unapproved_agent_ids WHERE agent_id = $1)",
+        agent_id,
+    )
+
+
+@db_operation
 async def get_agent_score_and_set_id(
     conn: DatabaseConnection,
     agent_id: UUID,

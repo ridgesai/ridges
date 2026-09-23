@@ -27,6 +27,7 @@ from queries.agent import (
     get_public_agent_by_id,
     get_public_agent_rows_by_miner_coldkey,
     get_top_agents,
+    is_agent_unapproved,
 )
 from queries.competition import (
     get_competition_policy,
@@ -231,6 +232,9 @@ async def agent_code(agent_id: UUID) -> str:
     ]
     if agent.status in hidden_statuses:
         raise HTTPException(status_code=403, detail=f"Agent {agent.agent_id} is still being screened/evaluated")
+
+    if await is_agent_unapproved(agent_id):
+        raise HTTPException(status_code=403, detail="Agent code is hidden because the agent was manually rejected")
 
     score_and_set = await get_agent_score_and_set_id(agent_id)
     if score_and_set is not None:
