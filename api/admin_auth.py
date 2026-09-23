@@ -10,7 +10,7 @@ admin_bearer = HTTPBearer(auto_error=False)
 COMPETITION_ADMIN_ACTOR = "coldkey-ban-admin-api-key"
 
 
-def require_coldkey_ban_amin(
+def require_coldkey_ban_admin(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(admin_bearer)],
 ) -> str:
     expected = config.COLDKEY_BAN_ADMIN_API_KEY
