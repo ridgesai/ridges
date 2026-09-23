@@ -1,19 +1,30 @@
 import base64
 import hashlib
 import hmac
+import logging
 import os
+import secrets
+from functools import cache
 
 from utils.test_alias_words import TEST_ALIAS_ADJECTIVES, TEST_ALIAS_NOUNS
 
+logger = logging.getLogger(__name__)
+_RUNTIME_ALIAS_SALT = secrets.token_bytes(32)
+
+
+@cache
+def _runtime_alias_salt() -> bytes:
+    logger.warning(
+        "PROBLEM_ALIAS_SALT is unset or empty; using a random process-local salt. "
+        "Set a shared secret salt for stable aliases across workers and restarts."
+    )
+    return _RUNTIME_ALIAS_SALT
+
 
 def _make_digest(raw: str) -> bytes:
-    salt = os.getenv("PROBLEM_ALIAS_SALT", "").encode("utf-8")
+    salt = os.getenv("PROBLEM_ALIAS_SALT", "").encode("utf-8") or _runtime_alias_salt()
     raw_bytes = raw.encode("utf-8")
-
-    if salt:
-        return hmac.new(salt, raw_bytes, hashlib.sha256).digest()
-
-    return hashlib.sha256(raw_bytes).digest()
+    return hmac.new(salt, raw_bytes, hashlib.sha256).digest()
 
 
 def _base32_digest(digest: bytes) -> str:
