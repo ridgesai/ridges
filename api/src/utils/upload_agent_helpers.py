@@ -7,7 +7,7 @@ import httpx
 from bittensor_wallet.keypair import Keypair
 from fastapi import HTTPException, UploadFile
 
-from api.config import MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
+from api.config import COINGECKO_API_KEY, MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
 from queries.banned_coldkey import get_banned_coldkey
 from utils.bittensor import subtensor_client
 
@@ -163,9 +163,10 @@ async def check_file_size(agent_file: UploadFile) -> tuple[bytes, str]:
 async def get_tao_price() -> float:
     url = "https://api.coingecko.com/api/v3/simple/price"
     params = {"ids": "bittensor", "vs_currencies": "usd"}
+    headers = {"x-cg-demo-api-key": COINGECKO_API_KEY} if COINGECKO_API_KEY else {}
 
     async with httpx.AsyncClient() as client:
-        r = await client.get(url, params=params)
+        r = await client.get(url, params=params, headers=headers)
         r.raise_for_status()
         data = r.json()
 
