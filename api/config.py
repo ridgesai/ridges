@@ -29,6 +29,9 @@ PORT = int(PORT)
 # Load Bittensor configuration
 NETUID = int(os.getenv("NETUID") or "62")
 
+# Optional CoinGecko Demo key for upload pricing.
+COINGECKO_API_KEY = os.getenv("COINGECKO_API_KEY", "")
+
 SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS")
 if not SUBTENSOR_ADDRESS:
     logger.fatal("SUBTENSOR_ADDRESS is not set in .env")
