@@ -1355,6 +1355,7 @@ async def get_evaluation_candidates_for_validator_hotkey(
                     ROW_NUMBER() OVER (
                         PARTITION BY c.set_id
                         ORDER BY
+                            (COALESCE(s.num_finished_evals, 0) > 0) DESC,
                             COALESCE(s.screener_2_score, 0) DESC,
                             c.created_at ASC,
                             c.agent_id ASC
