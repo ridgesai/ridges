@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
 import pytest
@@ -5,7 +6,12 @@ from bittensor_wallet.keypair import Keypair
 from fastapi import HTTPException
 
 from api.src.utils import upload_agent_helpers
-from api.src.utils.upload_agent_helpers import check_signature, find_alpha_burned_event, verify_burn_extrinsic
+from api.src.utils.upload_agent_helpers import (
+    check_rate_limit,
+    check_signature,
+    find_alpha_burned_event,
+    verify_burn_extrinsic,
+)
 
 COLDKEY = "5C8769orColdkey"
 HOTKEY = "5FHhot"
@@ -30,6 +36,20 @@ def test_check_signature_rejects_invalid_signature() -> None:
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "Invalid signature"
+
+
+def test_check_rate_limit_reports_remaining_wait(monkeypatch) -> None:
+    monkeypatch.setattr(upload_agent_helpers, "MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS", 43200)
+    latest_created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(microsecond=0)
+    earliest_allowed_time = latest_created_at + timedelta(seconds=43200)
+
+    with pytest.raises(HTTPException) as exc_info:
+        check_rate_limit(latest_created_at)
+
+    assert exc_info.value.status_code == 429
+    assert "43200" not in exc_info.value.detail
+    assert "more seconds" in exc_info.value.detail
+    assert f"until {earliest_allowed_time:%Y-%m-%d %H:%M:%S} UTC" in exc_info.value.detail
 
 
 @pytest.mark.anyio

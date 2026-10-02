@@ -591,7 +591,7 @@ async def _process_agent_upload(
                 openrouter_validated_at=validated_openrouter_keys.validated_at,
                 miner_coldkey=coldkey if prod else None,
                 funding=funding,
-                enforce_cooldown=prod and not is_owner_upload,
+                enforce_cooldown=prod and not is_owner_upload and not is_credit_upload,
             )
         except ColdkeyBannedError as exception:
             raise HTTPException(status_code=403, detail="Your miner coldkey has been banned") from exception
