@@ -1,4 +1,5 @@
 import logging
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -72,13 +73,19 @@ def check_rate_limit(
         f"Earliest allowed time: {earliest_allowed_time}. Current time: {datetime.now(timezone.utc)}. Difference: {datetime.now(timezone.utc) - earliest_allowed_time}. Minimum allowed time: {timedelta(seconds=MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS)}."
     )
 
-    if datetime.now(timezone.utc) < earliest_allowed_time:
+    now = datetime.now(timezone.utc)
+    if now < earliest_allowed_time:
         logger.error(
-            f"A miner attempted to upload an agent too quickly. Latest agent created at {latest_agent_created_at_in_latest_set_id} and current time is {datetime.now(timezone.utc)}."
+            f"A miner attempted to upload an agent too quickly. Latest agent created at {latest_agent_created_at_in_latest_set_id} and current time is {now}."
         )
+        remaining_seconds = math.ceil((earliest_allowed_time - now).total_seconds())
         raise HTTPException(
             status_code=429,
-            detail=f"You must wait {MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS} seconds before uploading a new agent version",
+            detail=(
+                f"You must wait {remaining_seconds} more seconds "
+                f"(until {earliest_allowed_time.astimezone(timezone.utc):%Y-%m-%d %H:%M:%S} UTC) "
+                "before uploading a new agent version"
+            ),
         )
 
     logger.debug("Miner is not rate limited.")
