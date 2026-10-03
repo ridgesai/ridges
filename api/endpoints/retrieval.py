@@ -182,10 +182,7 @@ async def agents_by_coldkey(miner_coldkey: str) -> dict[str, List[PublicAgent]]:
     return grouped
 
 
-# TODO ADAM: optimize
-# /retrieval/evaluations-for-agent?agent_id=
-@router.get("/evaluations-for-agent")
-async def evaluations_for_agent(agent_id: UUID) -> List[PublicEvaluationWithRuns]:
+async def _build_evaluations_for_agent(agent_id: UUID) -> List[PublicEvaluationWithRuns]:
     evaluations: List[Evaluation] = await get_evaluations_for_agent_id(agent_id=agent_id)
 
     runs_per_eval = await asyncio.gather(
@@ -195,6 +192,14 @@ async def evaluations_for_agent(agent_id: UUID) -> List[PublicEvaluationWithRuns
     public_runs = [[to_public_run(run) for run in runs] for runs in runs_per_eval]
 
     return [PublicEvaluationWithRuns(**e.model_dump(), runs=runs) for e, runs in zip(evaluations, public_runs)]
+
+
+_cached_evaluations_for_agent = ttl_cache(ttl_seconds=60)(_build_evaluations_for_agent)
+
+
+@router.get("/evaluations-for-agent")
+async def evaluations_for_agent(agent_id: UUID) -> List[PublicEvaluationWithRuns]:
+    return await _cached_evaluations_for_agent(agent_id)
 
 
 async def _code_hiding_score_cutoff(set_id: int) -> Optional[float]:
