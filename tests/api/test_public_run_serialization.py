@@ -126,14 +126,14 @@ async def test_evaluations_for_agent_endpoint_omits_secrets(monkeypatch) -> None
     async def fake_get_evaluations_for_agent_id(agent_id):
         return [evaluation]
 
-    async def fake_get_all_evaluation_runs_in_evaluation_id(evaluation_id):
+    async def fake_get_evaluation_runs_for_public_view(evaluation_id):
         return [_internal_run()]
 
     monkeypatch.setattr(retrieval_endpoint, "get_evaluations_for_agent_id", fake_get_evaluations_for_agent_id)
     monkeypatch.setattr(
         retrieval_endpoint,
-        "get_all_evaluation_runs_in_evaluation_id",
-        fake_get_all_evaluation_runs_in_evaluation_id,
+        "get_evaluation_runs_for_public_view",
+        fake_get_evaluation_runs_for_public_view,
     )
 
     response = await retrieval_endpoint.evaluations_for_agent(evaluation.agent_id)
