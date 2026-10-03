@@ -93,6 +93,29 @@ async def get_all_evaluation_runs_in_evaluation_id(
     return [_parse_evaluation_run_from_row(row) for row in rows]
 
 
+@db_operation
+async def get_evaluation_runs_for_public_view(conn: DatabaseConnection, evaluation_id: UUID) -> List[EvaluationRun]:
+    """Load only the columns to_public_run reads.
+
+    Skips patch, execution_spec, and error_message, which the public view drops; patches alone
+    can reach hundreds of KB per run.
+    """
+    rows = await conn.fetch(
+        """
+        SELECT
+            evaluation_run_id, evaluation_id, problem_name, benchmark_family, status, test_results,
+            verifier_reward, error_code, cost_usd, created_at, started_initializing_agent_at,
+            started_running_agent_at, started_initializing_eval_at, started_running_eval_at,
+            finished_or_errored_at
+        FROM evaluation_runs
+        WHERE evaluation_id = $1
+        """,
+        evaluation_id,
+    )
+
+    return [_parse_evaluation_run_from_row(row) for row in rows]
+
+
 def _parse_metrics_row(row: asyncpg.Record) -> dict:
     return {
         "run_time_seconds": row["run_time_seconds"],
