@@ -266,6 +266,33 @@ async def test_finished_agent_without_current_set_score_is_served():
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("status", ["cancelled", "finished"])
+async def test_manual_rejection_hides_unscored_agent_before_s3(monkeypatch, status):
+    agent_id = uuid4()
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn)
+        await _insert_agent(conn, agent_id=agent_id, status=status)
+
+    # A non-rejected, unscored agent remains visible, including after cancellation.
+    assert await retrieval_endpoint.agent_code(agent_id) == AGENT_CODE
+
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO unapproved_agent_ids (agent_id, unapproved_reason) VALUES ($1, $2)",
+            agent_id,
+            "Manual hardcoding rejection",
+        )
+        assert not await conn.fetchval("SELECT EXISTS (SELECT 1 FROM agent_scores WHERE agent_id = $1)", agent_id)
+
+    async def unexpected_download(key: str) -> str:
+        pytest.fail("Rejected agent source must not be downloaded")
+
+    monkeypatch.setattr(retrieval_endpoint, "download_text_file_from_s3", unexpected_download)
+    error = await _expect_hidden(agent_id)
+    assert "manually rejected" in error.detail
+
+
+@pytest.mark.anyio
 async def test_screening_agent_still_gets_screening_403():
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn)

@@ -1,12 +1,11 @@
-import secrets
 from typing import Annotated
 
 from bittensor_wallet.keypair import Keypair
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import AwareDatetime, BaseModel, StringConstraints
 
-import api.config as config
+from api.admin_auth import COMPETITION_ADMIN_ACTOR as COMPETITION_ADMIN_ACTOR
+from api.admin_auth import require_coldkey_ban_admin
 from api.endpoints import validator as validator_endpoint
 from db.models import InternalFlagName
 from models.banned_coldkey import BannedColdkey
@@ -39,8 +38,6 @@ from utils.ttl import clear_all_ttl_caches
 from utils.validator_hotkeys import is_validator_hotkey_whitelisted
 
 router = APIRouter(tags=["admin"])
-admin_bearer = HTTPBearer(auto_error=False)
-COMPETITION_ADMIN_ACTOR = "coldkey-ban-admin-api-key"
 
 
 class ColdkeyBanRequest(BaseModel):
@@ -56,21 +53,6 @@ class UploadCreditGrantRequest(BaseModel):
         StringConstraints(strip_whitespace=True, min_length=1, max_length=500),
     ] = None
     expires_at: AwareDatetime | None = None
-
-
-def require_coldkey_ban_admin(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(admin_bearer)],
-) -> str:
-    expected = config.COLDKEY_BAN_ADMIN_API_KEY
-    if not expected:
-        raise HTTPException(status_code=503, detail="Admin API is not configured")
-    if credentials is None or not secrets.compare_digest(credentials.credentials, expected):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid admin credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return COMPETITION_ADMIN_ACTOR
 
 
 def validate_coldkey(miner_coldkey: str) -> None:

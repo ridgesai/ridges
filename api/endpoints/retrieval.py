@@ -27,6 +27,7 @@ from queries.agent import (
     get_public_agent_by_id,
     get_public_agent_rows_by_miner_coldkey,
     get_top_agents,
+    is_agent_unapproved,
 )
 from queries.competition import (
     get_competition_policy,
@@ -34,7 +35,7 @@ from queries.competition import (
     resolve_compatibility_competition_set_id,
 )
 from queries.evaluation import get_approved_leader_ranking_for_set, get_evaluations_for_agent_id
-from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
+from queries.evaluation_run import get_evaluation_runs_for_public_view
 from utils.incentives import calculate_time_multiplier
 from utils.public_view import to_public_run
 from utils.s3 import download_text_file_from_s3
@@ -181,19 +182,24 @@ async def agents_by_coldkey(miner_coldkey: str) -> dict[str, List[PublicAgent]]:
     return grouped
 
 
-# TODO ADAM: optimize
-# /retrieval/evaluations-for-agent?agent_id=
-@router.get("/evaluations-for-agent")
-async def evaluations_for_agent(agent_id: UUID) -> List[PublicEvaluationWithRuns]:
+async def _build_evaluations_for_agent(agent_id: UUID) -> List[PublicEvaluationWithRuns]:
     evaluations: List[Evaluation] = await get_evaluations_for_agent_id(agent_id=agent_id)
 
     runs_per_eval = await asyncio.gather(
-        *[get_all_evaluation_runs_in_evaluation_id(evaluation_id=e.evaluation_id) for e in evaluations]
+        *[get_evaluation_runs_for_public_view(evaluation_id=e.evaluation_id) for e in evaluations]
     )
 
     public_runs = [[to_public_run(run) for run in runs] for runs in runs_per_eval]
 
     return [PublicEvaluationWithRuns(**e.model_dump(), runs=runs) for e, runs in zip(evaluations, public_runs)]
+
+
+_cached_evaluations_for_agent = ttl_cache(ttl_seconds=60)(_build_evaluations_for_agent)
+
+
+@router.get("/evaluations-for-agent")
+async def evaluations_for_agent(agent_id: UUID) -> List[PublicEvaluationWithRuns]:
+    return await _cached_evaluations_for_agent(agent_id)
 
 
 async def _code_hiding_score_cutoff(set_id: int) -> Optional[float]:
@@ -231,6 +237,9 @@ async def agent_code(agent_id: UUID) -> str:
     ]
     if agent.status in hidden_statuses:
         raise HTTPException(status_code=403, detail=f"Agent {agent.agent_id} is still being screened/evaluated")
+
+    if await is_agent_unapproved(agent_id):
+        raise HTTPException(status_code=403, detail="Agent code is hidden because the agent was manually rejected")
 
     score_and_set = await get_agent_score_and_set_id(agent_id)
     if score_and_set is not None:

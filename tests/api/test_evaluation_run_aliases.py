@@ -64,7 +64,8 @@ async def test_evaluation_run_get_by_id_adds_test_aliases(monkeypatch) -> None:
         test_name="task_tests.AcronymTests.test_ruby_on_rails",
         test_category="default",
     )
-    assert response.test_results[0].test_alias == "VALID-MODULE-A56"
+    # The old unsalted alias must no longer be exposed when no salt is configured.
+    assert response.test_results[0].test_alias != "VALID-MODULE-A56"
     assert evaluation_run.test_results is not None
     assert evaluation_run.test_results[0].test_alias is None
 

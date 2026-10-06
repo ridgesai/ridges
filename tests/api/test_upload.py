@@ -771,26 +771,21 @@ async def test_redeemed_credit_rejects_different_source():
 
 
 @pytest.mark.anyio
-async def test_final_credit_admission_enforces_cooldown_and_preserves_second_credit():
-    from fastapi import HTTPException
+async def test_final_credit_admission_bypasses_cooldown():
+    await _call_post_agent(content=b"print('first')")
+    credit_id = await _insert_credit()
 
-    first_credit = await _insert_credit()
-    second_credit = await _insert_credit()
-    await _call_post_agent(credit_id=first_credit, content=b"print('first')")
+    response = await _call_post_agent(credit_id=credit_id, content=b"print('second')")
 
-    with pytest.raises(HTTPException) as exc_info:
-        await _call_post_agent(credit_id=second_credit, content=b"print('second')")
-
-    assert exc_info.value.status_code == 429
+    assert response.status == "success"
     async with _db.pool.acquire() as conn:
-        second = await conn.fetchrow(
+        credit = await conn.fetchrow(
             "SELECT redeemed_at, redeemed_agent_id FROM upload_credits WHERE credit_id = $1",
-            second_credit,
+            credit_id,
         )
-        assert second["redeemed_at"] is None
-        assert second["redeemed_agent_id"] is None
-        assert await conn.fetchval("SELECT count(*) FROM agents") == 1
-        assert await conn.fetchval("SELECT count(*) FROM evaluation_payments") == 1
+        assert credit["redeemed_at"] is not None
+        assert credit["redeemed_agent_id"] == response.agent_id
+        assert await conn.fetchval("SELECT count(*) FROM agents") == 2
 
 
 @pytest.mark.anyio
