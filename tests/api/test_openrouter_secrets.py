@@ -168,15 +168,18 @@ def _patch_upload_dependencies(
     async def fake_check_coldkey_banned(_miner_coldkey: str) -> None:
         return None
 
-    async def fake_get_upload_price(*args, **kwargs):
-        return SimpleNamespace(amount_alpha_rao=1, payment_netuid=upload_endpoint.config.NETUID)
+    async def fake_get_alpha_price_usd():
+        return 2.5
 
-    async def fake_create_payment_quote(*, miner_hotkey: str, amount_alpha_rao: int, expires_at):
+    async def fake_issue_competition_quote(
+        *, set_id, miner_hotkey, miner_coldkey, alpha_price_usd, burnable_rao, ttl_seconds
+    ):
         return SimpleNamespace(
             quote_id=uuid4(),
             miner_hotkey=miner_hotkey,
-            amount_alpha_rao=amount_alpha_rao,
-            expires_at=expires_at,
+            amount_alpha_rao=1,
+            price_usd=5.0,
+            expires_at=datetime.now(timezone.utc),
         )
 
     monkeypatch.setattr(upload_endpoint, "validate_openrouter_keys", fake_validate_openrouter_keys)
@@ -190,8 +193,8 @@ def _patch_upload_dependencies(
     monkeypatch.setattr(upload_endpoint, "record_upload_attempt", fake_record_upload_attempt)
     monkeypatch.setattr(upload_endpoint, "check_hotkey_registered", fake_check_hotkey_registered)
     monkeypatch.setattr(upload_endpoint, "check_coldkey_banned", fake_check_coldkey_banned)
-    monkeypatch.setattr(upload_endpoint, "get_upload_price", fake_get_upload_price)
-    monkeypatch.setattr(upload_endpoint, "create_payment_quote", fake_create_payment_quote)
+    monkeypatch.setattr(upload_endpoint, "get_alpha_price_usd", fake_get_alpha_price_usd)
+    monkeypatch.setattr(upload_endpoint, "issue_competition_quote", fake_issue_competition_quote)
     monkeypatch.setattr(upload_endpoint, "admit_agent", create_agent_impl)
     return upload_endpoint
 
@@ -455,8 +458,9 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
         file_info="miner-hotkey:1",
         signature="sig",
         name="Agent",
-        payment_block_hash="block",
+        payment_block_hash="0x" + "bb" * 32,
         payment_extrinsic_index="0",
+        quote_id=None,
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
         set_id=1,
@@ -499,6 +503,7 @@ async def test_check_agent_uses_shared_openrouter_validation(monkeypatch) -> Non
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
         set_id=1,
+        pricing_version=2,
     )
 
     assert response.status == "success"

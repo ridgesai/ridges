@@ -97,8 +97,8 @@ async def _insert_burn(hotkey: str, identity: str) -> BurnUploadFunding:
         await conn.execute(
             """
             INSERT INTO upload_payment_quotes (
-                quote_id, miner_hotkey, amount_alpha_rao, created_at, expires_at
-            ) VALUES ($1, $2, 100, clock_timestamp(), clock_timestamp() + INTERVAL '1 hour')
+                quote_id, miner_hotkey, amount_alpha_rao, created_at, expires_at, is_legacy
+            ) VALUES ($1, $2, 100, clock_timestamp(), clock_timestamp() + INTERVAL '1 hour', TRUE)
             """,
             quote_id,
             hotkey,
