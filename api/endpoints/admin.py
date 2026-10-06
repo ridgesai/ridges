@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from bittensor_wallet.keypair import Keypair
@@ -17,6 +18,8 @@ from models.competition import (
     CompetitionPolicyUpdateRequest,
     CompetitionStateUpdateRequest,
     CompetitionValidatorConcurrencySnapshot,
+    UploadPricingSnapshot,
+    UploadPricingUpdateRequest,
     ValidatorConcurrencyDeleteRequest,
     ValidatorConcurrencySnapshot,
     ValidatorConcurrencyUpdateRequest,
@@ -33,9 +36,13 @@ from queries.competition import (
 )
 from queries.internal_flag import add_hotkey_to_blacklist, remove_hotkey_from_blacklist, set_internal_flag
 from queries.upload_credit import grant_upload_credit
+from queries.upload_price import update_competition_pricing
 from utils.debug_lock import DebugLock
 from utils.ttl import clear_all_ttl_caches
+from utils.upload_pricing import multiplier
 from utils.validator_hotkeys import is_validator_hotkey_whitelisted
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["admin"])
 
@@ -100,6 +107,29 @@ async def put_competition_policy(
     snapshot = await replace_competition_policy(set_id=set_id, target=request, actor=actor)
     clear_all_ttl_caches()
     return snapshot
+
+
+@router.put("/competitions/{set_id}/upload-pricing", response_model=UploadPricingSnapshot)
+async def put_competition_upload_pricing(
+    set_id: int,
+    request: UploadPricingUpdateRequest,
+    actor: Annotated[str, Depends(require_coldkey_ban_admin)],
+) -> UploadPricingSnapshot:
+    settings = request.settings()
+    price = await update_competition_pricing(set_id, settings)
+    if price is None:
+        raise HTTPException(status_code=404, detail=f"Competition {set_id} not found")
+    logger.info(f"Upload pricing for competition {set_id} set to {settings} by {actor}: {request.reason}")
+    return UploadPricingSnapshot(
+        set_id=set_id,
+        floor_usd=settings.floor_usd,
+        target_per_hour=settings.target_per_hour,
+        half_life_minutes=settings.half_life_minutes,
+        multiplier=multiplier(settings),
+        price_usd=price.price_usd,
+        price_updated_at=price.price_updated_at,
+        as_of=price.as_of,
+    )
 
 
 @router.get(
