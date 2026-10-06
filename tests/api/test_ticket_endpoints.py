@@ -17,7 +17,7 @@ KEYPAIR = Keypair.create_from_seed("0x" + "ab" * 32)
 HOTKEY = KEYPAIR.ss58_address
 OTHER_KEYPAIR = Keypair.create_from_seed("0x" + "cd" * 32)
 FAKE_COLDKEY = "5FColdKey456"
-FAKE_BLOCK_HASH = "0xdeadbeef1234"
+FAKE_BLOCK_HASH = "0x" + "de" * 32
 FAKE_EXTRINSIC_INDEX = 1
 FAKE_AMOUNT_ALPHA_RAO = 120_344_620_287_164
 FAKE_BLOCK_TIME = datetime(2026, 6, 9, 18, 0, tzinfo=timezone.utc)
@@ -137,8 +137,8 @@ async def _insert_quote(hotkey: str = HOTKEY) -> uuid.UUID:
     async with _db.pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO upload_payment_quotes (quote_id, miner_hotkey, amount_alpha_rao, created_at, expires_at)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO upload_payment_quotes (quote_id, miner_hotkey, amount_alpha_rao, created_at, expires_at, is_legacy)
+            VALUES ($1, $2, $3, $4, $5, TRUE)
             """,
             quote_id,
             hotkey,
@@ -168,13 +168,13 @@ async def _insert_credit(hotkey: str = HOTKEY, expires_at: datetime | None = Non
     return credit_id
 
 
-def _burn_ticket_blob(quote_id: uuid.UUID) -> str:
+def _burn_ticket_blob(quote_id: uuid.UUID, block_hash: str = FAKE_BLOCK_HASH) -> str:
     unsigned = UploadTicket(
         hotkey=HOTKEY,
         public_key=KEYPAIR.public_key.hex(),
         funding=FUNDING_BURN,
         quote_id=str(quote_id),
-        payment_block_hash=FAKE_BLOCK_HASH,
+        payment_block_hash=block_hash,
         payment_extrinsic_index=FAKE_EXTRINSIC_INDEX,
     )
     return encode_ticket(sign_ticket(unsigned, KEYPAIR.sign))
@@ -538,3 +538,101 @@ async def test_validate_openrouter_keys_outage_stays_503(monkeypatch):
             OpenRouterKeysCheckRequest(openrouter_api_key="a", openrouter_management_key="b")
         )
     assert exc.value.status_code == 503
+
+
+async def _insert_bound_quote(
+    *, confirmed: bool, cancelled: bool = False, set_id: int = 1, fresh_window: bool = False
+) -> uuid.UUID:
+    quote_id = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    created_at, expires_at = (
+        (now - timedelta(minutes=1), now + timedelta(minutes=14))
+        if fresh_window
+        else (FAKE_BLOCK_TIME - timedelta(minutes=1), FAKE_BLOCK_TIME + timedelta(minutes=15))
+    )
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO upload_payment_quotes
+                (quote_id, miner_hotkey, amount_alpha_rao, created_at, expires_at, set_id, price_usd, miner_coldkey,
+                 is_legacy, confirmed_at, confirmed_payment_block_hash, confirmed_payment_extrinsic_index, cancelled_at)
+            VALUES ($1, $2, $3, $4, $5, $6, 5, $7, FALSE, $8, $9, $10, $11)
+            """,
+            quote_id,
+            HOTKEY,
+            FAKE_AMOUNT_ALPHA_RAO,
+            created_at,
+            expires_at,
+            set_id,
+            FAKE_COLDKEY,
+            now if confirmed else None,
+            FAKE_BLOCK_HASH if confirmed else None,
+            str(FAKE_EXTRINSIC_INDEX) if confirmed else None,
+            now if cancelled else None,
+        )
+        if confirmed:
+            await conn.execute(
+                """
+                INSERT INTO evaluation_payments
+                    (payment_block_hash, payment_extrinsic_index, agent_id, miner_hotkey, miner_coldkey,
+                     amount_alpha_rao, quote_id)
+                VALUES ($1, $2, NULL, $3, $4, $5, $6)
+                """,
+                FAKE_BLOCK_HASH,
+                str(FAKE_EXTRINSIC_INDEX),
+                HOTKEY,
+                FAKE_COLDKEY,
+                FAKE_AMOUNT_ALPHA_RAO,
+                quote_id,
+            )
+    return quote_id
+
+
+async def _check(blob: str):
+    return await upload_module.check_ticket(upload_module.TicketCheckRequest(ticket=blob))
+
+
+async def test_check_confirmed_bound_ticket_reports_competition():
+    quote_id = await _insert_bound_quote(confirmed=True)
+    result = await _check(_burn_ticket_blob(quote_id))
+    assert result.valid is True
+    assert (result.set_id, result.competition_state) == (1, "open")
+
+
+async def test_check_unconfirmed_ticket_inside_deadline_is_valid():
+    quote_id = await _insert_bound_quote(confirmed=False, fresh_window=True)
+    result = await _check(_burn_ticket_blob(quote_id))
+    assert result.valid is True
+
+
+async def test_check_unconfirmed_ticket_past_deadline_is_forfeited():
+    quote_id = await _insert_bound_quote(confirmed=False)
+    result = await _check(_burn_ticket_blob(quote_id))
+    assert (result.valid, result.reason) == (False, "burn_not_reported")
+
+
+async def test_check_cancelled_ticket():
+    quote_id = await _insert_bound_quote(confirmed=False, cancelled=True)
+    result = await _check(_burn_ticket_blob(quote_id))
+    assert (result.valid, result.reason) == (False, "quote_cancelled")
+
+
+async def test_check_ticket_for_closed_competition():
+    quote_id = await _insert_bound_quote(confirmed=True)
+    async with _db.pool.acquire() as conn:
+        await conn.execute("UPDATE competitions SET submissions_closed_at = NOW(), emissions_end_at = NOW()")
+    result = await _check(_burn_ticket_blob(quote_id))
+    assert (result.valid, result.reason, result.competition_state) == (False, "competition_not_accepting", "draining")
+
+
+async def test_check_uppercase_hash_ticket_sees_redeemed_payment():
+    quote_id = await _insert_quote()
+    await _redeem(_burn_ticket_blob(quote_id))
+    result = await _check(_burn_ticket_blob(quote_id, block_hash="0x" + "DE" * 32))
+    assert (result.valid, result.reason) == (False, "already_redeemed")
+
+
+async def test_redeem_confirmed_bound_ticket_creates_agent():
+    quote_id = await _insert_bound_quote(confirmed=True)
+    response = await _redeem(_burn_ticket_blob(quote_id))
+    assert response.status == "success"
