@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from bittensor_wallet.keypair import Keypair
 from click.testing import CliRunner
 
 import miners.cli.commands.upload as upload_module
+from utils.upload_ticket import confirm_signing_string
+
+KEYPAIR = Keypair.create_from_seed("0x" + "ab" * 32)
+CANON_HASH = "0x" + "ab" * 32
 
 
 def test_resolve_openrouter_upload_credentials_prefers_cli_values(monkeypatch) -> None:
@@ -552,13 +558,16 @@ def test_resume_upload_passes_selected_set_to_final(monkeypatch, tmp_path: Path)
     client_context = MagicMock()
     client_context.__enter__.return_value = MagicMock()
     execute = MagicMock()
-    monkeypatch.setattr(upload_module, "_resolve_wallet_and_target", MagicMock(return_value=(wallet, target)))
+    monkeypatch.setattr(upload_module, "_resolve_wallet", MagicMock(return_value=wallet))
+    monkeypatch.setattr(upload_module, "_resolve_target", MagicMock(return_value=target))
     monkeypatch.setattr(upload_module.httpx, "Client", MagicMock(return_value=client_context))
     monkeypatch.setattr(upload_module, "_select_upload_competition", MagicMock(return_value=17))
     monkeypatch.setattr(upload_module, "_prepare_pending_upload", MagicMock(return_value=pending))
     monkeypatch.setattr(upload_module, "_resolve_openrouter_upload_credentials", MagicMock(return_value=credentials))
     monkeypatch.setattr(upload_module, "_print_upload_preview", MagicMock())
     monkeypatch.setattr(upload_module, "_execute_upload", execute)
+    confirm = MagicMock()
+    monkeypatch.setattr(upload_module, "_confirm_burn", confirm)
 
     result = CliRunner().invoke(
         upload_module.resume_upload,
@@ -578,3 +587,202 @@ def test_resume_upload_passes_selected_set_to_final(monkeypatch, tmp_path: Path)
     assert result.exit_code == 0, result.output
     assert execute.call_args.kwargs["set_id"] == 17
     assert execute.call_args.kwargs["run_check"] is False
+    assert confirm.call_args.kwargs["receipt"].quote_id == "quote"
+
+
+def _keypair_wallet() -> MagicMock:
+    wallet = MagicMock()
+    wallet.hotkey = KEYPAIR
+    return wallet
+
+
+def test_check_upload_allowed_sends_pricing_version(tmp_path: Path) -> None:
+    target = upload_module.UploadTarget("https://example.test", tmp_path / "agent.py", b"x", "h")
+    pending = upload_module.PendingUpload("Agent", 0, "file-info", "public", "signature")
+    client = _FakeClient(_FakeResponse(200, json_data={"payment_method": "burn"}))
+    upload_module._check_upload_allowed(
+        client,
+        target=target,
+        pending=pending,
+        credentials=upload_module.OpenRouterUploadCredentials("r", "m"),
+        set_id=1,
+    )
+    assert client.calls[0]["data"]["pricing_version"] == 2
+
+
+def test_open_quote_exists_is_explained() -> None:
+    detail = {"code": "open_quote_exists", "quote_id": "q-1", "expires_at": "2026-10-06T12:15:00+00:00"}
+    with pytest.raises(upload_module.click.ClickException, match="q-1"):
+        upload_module._raise_if_open_quote_exists(_FakeResponse(409, json_data={"detail": detail}))
+    upload_module._raise_if_open_quote_exists(_FakeResponse(409, json_data={"detail": "Competition 1 is draining"}))
+
+
+def test_confirm_burn_posts_signed_canonical_receipt() -> None:
+    client = _FakeClient(_FakeResponse(200, json_data={"status": "confirmed"}))
+    receipt = upload_module.PaymentReceipt(block_hash="0x" + "AB" * 32, extrinsic_index=7, quote_id="q")
+    upload_module._confirm_burn(client, api_url="https://example.test", wallet=_keypair_wallet(), receipt=receipt)
+    body = client.calls[0]["json"]
+    assert client.calls[0]["url"] == "https://example.test/upload/payment/confirm"
+    assert (body["payment_block_hash"], body["payment_extrinsic_index"]) == (CANON_HASH, 7)
+    message = confirm_signing_string(KEYPAIR.ss58_address, "q", CANON_HASH, "7")
+    assert KEYPAIR.verify(message, bytes.fromhex(body["signature"]))
+
+
+def test_confirm_burn_rejects_a_malformed_receipt_cleanly() -> None:
+    client = _FakeClient(_FakeResponse(200))
+    receipt = upload_module.PaymentReceipt(block_hash="block", extrinsic_index=7, quote_id="q")
+    with pytest.raises(upload_module.click.ClickException, match="64 hex"):
+        upload_module._confirm_burn(client, api_url="https://x", wallet=_keypair_wallet(), receipt=receipt)
+    assert client.calls == []
+
+
+def test_confirm_burn_retries_server_errors(monkeypatch) -> None:
+    monkeypatch.setattr(upload_module.time, "sleep", MagicMock())
+    responses = iter([_FakeResponse(503), _FakeResponse(200)])
+
+    class _Client(_FakeClient):
+        def post(self, url, **kwargs):
+            self.calls.append({"url": url, **kwargs})
+            return next(responses)
+
+    client = _Client(_FakeResponse(200))
+    receipt = upload_module.PaymentReceipt(block_hash=CANON_HASH, extrinsic_index=7, quote_id="q")
+    upload_module._confirm_burn(client, api_url="https://x", wallet=_keypair_wallet(), receipt=receipt)
+    assert len(client.calls) == 2
+
+
+def test_confirm_burn_does_not_retry_client_errors(monkeypatch) -> None:
+    monkeypatch.setattr(upload_module.time, "sleep", MagicMock())
+    client = _FakeClient(_FakeResponse(402, text="burn_not_reported"))
+    receipt = upload_module.PaymentReceipt(block_hash=CANON_HASH, extrinsic_index=7, quote_id="q")
+    with pytest.raises(upload_module.click.ClickException, match="burn_not_reported"):
+        upload_module._confirm_burn(client, api_url="https://x", wallet=_keypair_wallet(), receipt=receipt)
+    assert len(client.calls) == 1
+
+
+def test_quote_close_to_expiry_is_cancelled_and_not_burned() -> None:
+    client = _FakeClient(_FakeResponse(200))
+    details = {"quote_id": "q", "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat()}
+    with pytest.raises(upload_module.click.ClickException, match="nothing was burned"):
+        upload_module._ensure_quote_fresh(
+            client, api_url="https://x", wallet=_keypair_wallet(), payment_method_details=details
+        )
+    assert client.calls[0]["url"] == "https://x/upload/quote/q/cancel"
+
+
+def _burn_upload_mocks(monkeypatch, tmp_path: Path, *, proceed: bool) -> list[str]:
+    events: list[str] = []
+    target = upload_module.UploadTarget("https://example.test", tmp_path / "agent.py", b"x", "h")
+    pending = upload_module.PendingUpload("Agent", 0, "file-info", "public", "signature")
+    client_context = MagicMock()
+    client_context.__enter__.return_value = MagicMock()
+    details = {
+        "payment_method": "burn",
+        "quote_id": "q",
+        "amount_alpha_rao": 1,
+        "payment_netuid": 62,
+        "expires_at": None,
+        "price_usd": 5.0,
+        "set_id": 1,
+    }
+    receipt = upload_module.PaymentReceipt(block_hash=CANON_HASH, extrinsic_index=7, quote_id="q")
+    monkeypatch.setattr(
+        upload_module, "_resolve_wallet_and_target", MagicMock(return_value=(_keypair_wallet(), target))
+    )
+    monkeypatch.setattr(upload_module.httpx, "Client", MagicMock(return_value=client_context))
+    monkeypatch.setattr(upload_module, "_select_upload_competition", MagicMock(return_value=1))
+    monkeypatch.setattr(upload_module, "_prepare_pending_upload", MagicMock(return_value=pending))
+    monkeypatch.setattr(
+        upload_module,
+        "_resolve_openrouter_upload_credentials",
+        MagicMock(return_value=upload_module.OpenRouterUploadCredentials("r", "m")),
+    )
+    monkeypatch.setattr(upload_module, "_print_upload_preview", MagicMock())
+    monkeypatch.setattr(upload_module, "_check_upload_allowed", MagicMock(return_value=details))
+    monkeypatch.setattr(upload_module, "_unlock_coldkey", MagicMock())
+    monkeypatch.setattr(upload_module, "_confirm_payment", MagicMock(return_value=proceed))
+    monkeypatch.setattr(upload_module, "_cancel_quote", MagicMock(side_effect=lambda *a, **k: events.append("cancel")))
+    monkeypatch.setattr(
+        upload_module, "_submit_eval_payment", MagicMock(side_effect=lambda **k: events.append("burn") or receipt)
+    )
+    monkeypatch.setattr(
+        upload_module, "_print_payment_receipt", MagicMock(side_effect=lambda r: events.append("receipt"))
+    )
+    monkeypatch.setattr(upload_module, "_confirm_burn", MagicMock(side_effect=lambda *a, **k: events.append("confirm")))
+    monkeypatch.setattr(
+        upload_module, "_execute_upload", MagicMock(side_effect=lambda *a, **k: events.append("upload"))
+    )
+    return events
+
+
+def test_upload_burn_prints_receipt_and_confirms_before_uploading(monkeypatch, tmp_path: Path) -> None:
+    events = _burn_upload_mocks(monkeypatch, tmp_path, proceed=True)
+    result = CliRunner().invoke(upload_module.upload, [], obj={})
+    assert result.exit_code == 0, result.output
+    assert events == ["burn", "receipt", "confirm", "upload"]
+
+
+def test_upload_declined_burn_cancels_the_quote(monkeypatch, tmp_path: Path) -> None:
+    events = _burn_upload_mocks(monkeypatch, tmp_path, proceed=False)
+    result = CliRunner().invoke(upload_module.upload, [], obj={})
+    assert result.exit_code == 0, result.output
+    assert events == ["cancel"]
+
+
+def test_resume_upload_confirms_before_competition_selection(monkeypatch, tmp_path: Path) -> None:
+    target = upload_module.UploadTarget("https://example.test", tmp_path / "agent.py", b"x", "h")
+    client_context = MagicMock()
+    client_context.__enter__.return_value = MagicMock()
+    confirm = MagicMock()
+    monkeypatch.setattr(upload_module, "_resolve_wallet", MagicMock(return_value=_keypair_wallet()))
+    monkeypatch.setattr(upload_module, "_resolve_target", MagicMock(return_value=target))
+    monkeypatch.setattr(upload_module.httpx, "Client", MagicMock(return_value=client_context))
+    monkeypatch.setattr(
+        upload_module,
+        "_select_upload_competition",
+        MagicMock(side_effect=upload_module.click.ClickException("Competition 17 is not accepting uploads")),
+    )
+    monkeypatch.setattr(upload_module, "_confirm_burn", confirm)
+
+    result = CliRunner().invoke(
+        upload_module.resume_upload,
+        ["--quote-id", "quote", "--payment-block-hash", CANON_HASH, "--payment-extrinsic-index", "3"],
+        obj={},
+    )
+
+    assert result.exit_code != 0
+    assert confirm.call_args.kwargs["receipt"] == upload_module.PaymentReceipt(
+        block_hash=CANON_HASH, extrinsic_index=3, quote_id="quote"
+    )
+
+
+def test_resume_upload_confirms_before_reading_the_agent_file(monkeypatch, tmp_path: Path) -> None:
+    import bittensor_wallet.wallet as wallet_module
+
+    monkeypatch.setattr(wallet_module, "Wallet", MagicMock(return_value=_keypair_wallet()))
+    confirm = MagicMock()
+    monkeypatch.setattr(upload_module, "_confirm_burn", confirm)
+
+    result = CliRunner().invoke(
+        upload_module.resume_upload,
+        [
+            "--coldkey-name",
+            "c",
+            "--hotkey-name",
+            "h",
+            "--file",
+            str(tmp_path / "missing" / "agent.py"),
+            "--quote-id",
+            "quote",
+            "--payment-block-hash",
+            CANON_HASH,
+            "--payment-extrinsic-index",
+            "3",
+        ],
+        obj={},
+    )
+
+    assert result.exit_code != 0
+    assert confirm.call_args.kwargs["receipt"] == upload_module.PaymentReceipt(
+        block_hash=CANON_HASH, extrinsic_index=3, quote_id="quote"
+    )

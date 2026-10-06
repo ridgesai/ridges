@@ -52,9 +52,10 @@ def test_burn_mode_prints_verified_ticket(monkeypatch):
 
     def _fake_submit(*, wallet, payment_method_details):
         call_order.append("submit")
-        return PaymentReceipt(block_hash="0x87d2", extrinsic_index=7, quote_id=QUOTE_ID)
+        return PaymentReceipt(block_hash="0x" + "87" * 32, extrinsic_index=7, quote_id=QUOTE_ID)
 
     monkeypatch.setattr(prepare_module, "_resolve_wallet", lambda coldkey_name, hotkey_name: _fake_wallet())
+    monkeypatch.setattr(prepare_module, "_select_upload_competition", MagicMock(return_value=1))
     monkeypatch.setattr(prepare_module, "_unlock_coldkey", MagicMock(side_effect=_fake_unlock))
     monkeypatch.setattr(prepare_module, "_confirm_payment", MagicMock(side_effect=_fake_confirm))
     monkeypatch.setattr(prepare_module, "_submit_eval_payment", MagicMock(side_effect=_fake_submit))
@@ -86,10 +87,13 @@ def test_burn_mode_prints_verified_ticket(monkeypatch):
     assert ticket.funding == FUNDING_BURN
     assert ticket.hotkey == KEYPAIR.ss58_address
     assert ticket.quote_id == QUOTE_ID
-    assert ticket.payment_block_hash == "0x87d2"
+    assert ticket.payment_block_hash == "0x" + "87" * 32
     assert ticket.payment_extrinsic_index == 7
     assert verify_ticket_signature(ticket)
     assert "bearer" in result.output.lower() or "password" in result.output.lower()
+    urls = [call.args[0] for call in client.post.call_args_list]
+    assert urls[0].endswith("/upload/prepare") and urls[1].endswith("/upload/payment/confirm")
+    assert client.post.call_args_list[0].kwargs["json"]["set_id"] == 1
 
 
 def test_burn_submission_failure_prints_recoverable_quote_id(monkeypatch):
@@ -97,6 +101,7 @@ def test_burn_submission_failure_prints_recoverable_quote_id(monkeypatch):
     finalization), the burn may have already landed — the quote id must survive so the miner
     can recover with `prepare-upload --quote-id` instead of burning a second time."""
     monkeypatch.setattr(prepare_module, "_resolve_wallet", lambda coldkey_name, hotkey_name: _fake_wallet())
+    monkeypatch.setattr(prepare_module, "_select_upload_competition", MagicMock(return_value=1))
     monkeypatch.setattr(prepare_module, "_unlock_coldkey", MagicMock())
     monkeypatch.setattr(prepare_module, "_confirm_payment", MagicMock(return_value=True))
     monkeypatch.setattr(prepare_module, "_submit_eval_payment", MagicMock(side_effect=RuntimeError("rpc dropped")))
@@ -146,6 +151,7 @@ def test_burn_submission_keyboard_interrupt_prints_recoverable_quote_id(monkeypa
     import click
 
     monkeypatch.setattr(prepare_module, "_resolve_wallet", lambda coldkey_name, hotkey_name: _fake_wallet())
+    monkeypatch.setattr(prepare_module, "_select_upload_competition", MagicMock(return_value=1))
     monkeypatch.setattr(prepare_module, "_unlock_coldkey", MagicMock())
     monkeypatch.setattr(prepare_module, "_confirm_payment", MagicMock(return_value=True))
     monkeypatch.setattr(prepare_module, "_submit_eval_payment", MagicMock(side_effect=KeyboardInterrupt))
@@ -210,10 +216,12 @@ def test_credit_mode_never_touches_coldkey(monkeypatch):
     assert verify_ticket_signature(ticket)
 
 
-def test_resume_mode_mints_burn_ticket_without_network(monkeypatch):
+def test_resume_mode_confirms_then_mints_burn_ticket_without_burning(monkeypatch):
     monkeypatch.setattr(prepare_module, "_resolve_wallet", lambda coldkey_name, hotkey_name: _fake_wallet())
     submit = MagicMock(side_effect=AssertionError("resume mode must not burn again"))
     monkeypatch.setattr(prepare_module, "_submit_eval_payment", submit)
+    confirm = MagicMock()
+    monkeypatch.setattr(prepare_module, "_confirm_burn", confirm)
 
     result = CliRunner().invoke(
         prepare_module.prepare_upload,
@@ -225,7 +233,7 @@ def test_resume_mode_mints_burn_ticket_without_network(monkeypatch):
             "--quote-id",
             QUOTE_ID,
             "--payment-block-hash",
-            "0x87d2",
+            "0x" + "87" * 32,
             "--payment-extrinsic-index",
             "7",
         ],
@@ -233,6 +241,9 @@ def test_resume_mode_mints_burn_ticket_without_network(monkeypatch):
     )
 
     assert result.exit_code == 0, result.output
+    assert confirm.call_args.kwargs["receipt"] == PaymentReceipt(
+        block_hash="0x" + "87" * 32, extrinsic_index=7, quote_id=QUOTE_ID
+    )
     ticket = decode_ticket(_extract_ticket(result.output))
     assert ticket.funding == FUNDING_BURN
     assert ticket.quote_id == QUOTE_ID
@@ -354,13 +365,84 @@ def test_upload_failure_with_credit_receipt_prints_credit_ticket(monkeypatch):
     assert verify_ticket_signature(ticket)
 
 
-def test_prepare_upload_remains_competition_free() -> None:
+def test_prepare_upload_forwards_requested_competition(monkeypatch) -> None:
+    monkeypatch.setattr(prepare_module, "_resolve_wallet", lambda coldkey_name, hotkey_name: _fake_wallet())
+    select = MagicMock(side_effect=upload_module.click.ClickException("Competition 7 is not accepting uploads"))
+    monkeypatch.setattr(prepare_module, "_select_upload_competition", select)
+
     result = CliRunner().invoke(
         prepare_module.prepare_upload,
-        ["--competition", "7"],
+        ["--coldkey-name", "c", "--hotkey-name", "h", "--competition", "7"],
         obj={"url": None},
     )
 
     assert result.exit_code != 0
-    assert "No such option" in result.output
-    assert "--competition" in result.output
+    assert select.call_args.kwargs["requested_set_id"] == 7
+
+
+def _burn_client(*responses) -> MagicMock:
+    client = MagicMock()
+    client.post.side_effect = list(responses)
+    return client
+
+
+def _patch_client(monkeypatch, client: MagicMock) -> None:
+    monkeypatch.setattr(
+        prepare_module.httpx,
+        "Client",
+        MagicMock(
+            return_value=MagicMock(__enter__=MagicMock(return_value=client), __exit__=MagicMock(return_value=False))
+        ),
+    )
+
+
+BURN_QUOTE = {
+    "payment_method": "burn",
+    "quote_id": QUOTE_ID,
+    "amount_alpha_rao": 1,
+    "payment_netuid": 62,
+    "expires_at": None,
+}
+
+
+def test_declined_burn_cancels_the_quote(monkeypatch):
+    monkeypatch.setattr(prepare_module, "_resolve_wallet", lambda coldkey_name, hotkey_name: _fake_wallet())
+    monkeypatch.setattr(prepare_module, "_select_upload_competition", MagicMock(return_value=1))
+    monkeypatch.setattr(prepare_module, "_unlock_coldkey", MagicMock())
+    monkeypatch.setattr(prepare_module, "_confirm_payment", MagicMock(return_value=False))
+    submit = MagicMock()
+    monkeypatch.setattr(prepare_module, "_submit_eval_payment", submit)
+    client = _burn_client(_prepare_response(BURN_QUOTE), _prepare_response({"status": "cancelled"}))
+    _patch_client(monkeypatch, client)
+
+    result = CliRunner().invoke(
+        prepare_module.prepare_upload, ["--coldkey-name", "c", "--hotkey-name", "h"], obj={"url": None}
+    )
+
+    assert result.exit_code == 0, result.output
+    submit.assert_not_called()
+    assert client.post.call_args_list[-1].args[0].endswith(f"/upload/quote/{QUOTE_ID}/cancel")
+
+
+def test_confirm_failure_keeps_receipt_on_screen_and_prints_no_ticket(monkeypatch):
+    monkeypatch.setattr(prepare_module, "_resolve_wallet", lambda coldkey_name, hotkey_name: _fake_wallet())
+    monkeypatch.setattr(prepare_module, "_select_upload_competition", MagicMock(return_value=1))
+    monkeypatch.setattr(prepare_module, "_unlock_coldkey", MagicMock())
+    monkeypatch.setattr(prepare_module, "_confirm_payment", MagicMock(return_value=True))
+    monkeypatch.setattr(
+        prepare_module,
+        "_submit_eval_payment",
+        MagicMock(return_value=PaymentReceipt(block_hash="0x" + "87" * 32, extrinsic_index=7, quote_id=QUOTE_ID)),
+    )
+    monkeypatch.setattr(upload_module.time, "sleep", MagicMock())
+    confirm_down = MagicMock(status_code=503, text="down")
+    client = _burn_client(_prepare_response(BURN_QUOTE), confirm_down, confirm_down, confirm_down)
+    _patch_client(monkeypatch, client)
+
+    result = CliRunner().invoke(
+        prepare_module.prepare_upload, ["--coldkey-name", "c", "--hotkey-name", "h"], obj={"url": None}
+    )
+
+    assert result.exit_code != 0
+    assert "0x" + "87" * 32 in result.output
+    assert "ridges1" not in result.output
