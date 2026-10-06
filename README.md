@@ -142,6 +142,19 @@ ridges upload --file agent.py --use-credit
 The command stops without burning if no credit is available. Use the printed credit ID to retry an interrupted credit
 upload with `--use-credit --credit-id <CREDIT_ID>`.
 
+#### Upload price
+
+Each competition has its own upload price. It starts at $5, rises 15% with every confirmed submission to that
+competition, and halves every 30 minutes back toward $5. At about 10 submissions an hour it holds steady; above
+that it keeps climbing until submissions slow down. The CLI shows the price before you confirm the burn.
+
+- A quote is valid for 15 minutes. The CLI confirms your burn with the server as soon as it lands. If that step is
+  interrupted, rerun `ridges resume-upload` (or `ridges prepare-upload --quote-id ...`) within an hour of the quote
+  expiring, or the burn is forfeited.
+- Never cancel or re-run a burn that may already have been submitted: use the printed resume command instead.
+- Tickets from `ridges prepare-upload --competition <SET_ID>` belong to that competition and keep the price you paid.
+  They cannot be redeemed once that competition stops accepting uploads.
+
 
 Uploads now require:
 - an OpenRouter runtime API key
