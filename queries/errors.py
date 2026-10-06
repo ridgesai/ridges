@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from datetime import datetime
     from uuid import UUID
 
 
@@ -85,3 +86,34 @@ class CompetitionNotFoundError(Exception):
 
 class CompetitionAdminConflictError(Exception):
     """Raised when a requested competition target is invalid for current state."""
+
+
+class OpenQuoteExistsError(Exception):
+    """The coldkey already holds an open quote for this competition, issued to another hotkey."""
+
+    def __init__(self, quote_id: "UUID", expires_at: "datetime"):
+        super().__init__(f"Open quote {quote_id} exists until {expires_at}")
+        self.quote_id = quote_id
+        self.expires_at = expires_at
+
+
+class InsufficientAlphaError(Exception):
+    def __init__(self, amount_alpha_rao: int):
+        super().__init__(f"{amount_alpha_rao} rao of burnable alpha is required")
+        self.amount_alpha_rao = amount_alpha_rao
+
+
+class QuoteCancelledError(Exception):
+    pass
+
+
+class QuoteAlreadyConfirmedError(Exception):
+    pass
+
+
+class ReceiptConflictError(Exception):
+    """The quote was confirmed with another burn, or this burn already confirmed another quote."""
+
+
+class BurnNotReportedError(Exception):
+    """The first confirmation arrived after the quote's expiry plus the grace period."""
