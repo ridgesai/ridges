@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
@@ -64,10 +65,73 @@ class UploadPaymentQuote(Base, CreatedAtMixin):
     amount_alpha_rao: Mapped[Optional[int]] = mapped_column(sa.BigInteger, nullable=True)
     send_address: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     expires_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
+    set_id: Mapped[Optional[int]] = mapped_column(
+        sa.Integer, sa.ForeignKey("competitions.set_id", name="fk_upload_payment_quotes_set_id"), nullable=True
+    )
+    price_usd: Mapped[Optional[Decimal]] = mapped_column(sa.Numeric(), nullable=True)
+    miner_coldkey: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    confirmed_payment_block_hash: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
+    confirmed_payment_extrinsic_index: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
+    cancelled_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    is_legacy: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
 
     __table_args__ = (
         sa.CheckConstraint(
             "num_nonnulls(amount_rao, amount_alpha_rao) = 1",
             name="ck_amount_rao_xor_amount_alpha_rao",
+        ),
+        sa.CheckConstraint(
+            "is_legacy OR (set_id IS NOT NULL AND price_usd IS NOT NULL AND miner_coldkey IS NOT NULL)",
+            name="ck_upload_payment_quotes_bound",
+        ),
+        sa.CheckConstraint(
+            "NOT (confirmed_at IS NOT NULL AND cancelled_at IS NOT NULL)",
+            name="ck_upload_payment_quotes_terminal",
+        ),
+        sa.CheckConstraint(
+            "(confirmed_at IS NULL) = (confirmed_payment_block_hash IS NULL) "
+            "AND (confirmed_at IS NULL) = (confirmed_payment_extrinsic_index IS NULL)",
+            name="ck_upload_payment_quotes_confirmed_receipt",
+        ),
+        sa.Index(
+            "idx_upload_payment_quotes_open",
+            "set_id",
+            "miner_coldkey",
+            "expires_at",
+            postgresql_where=sa.text("NOT is_legacy"),
+        ),
+    )
+
+
+_PRICE_COLUMNS = ("floor_usd", "target_per_hour", "half_life_minutes", "price_usd")
+
+
+class CompetitionUploadPrice(Base):
+    """The live upload price of one competition, stored as of its last bump, plus its pricing settings."""
+
+    __tablename__ = "competition_upload_prices"
+
+    set_id: Mapped[int] = mapped_column(
+        sa.Integer, sa.ForeignKey("competitions.set_id", ondelete="CASCADE"), primary_key=True
+    )
+    floor_usd: Mapped[Decimal] = mapped_column(sa.Numeric(), nullable=False, server_default=sa.text("5"))
+    target_per_hour: Mapped[Decimal] = mapped_column(sa.Numeric(), nullable=False, server_default=sa.text("10"))
+    half_life_minutes: Mapped[Decimal] = mapped_column(sa.Numeric(), nullable=False, server_default=sa.text("30"))
+    price_usd: Mapped[Decimal] = mapped_column(sa.Numeric(), nullable=False)
+    price_updated_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")
+    )
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            " AND ".join(
+                f"{column} > 0 AND {column} NOT IN ('NaN'::numeric, 'Infinity'::numeric)" for column in _PRICE_COLUMNS
+            ),
+            name="ck_competition_upload_prices_positive",
+        ),
+        sa.CheckConstraint(
+            "target_per_hour * half_life_minutes / 60 >= 1.71",
+            name="ck_competition_upload_prices_max_multiplier",
         ),
     )
