@@ -29,3 +29,11 @@ class PaymentQuote(BaseModel):
     send_address: Optional[str] = None
     created_at: datetime
     expires_at: datetime
+    set_id: Optional[int] = None
+    price_usd: Optional[float] = None
+    miner_coldkey: Optional[str] = None
+    confirmed_at: Optional[datetime] = None
+    confirmed_payment_block_hash: Optional[str] = None
+    confirmed_payment_extrinsic_index: Optional[str] = None
+    cancelled_at: Optional[datetime] = None
+    is_legacy: bool = False
