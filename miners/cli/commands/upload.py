@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import os
 import sys
+import time
 import uuid as _uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -17,12 +19,23 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt
 
 from miners.cli.click_ext import click, format_help
-from utils.upload_ticket import FUNDING_BURN, FUNDING_CREDIT, UploadTicket, encode_ticket, sign_ticket
+from utils.burn_receipt import canonical_receipt
+from utils.upload_ticket import (
+    FUNDING_BURN,
+    FUNDING_CREDIT,
+    UploadTicket,
+    cancel_signing_string,
+    confirm_signing_string,
+    encode_ticket,
+    sign_ticket,
+)
 
 console = Console()
 DEFAULT_API_BASE_URL = "https://agent-upload.ridges.ai"
 UPLOAD_TIMEOUT_SECONDS = 120
 MAX_AGENT_FILE_SIZE_BYTES = 2 * 1024 * 1024
+PRICING_VERSION = 2
+MIN_QUOTE_SECONDS_BEFORE_BURN = 180
 
 if TYPE_CHECKING:
     from bittensor_wallet.wallet import Wallet
@@ -217,6 +230,22 @@ def _resolve_openrouter_upload_credentials(
     )
 
 
+def _raise_if_open_quote_exists(response: httpx.Response) -> None:
+    """Explain the one-open-quote-per-coldkey rule when the server refuses a quote for it."""
+    if response.status_code != 409:
+        return
+    try:
+        detail = response.json().get("detail")
+    except (ValueError, AttributeError):
+        return
+    if isinstance(detail, dict) and detail.get("code") == "open_quote_exists":
+        raise click.ClickException(
+            f"Another hotkey of this coldkey holds open quote {detail['quote_id']} for this competition until "
+            f"{detail['expires_at']}. If that hotkey already burned for it, finish with `ridges resume-upload "
+            f"--quote-id {detail['quote_id']} ...` from that hotkey. Otherwise wait for the quote to expire."
+        )
+
+
 def _check_upload_allowed(
     client: httpx.Client,
     *,
@@ -234,6 +263,7 @@ def _check_upload_allowed(
         "name": pending.name,
         "openrouter_api_key": credentials.runtime_api_key,
         "openrouter_management_key": credentials.management_key,
+        "pricing_version": PRICING_VERSION,
     }
     if set_id is not None:
         check_payload["set_id"] = set_id
@@ -248,6 +278,7 @@ def _check_upload_allowed(
         timeout=UPLOAD_TIMEOUT_SECONDS,
     )
     if response.status_code != 200:
+        _raise_if_open_quote_exists(response)
         raise click.ClickException(f"Error checking agent: {response.text}")
     return response.json()
 
@@ -269,6 +300,13 @@ def _unlock_coldkey(wallet) -> None:
 def _confirm_payment(payment_method_details: dict) -> bool:
     amount_alpha = payment_method_details["amount_alpha_rao"] / 1e9
     payment_netuid = payment_method_details["payment_netuid"]
+    price_usd = payment_method_details.get("price_usd")
+    if price_usd is not None:
+        console.print(
+            f"\n[cyan]Upload price:[/cyan] ${price_usd:,.2f}. "
+            "It rises with each submission to this competition and falls back over time."
+        )
+    console.print(f"[cyan]Payment Quote ID:[/cyan] {payment_method_details['quote_id']}")
     confirm_payment = Prompt.ask(
         (
             f"\n[bold yellow]Proceed with an IRREVERSIBLE burn of {amount_alpha:,.4f} alpha "
@@ -320,6 +358,73 @@ def _print_payment_receipt(receipt: PaymentReceipt) -> None:
         console.print(f"[cyan]Payment Quote ID:[/cyan] {receipt.quote_id}")
     console.print(f"[cyan]Payment Block Hash:[/cyan] {receipt.block_hash}")
     console.print(f"[cyan]Payment Extrinsic Index:[/cyan] {receipt.extrinsic_index}\n")
+    if receipt.quote_id:
+        console.print(
+            "[yellow]To resume: ridges resume-upload "
+            f"--quote-id {receipt.quote_id} --payment-block-hash {receipt.block_hash} "
+            f"--payment-extrinsic-index {receipt.extrinsic_index}[/yellow]\n"
+        )
+
+
+def _quote_seconds_left(payment_method_details: dict) -> float:
+    expires_at = payment_method_details.get("expires_at")
+    if not expires_at:
+        return float("inf")
+    expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+    return (expiry - datetime.now(timezone.utc)).total_seconds()
+
+
+def _cancel_quote(client: httpx.Client, *, api_url: str, wallet, quote_id: str) -> None:
+    """Release a quote that was not burned for. Best effort: an unreleased quote expires on its own."""
+    hotkey = wallet.hotkey.ss58_address
+    body = {
+        "hotkey": hotkey,
+        "public_key": wallet.hotkey.public_key.hex(),
+        "signature": wallet.hotkey.sign(cancel_signing_string(hotkey, quote_id)).hex(),
+    }
+    try:
+        client.post(f"{api_url}/upload/quote/{quote_id}/cancel", json=body, timeout=UPLOAD_TIMEOUT_SECONDS)
+    except httpx.HTTPError as exc:
+        console.print(f"[yellow]Could not release quote {quote_id}: {exc}. It expires on its own.[/yellow]")
+
+
+def _ensure_quote_fresh(client: httpx.Client, *, api_url: str, wallet, payment_method_details: dict) -> None:
+    """Never burn against a quote that could expire before the burn lands."""
+    if _quote_seconds_left(payment_method_details) < MIN_QUOTE_SECONDS_BEFORE_BURN:
+        _cancel_quote(client, api_url=api_url, wallet=wallet, quote_id=payment_method_details["quote_id"])
+        raise click.ClickException(
+            "The quote expires in under 3 minutes, so it was cancelled and nothing was burned. Run the command again."
+        )
+
+
+def _confirm_burn(client: httpx.Client, *, api_url: str, wallet, receipt: PaymentReceipt, attempts: int = 3) -> None:
+    """Report a burn right after it lands. Safe to retry: the server confirms each quote once."""
+    try:
+        block_hash, extrinsic_index = canonical_receipt(receipt.block_hash, receipt.extrinsic_index)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    hotkey = wallet.hotkey.ss58_address
+    message = confirm_signing_string(hotkey, receipt.quote_id, block_hash, extrinsic_index)
+    body = {
+        "quote_id": receipt.quote_id,
+        "payment_block_hash": block_hash,
+        "payment_extrinsic_index": int(extrinsic_index),
+        "hotkey": hotkey,
+        "public_key": wallet.hotkey.public_key.hex(),
+        "signature": wallet.hotkey.sign(message).hex(),
+    }
+    for attempt in range(1, attempts + 1):
+        try:
+            response = client.post(f"{api_url}/upload/payment/confirm", json=body, timeout=UPLOAD_TIMEOUT_SECONDS)
+        except httpx.HTTPError as exc:
+            if attempt == attempts:
+                raise click.ClickException(f"Could not confirm the burn: {exc}") from exc
+        else:
+            if response.status_code == 200:
+                return
+            if response.status_code < 500 or attempt == attempts:
+                raise click.ClickException(f"Burn confirmation failed ({response.status_code}): {response.text}")
+        time.sleep(2 * attempt)
 
 
 def _print_credit_receipt(receipt: CreditReceipt) -> None:
@@ -509,6 +614,19 @@ def _execute_upload(
         raise
 
 
+def _resolve_wallet(*, coldkey_name: Optional[str], hotkey_name: Optional[str]):
+    from bittensor_wallet.wallet import Wallet
+
+    coldkey = coldkey_name or get_or_prompt("RIDGES_COLDKEY_NAME", "Enter your coldkey name", "miner")
+    hotkey = hotkey_name or get_or_prompt("RIDGES_HOTKEY_NAME", "Enter your hotkey name", "default")
+    return Wallet(name=coldkey, hotkey=hotkey)
+
+
+def _resolve_target(api_url: str, file: Optional[str]) -> UploadTarget:
+    file_path = file or get_or_prompt("RIDGES_AGENT_FILE", "Enter the path to your agent.py file", "agent.py")
+    return _read_upload_target(api_url, file_path)
+
+
 def _resolve_wallet_and_target(
     ctx,
     *,
@@ -516,16 +634,10 @@ def _resolve_wallet_and_target(
     coldkey_name: Optional[str],
     hotkey_name: Optional[str],
 ):
-    """Shared wallet + file resolution used by both upload and resume-upload."""
-    from bittensor_wallet.wallet import Wallet
-
+    """Shared wallet + file resolution used by upload and team-upload."""
     api_url = ctx.obj.get("url") or DEFAULT_API_BASE_URL
-    coldkey = coldkey_name or get_or_prompt("RIDGES_COLDKEY_NAME", "Enter your coldkey name", "miner")
-    hotkey = hotkey_name or get_or_prompt("RIDGES_HOTKEY_NAME", "Enter your hotkey name", "default")
-    wallet = Wallet(name=coldkey, hotkey=hotkey)
-    file_path = file or get_or_prompt("RIDGES_AGENT_FILE", "Enter the path to your agent.py file", "agent.py")
-    target = _read_upload_target(api_url, file_path)
-    return wallet, target
+    wallet = _resolve_wallet(coldkey_name=coldkey_name, hotkey_name=hotkey_name)
+    return wallet, _resolve_target(api_url, file)
 
 
 @click.command(
@@ -613,11 +725,17 @@ def upload(
             else:
                 _unlock_coldkey(wallet)
                 if not _confirm_payment(payment_method_details):
+                    _cancel_quote(
+                        client, api_url=target.api_url, wallet=wallet, quote_id=payment_method_details["quote_id"]
+                    )
                     console.print("[bold red]Payment cancelled by user. Upload aborted.[/bold red]")
                     return
-
+                _ensure_quote_fresh(
+                    client, api_url=target.api_url, wallet=wallet, payment_method_details=payment_method_details
+                )
                 receipt = _submit_eval_payment(wallet=wallet, payment_method_details=payment_method_details)
                 _print_payment_receipt(receipt)
+                _confirm_burn(client, api_url=target.api_url, wallet=wallet, receipt=receipt)
 
             _execute_upload(
                 client,
@@ -750,9 +868,26 @@ def resume_upload(
     payment_extrinsic_index: Optional[int],
 ):
     """Resume a failed upload using an existing payment receipt."""
-    wallet, target = _resolve_wallet_and_target(ctx, file=file, coldkey_name=coldkey_name, hotkey_name=hotkey_name)
+    api_url = ctx.obj.get("url") or DEFAULT_API_BASE_URL
+    wallet = _resolve_wallet(coldkey_name=coldkey_name, hotkey_name=hotkey_name)
     try:
         with httpx.Client() as client:
+            quote_id = quote_id or Prompt.ask("Payment Quote ID")
+            payment_block_hash = payment_block_hash or Prompt.ask("Payment Block Hash")
+            if payment_extrinsic_index is None:
+                try:
+                    payment_extrinsic_index = int(Prompt.ask("Payment Extrinsic Index"))
+                except ValueError:
+                    raise click.ClickException("Payment Extrinsic Index must be an integer") from None
+
+            receipt = PaymentReceipt(
+                block_hash=payment_block_hash,
+                extrinsic_index=payment_extrinsic_index,
+                quote_id=quote_id,
+            )
+            _confirm_burn(client, api_url=api_url, wallet=wallet, receipt=receipt)
+
+            target = _resolve_target(api_url, file)
             selected_set_id = _select_upload_competition(
                 client,
                 api_url=target.api_url,
@@ -769,20 +904,6 @@ def resume_upload(
                 openrouter_management_key=openrouter_management_key,
             )
             _print_upload_preview(hotkey=wallet.hotkey.ss58_address, target=target)
-
-            quote_id = quote_id or Prompt.ask("Payment Quote ID")
-            payment_block_hash = payment_block_hash or Prompt.ask("Payment Block Hash")
-            if payment_extrinsic_index is None:
-                try:
-                    payment_extrinsic_index = int(Prompt.ask("Payment Extrinsic Index"))
-                except ValueError:
-                    raise click.ClickException("Payment Extrinsic Index must be an integer") from None
-
-            receipt = PaymentReceipt(
-                block_hash=payment_block_hash,
-                extrinsic_index=payment_extrinsic_index,
-                quote_id=quote_id,
-            )
             _execute_upload(
                 client,
                 wallet=wallet,
