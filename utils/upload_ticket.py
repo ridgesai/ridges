@@ -16,6 +16,8 @@ FUNDING_CREDIT = "credit"
 
 _TICKET_DOMAIN = "ridges-upload-ticket:v2"
 _PREPARE_DOMAIN = "ridges-upload-prepare:v2"
+_CONFIRM_DOMAIN = "ridges-upload-confirm:v1"
+_CANCEL_DOMAIN = "ridges-upload-cancel:v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +47,14 @@ def ticket_signing_string(ticket: UploadTicket) -> str:
 
 def prepare_signing_string(hotkey: str) -> str:
     return f"{_PREPARE_DOMAIN}:{hotkey}"
+
+
+def confirm_signing_string(hotkey: str, quote_id: str, payment_block_hash: str, payment_extrinsic_index: str) -> str:
+    return f"{_CONFIRM_DOMAIN}:{hotkey}:{quote_id}:{payment_block_hash}:{payment_extrinsic_index}"
+
+
+def cancel_signing_string(hotkey: str, quote_id: str) -> str:
+    return f"{_CANCEL_DOMAIN}:{hotkey}:{quote_id}"
 
 
 def sign_ticket(ticket: UploadTicket, signer: Callable[[str], bytes]) -> UploadTicket:
