@@ -272,9 +272,33 @@ async def test_credit_prepare_needs_no_competition():
     assert response.payment_method == "credit"
 
 
+async def _credit_balance(rao: int) -> None:
+    """Give FAKE_COLDKEY a burn balance through an already-confirmed quote."""
+    async with _db.pool.acquire() as conn:
+        quote_id = await conn.fetchval(
+            """
+            INSERT INTO upload_payment_quotes
+                (miner_hotkey, amount_alpha_rao, expires_at, set_id, price_usd, miner_coldkey,
+                 confirmed_at, confirmed_payment_block_hash, confirmed_payment_extrinsic_index)
+            VALUES ('other-hk', $1, clock_timestamp(), 1, 5, $2, clock_timestamp(), $3, '0')
+            RETURNING quote_id
+            """,
+            rao,
+            FAKE_COLDKEY,
+            "0x" + uuid.uuid4().hex * 2,
+        )
+        await conn.execute(
+            "INSERT INTO burn_balance_entries (miner_coldkey, quote_id, kind, amount_alpha_rao) VALUES ($1, $2, 'burn', $3)",
+            FAKE_COLDKEY,
+            quote_id,
+            rao,
+        )
+
+
 async def test_burn_quote_is_bound_to_competition_and_price():
     response = await upload_module.prepare_upload(_request())
     assert response.price_usd == pytest.approx(5.0)
+    assert response.balance_alpha_rao == 0
     async with _db.pool.acquire() as conn:
         row = await conn.fetchrow("SELECT * FROM upload_payment_quotes WHERE quote_id = $1", response.quote_id)
     assert row["set_id"] == 1
@@ -326,3 +350,37 @@ async def test_eval_pricing_unknown_competition_is_404():
     with pytest.raises(HTTPException) as exc:
         await upload_module.get_upload_price(set_id=999)
     assert exc.value.status_code == 404
+
+
+async def test_quote_asks_only_for_the_gap_above_the_balance():
+    await _credit_balance(1_200_000_000)  # $3 at the fake rate
+    response = await upload_module.prepare_upload(_request())
+    assert response.price_usd == pytest.approx(5.0)
+    assert response.balance_alpha_rao == 1_200_000_000
+    assert response.amount_alpha_rao == alpha_rao_for_usd(2.0, FAKE_ALPHA_PRICE_USD)
+
+
+async def test_zero_quote_when_balance_covers_the_price():
+    await _credit_balance(4_800_000_000)  # $12 at the fake rate
+    response = await upload_module.prepare_upload(_request())
+    assert response.amount_alpha_rao == 0
+    assert response.balance_alpha_rao == 4_800_000_000
+    async with _db.pool.acquire() as conn:
+        assert (
+            await conn.fetchval(
+                "SELECT amount_alpha_rao FROM upload_payment_quotes WHERE quote_id = $1", response.quote_id
+            )
+            == 0
+        )
+
+
+async def test_purchased_zero_quote_is_not_reissued():
+    await _credit_balance(4_800_000_000)
+    first = await upload_module.prepare_upload(_request())
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE upload_payment_quotes SET purchased_at = clock_timestamp(), purchase_price_usd = 5, purchase_price_alpha_rao = 2000000000 WHERE quote_id = $1",
+            first.quote_id,
+        )
+    second = await upload_module.prepare_upload(_request())
+    assert second.quote_id != first.quote_id

@@ -10,20 +10,25 @@ from fastapi import HTTPException
 
 import utils.database as _db
 from api.src.endpoints import upload as upload_module
-from models.upload import CancelQuoteRequest, ConfirmPaymentRequest
+from models.upload import CancelQuoteRequest, ConfirmPaymentRequest, PurchaseQuoteRequest
+from queries.banned_coldkey import ban_coldkey
+from queries.burn_balance import get_burn_balance
 from queries.competition import initialize_current_competition_policy
 from utils.upload_pricing import PricingSettings, multiplier
-from utils.upload_ticket import cancel_signing_string, confirm_signing_string
+from utils.upload_ticket import cancel_signing_string, confirm_signing_string, purchase_signing_string
 
 KEYPAIR = Keypair.create_from_seed("0x" + "cd" * 32)
 HOTKEY = KEYPAIR.ss58_address
 OTHER = Keypair.create_from_seed("0x" + "ef" * 32)
 COLDKEY = "5FColdKey456"
+OTHER_COLDKEY = "5FColdKey789"
 BLOCK_HASH = "0x" + "ab" * 32
 OTHER_BLOCK_HASH = "0x" + "bc" * 32
 EXTRINSIC_INDEX = 1
 BURN_RAO = 3_000_000_000
 QUOTE_RAO = 2_000_000_000
+ALPHA_PRICE_USD = 2.5
+PRICE_RAO = 2_000_000_000  # $5 at ALPHA_PRICE_USD
 BLOCK_TIME = datetime.now(timezone.utc)
 M = multiplier(PricingSettings())
 
@@ -42,7 +47,8 @@ def upload_prod_mode():
 async def clean_tables(postgres_db):
     async with _db.pool.acquire() as conn:
         await conn.execute(
-            "TRUNCATE evaluation_payments, upload_payment_quotes, agents, competitions RESTART IDENTITY CASCADE"
+            "TRUNCATE evaluation_payments, upload_payment_quotes, agents, competitions, banned_coldkeys "
+            "RESTART IDENTITY CASCADE"
         )
         await conn.execute("INSERT INTO competitions (set_id, start_date) VALUES (1, NOW())")
     await initialize_current_competition_policy()
@@ -87,6 +93,7 @@ def chain_mocks(monkeypatch):
         ),
     )
     monkeypatch.setattr(upload_module.subtensor_client, "get_hotkey_owner", AsyncMock(return_value=COLDKEY))
+    monkeypatch.setattr(upload_module, "get_alpha_price_usd", AsyncMock(return_value=ALPHA_PRICE_USD))
 
 
 async def _insert_quote(
@@ -135,6 +142,17 @@ def _cancel_request(quote_id: uuid.UUID, *, keypair: Keypair = KEYPAIR) -> Cance
     )
 
 
+def _purchase_request(quote_id: uuid.UUID, *, keypair: Keypair = KEYPAIR) -> PurchaseQuoteRequest:
+    message = purchase_signing_string(keypair.ss58_address, str(quote_id))
+    return PurchaseQuoteRequest(
+        hotkey=keypair.ss58_address, public_key=keypair.public_key.hex(), signature=keypair.sign(message).hex()
+    )
+
+
+async def _balance() -> int:
+    return await get_burn_balance(COLDKEY)
+
+
 async def _price() -> float | None:
     async with _db.pool.acquire() as conn:
         return await conn.fetchval("SELECT price_usd::float8 FROM competition_upload_prices WHERE set_id = 1")
@@ -145,11 +163,14 @@ async def _payment_rows() -> int:
         return await conn.fetchval("SELECT COUNT(*) FROM evaluation_payments")
 
 
-async def test_confirm_records_payment_and_bumps_once():
+async def test_confirm_records_payment_and_credits_balance_once():
     quote_id = await _insert_quote()
     response = await upload_module.confirm_payment(_confirm_request(quote_id))
     assert response.status == "confirmed"
-    assert await _price() == pytest.approx(5 * M, rel=1e-3)
+    assert await _price() is None
+    assert await _balance() == BURN_RAO
+    assert (await upload_module.confirm_payment(_confirm_request(quote_id))).status == "replayed"
+    assert await _balance() == BURN_RAO
     async with _db.pool.acquire() as conn:
         payment = await conn.fetchrow("SELECT * FROM evaluation_payments")
         quote = await conn.fetchrow("SELECT * FROM upload_payment_quotes WHERE quote_id = $1", quote_id)
@@ -168,7 +189,7 @@ async def test_replay_with_same_receipt_is_idempotent_even_after_deadline_and_ch
     monkeypatch.setattr(upload_module.subtensor_client, "get_block_info", AsyncMock(side_effect=RuntimeError("down")))
     response = await upload_module.confirm_payment(_confirm_request(quote_id))
     assert response.status == "replayed"
-    assert await _price() == pytest.approx(5 * M, rel=1e-3)
+    assert await _price() is None
 
 
 async def test_different_receipt_conflicts_without_bump():
@@ -177,7 +198,7 @@ async def test_different_receipt_conflicts_without_bump():
     with pytest.raises(HTTPException) as exc:
         await upload_module.confirm_payment(_confirm_request(quote_id, block_hash=OTHER_BLOCK_HASH))
     assert (exc.value.status_code, exc.value.detail) == (409, "receipt_conflict")
-    assert await _price() == pytest.approx(5 * M, rel=1e-3)
+    assert await _price() is None
 
 
 async def test_one_burn_cannot_confirm_two_quotes():
@@ -278,10 +299,11 @@ async def test_other_hotkey_cannot_confirm_or_cancel():
     assert (exc.value.status_code, exc.value.detail) == (403, "not_quote_owner")
 
 
-async def test_legacy_quote_confirm_and_cancel_are_no_ops():
+async def test_legacy_quote_confirm_cancel_and_purchase_are_no_ops():
     quote_id = await _insert_quote(legacy=True)
     assert (await upload_module.confirm_payment(_confirm_request(quote_id))).status == "legacy"
     assert (await upload_module.cancel_quote(quote_id, _cancel_request(quote_id))).status == "legacy"
+    assert (await upload_module.purchase_quote_endpoint(quote_id, _purchase_request(quote_id))).status == "legacy"
     assert await _payment_rows() == 0
     assert await _price() is None
 
@@ -291,16 +313,16 @@ async def test_confirm_succeeds_after_competition_closes():
     async with _db.pool.acquire() as conn:
         await conn.execute("UPDATE competitions SET submissions_closed_at = NOW(), emissions_end_at = NOW()")
     assert (await upload_module.confirm_payment(_confirm_request(quote_id))).status == "confirmed"
-    assert await _price() == pytest.approx(5 * M, rel=1e-3)
+    assert await _price() is None
 
 
-async def test_non_prod_confirm_bumps_without_chain_or_payment_row(monkeypatch):
+async def test_non_prod_confirm_credits_quoted_amount_without_chain_or_payment_row(monkeypatch):
     monkeypatch.setattr(upload_module.config, "ENV", "dev")
     monkeypatch.setattr(upload_module.subtensor_client, "get_block_info", AsyncMock(side_effect=AssertionError))
     quote_id = await _insert_quote()
     assert (await upload_module.confirm_payment(_confirm_request(quote_id))).status == "confirmed"
     assert await _payment_rows() == 0
-    assert await _price() == pytest.approx(5 * M, rel=1e-3)
+    assert await _balance() == QUOTE_RAO
 
 
 async def test_bad_receipt_is_400():
@@ -331,3 +353,118 @@ async def test_api_clock_ahead_of_database_does_not_forfeit_a_timely_confirm(mon
     monkeypatch.setattr(upload_module, "datetime", _FastClock)
     monkeypatch.setattr(upload_module, "_verify_burn_on_chain", _verified)
     assert (await upload_module.confirm_payment(_confirm_request(quote_id))).status == "confirmed"
+
+
+async def test_purchase_debits_balance_and_bumps_once():
+    quote_id = await _insert_quote()
+    await upload_module.confirm_payment(_confirm_request(quote_id))
+    response = await upload_module.purchase_quote_endpoint(quote_id, _purchase_request(quote_id))
+    assert response.status == "purchased"
+    assert await _price() == pytest.approx(5 * M, rel=1e-3)
+    assert await _balance() == BURN_RAO - PRICE_RAO
+    assert (await upload_module.purchase_quote_endpoint(quote_id, _purchase_request(quote_id))).status == (
+        "already_purchased"
+    )
+    assert await _price() == pytest.approx(5 * M, rel=1e-3)
+
+
+async def test_purchase_with_insufficient_balance_is_402_with_shortfall():
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO competition_upload_prices (set_id, price_usd, price_updated_at) VALUES (1, 20, clock_timestamp())"
+        )
+    quote_id = await _insert_quote()
+    await upload_module.confirm_payment(_confirm_request(quote_id))
+    with pytest.raises(HTTPException) as exc:
+        await upload_module.purchase_quote_endpoint(quote_id, _purchase_request(quote_id))
+    assert exc.value.status_code == 402
+    assert exc.value.detail["code"] == "insufficient_balance"
+    assert exc.value.detail["shortfall_alpha_rao"] == pytest.approx(8_000_000_000 - BURN_RAO, rel=1e-4)
+    assert await _balance() == BURN_RAO
+
+
+async def test_purchase_before_confirm_is_402():
+    quote_id = await _insert_quote()
+    with pytest.raises(HTTPException) as exc:
+        await upload_module.purchase_quote_endpoint(quote_id, _purchase_request(quote_id))
+    assert (exc.value.status_code, exc.value.detail) == (402, "burn_not_confirmed")
+
+
+async def test_other_hotkey_cannot_purchase():
+    quote_id = await _insert_quote()
+    await upload_module.confirm_payment(_confirm_request(quote_id))
+    with pytest.raises(HTTPException) as exc:
+        await upload_module.purchase_quote_endpoint(quote_id, _purchase_request(quote_id, keypair=OTHER))
+    assert (exc.value.status_code, exc.value.detail) == (403, "not_quote_owner")
+
+
+async def test_purchased_quote_cannot_be_cancelled():
+    quote_id = await _insert_quote()
+    await upload_module.confirm_payment(_confirm_request(quote_id))
+    await upload_module.purchase_quote_endpoint(quote_id, _purchase_request(quote_id))
+    with pytest.raises(HTTPException) as exc:
+        await upload_module.cancel_quote(quote_id, _cancel_request(quote_id))
+    assert exc.value.status_code == 409
+
+
+async def test_balance_endpoint_reports_the_coldkey_balance():
+    quote_id = await _insert_quote()
+    await upload_module.confirm_payment(_confirm_request(quote_id))
+    response = await upload_module.get_burn_balance_endpoint(coldkey=COLDKEY)
+    assert response.coldkey == COLDKEY
+    assert response.balance_alpha_rao == BURN_RAO
+
+
+async def test_confirm_credits_the_coldkey_that_actually_burned(monkeypatch):
+    # The hotkey changed owner between quote and burn: the burn belongs to the new owner.
+    quote_id = await _insert_quote()
+    burn_ext = upload_module.subtensor_client.get_block_info.return_value.extrinsics[1]
+    burn_ext.value_serialized["address"] = OTHER_COLDKEY
+    events = upload_module.subtensor_client.get_events.return_value
+    events[0]["event"]["attributes"] = (OTHER_COLDKEY, HOTKEY, BURN_RAO, upload_module.config.NETUID)
+    monkeypatch.setattr(upload_module.subtensor_client, "get_hotkey_owner", AsyncMock(return_value=OTHER_COLDKEY))
+    await upload_module.confirm_payment(_confirm_request(quote_id))
+    assert await get_burn_balance(OTHER_COLDKEY) == BURN_RAO
+    assert await _balance() == 0
+
+
+async def test_purchase_debits_the_hotkeys_current_owner(monkeypatch):
+    quote_id = await _insert_quote()
+    await upload_module.confirm_payment(_confirm_request(quote_id))
+    monkeypatch.setattr(upload_module.subtensor_client, "get_hotkey_owner", AsyncMock(return_value=OTHER_COLDKEY))
+    with pytest.raises(HTTPException) as exc:
+        await upload_module.purchase_quote_endpoint(quote_id, _purchase_request(quote_id))
+    assert exc.value.status_code == 402
+    assert exc.value.detail["balance_alpha_rao"] == 0, "the new owner has no balance; the old owner's is untouched"
+    assert await _balance() == BURN_RAO
+    assert await _price() is None
+
+
+async def test_banned_coldkey_cannot_purchase():
+    quote_id = await _insert_quote()
+    await upload_module.confirm_payment(_confirm_request(quote_id))
+    await ban_coldkey(COLDKEY, "test ban")
+    with pytest.raises(HTTPException) as exc:
+        await upload_module.purchase_quote_endpoint(quote_id, _purchase_request(quote_id))
+    assert exc.value.status_code == 403
+    assert await _balance() == BURN_RAO
+    assert await _price() is None
+
+
+async def test_purchase_rebinds_the_quote_to_the_paying_coldkey(monkeypatch):
+    quote_id = await _insert_quote()
+    burn_ext = upload_module.subtensor_client.get_block_info.return_value.extrinsics[1]
+    burn_ext.value_serialized["address"] = OTHER_COLDKEY
+    upload_module.subtensor_client.get_events.return_value[0]["event"]["attributes"] = (
+        OTHER_COLDKEY,
+        HOTKEY,
+        BURN_RAO,
+        upload_module.config.NETUID,
+    )
+    monkeypatch.setattr(upload_module.subtensor_client, "get_hotkey_owner", AsyncMock(return_value=OTHER_COLDKEY))
+    await upload_module.confirm_payment(_confirm_request(quote_id))
+    assert (await upload_module.purchase_quote_endpoint(quote_id, _purchase_request(quote_id))).status == "purchased"
+    async with _db.pool.acquire() as conn:
+        assert await conn.fetchval("SELECT miner_coldkey FROM upload_payment_quotes WHERE quote_id = $1", quote_id) == (
+            OTHER_COLDKEY
+        )

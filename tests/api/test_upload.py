@@ -224,16 +224,18 @@ async def _insert_quote(
     created_at: datetime = FAKE_BLOCK_TIME - timedelta(minutes=1),
     expires_at: datetime = FAKE_BLOCK_TIME + timedelta(minutes=15),
     set_id: int | None = None,
+    purchased: bool = False,
+    coldkey: str = FAKE_COLDKEY,
 ) -> uuid.UUID:
-    """Insert a quote. set_id=None inserts a legacy quote (today's behaviour)."""
+    """Insert a quote. set_id=None inserts a legacy quote (today's behaviour); purchased=True a prepaid upload."""
     quote_id = uuid.uuid4()
     async with _db.pool.acquire() as conn:
         await conn.execute(
             """
             INSERT INTO upload_payment_quotes
                 (quote_id, miner_hotkey, amount_alpha_rao, created_at, expires_at, set_id, price_usd, miner_coldkey,
-                 is_legacy)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                 is_legacy, purchased_at, purchase_price_usd, purchase_price_alpha_rao)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             """,
             quote_id,
             hotkey,
@@ -242,8 +244,11 @@ async def _insert_quote(
             expires_at,
             set_id,
             None if set_id is None else 5,
-            None if set_id is None else FAKE_COLDKEY,
+            None if set_id is None else coldkey,
             set_id is None,
+            datetime.now(timezone.utc) if purchased else None,
+            5 if purchased else None,
+            2_000_000_000 if purchased else None,
         )
     return quote_id
 
@@ -1347,6 +1352,11 @@ async def test_preflight_selection_is_pinned_when_another_competition_opens(monk
     )
     assert preflight.set_id == 1
     _move_block_time_to_now(monkeypatch)
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE upload_payment_quotes SET purchased_at = clock_timestamp(), purchase_price_usd = 5, purchase_price_alpha_rao = 2000000000 WHERE quote_id = $1",
+            preflight.quote_id,
+        )
     await _insert_competition(2, name="Two")
 
     response = await _call_post_agent(quote_id=preflight.quote_id, set_id=preflight.set_id)
@@ -1606,39 +1616,55 @@ async def _price() -> float | None:
         return await conn.fetchval("SELECT price_usd::float8 FROM competition_upload_prices WHERE set_id = 1")
 
 
-async def _insert_fresh_bound_quote(monkeypatch) -> uuid.UUID:
+async def _insert_fresh_bound_quote(
+    monkeypatch, *, purchased: bool = True, amount_alpha_rao: int = FAKE_AMOUNT_ALPHA_RAO
+) -> uuid.UUID:
     now = _move_block_time_to_now(monkeypatch)
-    return await _insert_quote(set_id=1, created_at=now - timedelta(minutes=1), expires_at=now + timedelta(minutes=14))
+    return await _insert_quote(
+        set_id=1,
+        created_at=now - timedelta(minutes=1),
+        expires_at=now + timedelta(minutes=14),
+        purchased=purchased,
+        amount_alpha_rao=amount_alpha_rao,
+    )
+
+
+async def _quote_row(quote_id: uuid.UUID):
+    async with _db.pool.acquire() as conn:
+        return await conn.fetchrow("SELECT * FROM upload_payment_quotes WHERE quote_id = $1", quote_id)
 
 
 @pytest.mark.anyio
-async def test_bound_quote_upload_confirms_and_bumps(monkeypatch):
+async def test_purchased_quote_redeems_exactly_once(monkeypatch):
     quote_id = await _insert_fresh_bound_quote(monkeypatch)
     response = await _call_post_agent(quote_id=quote_id)
     assert response.status == "success"
-    async with _db.pool.acquire() as conn:
-        assert await conn.fetchval("SELECT confirmed_at FROM upload_payment_quotes WHERE quote_id = $1", quote_id)
-    assert await _price() == pytest.approx(5 * 2**0.2, rel=1e-3)
+    assert response.agent_id == _derive_agent_id(f"purchase:{quote_id}", "0")
+    row = await _quote_row(quote_id)
+    assert row["redeemed_agent_id"] == response.agent_id
+    assert row["confirmed_at"] is not None, "the receipt is still confirmed as a backstop"
+    assert await _price() is None, "redemption never bumps; the purchase already did"
+    with pytest.raises(PaymentAlreadyUsedError):
+        await _call_post_agent(quote_id=quote_id, name="again", content=b"print('again')")
 
 
 @pytest.mark.anyio
-async def test_bound_quote_failed_admission_keeps_confirmation(monkeypatch):
+async def test_unpurchased_quote_is_refused_but_its_burn_is_confirmed(monkeypatch):
     from fastapi import HTTPException
 
-    quote_id = await _insert_fresh_bound_quote(monkeypatch)
-    async with _db.pool.acquire() as conn:
-        await conn.execute("UPDATE competitions SET submissions_closed_at = NOW(), emissions_end_at = NOW()")
+    quote_id = await _insert_fresh_bound_quote(monkeypatch, purchased=False)
     with pytest.raises(HTTPException) as exc:
         await _call_post_agent(quote_id=quote_id)
-    assert exc.value.status_code == 409
+    assert (exc.value.status_code, exc.value.detail) == (402, "not_purchased")
+    row = await _quote_row(quote_id)
+    assert row["confirmed_at"] is not None and row["redeemed_agent_id"] is None
     async with _db.pool.acquire() as conn:
-        assert await conn.fetchval("SELECT confirmed_at FROM upload_payment_quotes WHERE quote_id = $1", quote_id)
-        assert await conn.fetchval("SELECT COUNT(*) FROM evaluation_payments WHERE agent_id IS NULL") == 1
-    assert await _price() == pytest.approx(5 * 2**0.2, rel=1e-3)
+        assert await conn.fetchval("SELECT COUNT(*) FROM burn_balance_entries WHERE kind = 'burn'") == 1
+        assert await conn.fetchval("SELECT COUNT(*) FROM agents") == 0
 
 
 @pytest.mark.anyio
-async def test_bound_quote_wrong_competition_rejected(monkeypatch):
+async def test_purchased_quote_wrong_competition_rejected(monkeypatch):
     from fastapi import HTTPException
 
     await _insert_competition(2, name="Second")
@@ -1646,13 +1672,11 @@ async def test_bound_quote_wrong_competition_rejected(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         await _call_post_agent(quote_id=quote_id, set_id=2)
     assert (exc.value.status_code, exc.value.detail) == (409, "wrong_competition")
-    async with _db.pool.acquire() as conn:
-        assert await conn.fetchval("SELECT confirmed_at FROM upload_payment_quotes WHERE quote_id = $1", quote_id)
-    assert await _price() == pytest.approx(5 * 2**0.2, rel=1e-3)
+    assert (await _quote_row(quote_id))["redeemed_agent_id"] is None
 
 
 @pytest.mark.anyio
-async def test_bound_quote_bad_file_keeps_confirmation(monkeypatch):
+async def test_failed_upload_keeps_the_prepaid_quote(monkeypatch):
     from fastapi import HTTPException
 
     quote_id = await _insert_fresh_bound_quote(monkeypatch)
@@ -1662,9 +1686,16 @@ async def test_bound_quote_bad_file_keeps_confirmation(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         await _call_post_agent(quote_id=quote_id)
     assert exc.value.status_code == 400
-    async with _db.pool.acquire() as conn:
-        assert await conn.fetchval("SELECT confirmed_at FROM upload_payment_quotes WHERE quote_id = $1", quote_id)
-    assert await _price() == pytest.approx(5 * 2**0.2, rel=1e-3)
+    row = await _quote_row(quote_id)
+    assert row["purchased_at"] is not None and row["redeemed_agent_id"] is None
+
+
+@pytest.mark.anyio
+async def test_zero_quote_redeems_without_a_receipt(monkeypatch):
+    quote_id = await _insert_fresh_bound_quote(monkeypatch, amount_alpha_rao=0)
+    response = await _call_post_agent(quote_id=quote_id, payment_block_hash=None, payment_extrinsic_index=None)
+    assert response.status == "success"
+    assert (await _quote_row(quote_id))["redeemed_agent_id"] == response.agent_id
 
 
 @pytest.mark.anyio
@@ -1689,3 +1720,50 @@ async def test_owner_synthetic_receipt_is_not_canonicalised():
         hotkey=FAKE_OWNER_HOTKEY, name="owner-agent", payment_block_hash=uuid.uuid4().hex, payment_extrinsic_index="0"
     )
     assert response.status == "success"
+
+
+@pytest.mark.anyio
+async def test_redeemed_quote_replay_never_touches_s3(monkeypatch):
+    quote_id = await _insert_fresh_bound_quote(monkeypatch)
+    s3 = AsyncMock()
+    monkeypatch.setattr(upload_module, "upload_text_file_to_s3", s3)
+    await _call_post_agent(quote_id=quote_id)
+    assert s3.await_count == 1
+    with pytest.raises(PaymentAlreadyUsedError):
+        await _call_post_agent(quote_id=quote_id, name="again", content=b"print('replacement')")
+    assert s3.await_count == 1, "a rejected replay must never overwrite the admitted agent's code"
+
+
+@pytest.mark.anyio
+async def test_redemption_checks_the_ban_of_the_coldkey_that_paid(monkeypatch):
+    from fastapi import HTTPException
+
+    paying_coldkey = "5FColdKey789"
+    now = _move_block_time_to_now(monkeypatch)
+    quote_id = await _insert_quote(
+        set_id=1,
+        created_at=now - timedelta(minutes=1),
+        expires_at=now + timedelta(minutes=14),
+        purchased=True,
+        coldkey=paying_coldkey,
+        amount_alpha_rao=0,
+    )
+    await ban_coldkey(FAKE_COLDKEY, "old owner banned")
+    response = await _call_post_agent(quote_id=quote_id, payment_block_hash=None, payment_extrinsic_index=None)
+    assert response.status == "success"
+    assert response.miner_coldkey == paying_coldkey
+
+    second = await _insert_quote(
+        set_id=1,
+        created_at=now - timedelta(minutes=1),
+        expires_at=now + timedelta(minutes=14),
+        purchased=True,
+        coldkey=paying_coldkey,
+        amount_alpha_rao=0,
+    )
+    await ban_coldkey(paying_coldkey, "paying owner banned")
+    with pytest.raises(HTTPException) as exc:
+        await _call_post_agent(
+            quote_id=second, name="second", content=b"print('2')", payment_block_hash=None, payment_extrinsic_index=None
+        )
+    assert exc.value.status_code == 403

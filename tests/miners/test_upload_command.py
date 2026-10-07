@@ -9,7 +9,7 @@ from bittensor_wallet.keypair import Keypair
 from click.testing import CliRunner
 
 import miners.cli.commands.upload as upload_module
-from utils.upload_ticket import confirm_signing_string
+from utils.upload_ticket import confirm_signing_string, purchase_signing_string
 
 KEYPAIR = Keypair.create_from_seed("0x" + "ab" * 32)
 CANON_HASH = "0x" + "ab" * 32
@@ -568,6 +568,7 @@ def test_resume_upload_passes_selected_set_to_final(monkeypatch, tmp_path: Path)
     monkeypatch.setattr(upload_module, "_execute_upload", execute)
     confirm = MagicMock()
     monkeypatch.setattr(upload_module, "_confirm_burn", confirm)
+    monkeypatch.setattr(upload_module, "_purchase_quote", MagicMock(return_value=None))
 
     result = CliRunner().invoke(
         upload_module.resume_upload,
@@ -670,8 +671,11 @@ def test_quote_close_to_expiry_is_cancelled_and_not_burned() -> None:
     assert client.calls[0]["url"] == "https://x/upload/quote/q/cancel"
 
 
-def _burn_upload_mocks(monkeypatch, tmp_path: Path, *, proceed: bool) -> list[str]:
+def _burn_upload_mocks(
+    monkeypatch, tmp_path: Path, *, proceed: bool, shortfalls: int = 0, amount_alpha_rao: int = 1
+) -> list[str]:
     events: list[str] = []
+    remaining = {"short": shortfalls}
     target = upload_module.UploadTarget("https://example.test", tmp_path / "agent.py", b"x", "h")
     pending = upload_module.PendingUpload("Agent", 0, "file-info", "public", "signature")
     client_context = MagicMock()
@@ -679,12 +683,30 @@ def _burn_upload_mocks(monkeypatch, tmp_path: Path, *, proceed: bool) -> list[st
     details = {
         "payment_method": "burn",
         "quote_id": "q",
-        "amount_alpha_rao": 1,
+        "amount_alpha_rao": amount_alpha_rao,
         "payment_netuid": 62,
         "expires_at": None,
         "price_usd": 5.0,
+        "balance_alpha_rao": 0,
         "set_id": 1,
     }
+
+    def _purchase(*_args, **_kwargs):
+        if remaining["short"]:
+            remaining["short"] -= 1
+            events.append("purchase:short")
+            return {
+                "code": "insufficient_balance",
+                "price_usd": 5.74,
+                "price_alpha_rao": 2_296_000_000,
+                "balance_alpha_rao": 2_200_000_000,
+                "shortfall_alpha_rao": 96_000_000,
+            }
+        events.append("purchase")
+        return None
+
+    monkeypatch.setattr(upload_module, "_purchase_quote", _purchase)
+    monkeypatch.setattr(upload_module.Confirm, "ask", staticmethod(lambda *a, **k: True))
     receipt = upload_module.PaymentReceipt(block_hash=CANON_HASH, extrinsic_index=7, quote_id="q")
     monkeypatch.setattr(
         upload_module, "_resolve_wallet_and_target", MagicMock(return_value=(_keypair_wallet(), target))
@@ -698,7 +720,14 @@ def _burn_upload_mocks(monkeypatch, tmp_path: Path, *, proceed: bool) -> list[st
         MagicMock(return_value=upload_module.OpenRouterUploadCredentials("r", "m")),
     )
     monkeypatch.setattr(upload_module, "_print_upload_preview", MagicMock())
-    monkeypatch.setattr(upload_module, "_check_upload_allowed", MagicMock(return_value=details))
+    requotes = {"n": 0}
+
+    def _check(*_args, **_kwargs):
+        # The first quote is `details`; every re-quote after a shortfall asks for a real burn.
+        requotes["n"] += 1
+        return details if requotes["n"] == 1 else {**details, "amount_alpha_rao": 1}
+
+    monkeypatch.setattr(upload_module, "_check_upload_allowed", _check)
     monkeypatch.setattr(upload_module, "_unlock_coldkey", MagicMock())
     monkeypatch.setattr(upload_module, "_confirm_payment", MagicMock(return_value=proceed))
     monkeypatch.setattr(upload_module, "_cancel_quote", MagicMock(side_effect=lambda *a, **k: events.append("cancel")))
@@ -715,11 +744,43 @@ def _burn_upload_mocks(monkeypatch, tmp_path: Path, *, proceed: bool) -> list[st
     return events
 
 
-def test_upload_burn_prints_receipt_and_confirms_before_uploading(monkeypatch, tmp_path: Path) -> None:
+def test_upload_burn_confirms_then_purchases_before_uploading(monkeypatch, tmp_path: Path) -> None:
     events = _burn_upload_mocks(monkeypatch, tmp_path, proceed=True)
     result = CliRunner().invoke(upload_module.upload, [], obj={})
     assert result.exit_code == 0, result.output
-    assert events == ["burn", "receipt", "confirm", "upload"]
+    assert events == ["burn", "receipt", "confirm", "purchase", "upload"]
+
+
+def test_upload_tops_up_when_the_price_moved(monkeypatch, tmp_path: Path) -> None:
+    events = _burn_upload_mocks(monkeypatch, tmp_path, proceed=True, shortfalls=1)
+    result = CliRunner().invoke(upload_module.upload, [], obj={})
+    assert result.exit_code == 0, result.output
+    assert events == [
+        "burn",
+        "receipt",
+        "confirm",
+        "purchase:short",
+        "burn",
+        "receipt",
+        "confirm",
+        "purchase",
+        "upload",
+    ]
+
+
+def test_upload_with_covering_balance_skips_the_burn(monkeypatch, tmp_path: Path) -> None:
+    events = _burn_upload_mocks(monkeypatch, tmp_path, proceed=True, amount_alpha_rao=0)
+    result = CliRunner().invoke(upload_module.upload, [], obj={})
+    assert result.exit_code == 0, result.output
+    assert events == ["purchase", "upload"]
+    assert "q" in result.output, "the quote id is printed before a receipt-free purchase, for recovery"
+
+
+def test_zero_quote_shortfall_cancels_it_and_burns_on_a_fresh_quote(monkeypatch, tmp_path: Path) -> None:
+    events = _burn_upload_mocks(monkeypatch, tmp_path, proceed=True, amount_alpha_rao=0, shortfalls=1)
+    result = CliRunner().invoke(upload_module.upload, [], obj={})
+    assert result.exit_code == 0, result.output
+    assert events == ["purchase:short", "cancel", "burn", "receipt", "confirm", "purchase", "upload"]
 
 
 def test_upload_declined_burn_cancels_the_quote(monkeypatch, tmp_path: Path) -> None:
@@ -743,6 +804,7 @@ def test_resume_upload_confirms_before_competition_selection(monkeypatch, tmp_pa
         MagicMock(side_effect=upload_module.click.ClickException("Competition 17 is not accepting uploads")),
     )
     monkeypatch.setattr(upload_module, "_confirm_burn", confirm)
+    monkeypatch.setattr(upload_module, "_purchase_quote", MagicMock(return_value=None))
 
     result = CliRunner().invoke(
         upload_module.resume_upload,
@@ -762,6 +824,7 @@ def test_resume_upload_confirms_before_reading_the_agent_file(monkeypatch, tmp_p
     monkeypatch.setattr(wallet_module, "Wallet", MagicMock(return_value=_keypair_wallet()))
     confirm = MagicMock()
     monkeypatch.setattr(upload_module, "_confirm_burn", confirm)
+    monkeypatch.setattr(upload_module, "_purchase_quote", MagicMock(return_value=None))
 
     result = CliRunner().invoke(
         upload_module.resume_upload,
@@ -785,4 +848,117 @@ def test_resume_upload_confirms_before_reading_the_agent_file(monkeypatch, tmp_p
     assert result.exit_code != 0
     assert confirm.call_args.kwargs["receipt"] == upload_module.PaymentReceipt(
         block_hash=CANON_HASH, extrinsic_index=3, quote_id="quote"
+    )
+
+
+def test_purchase_quote_posts_signed_request_and_returns_shortfall() -> None:
+    client = _FakeClient(_FakeResponse(200, json_data={"status": "purchased"}))
+    assert upload_module._purchase_quote(client, api_url="https://x", wallet=_keypair_wallet(), quote_id="q") is None
+    body = client.calls[0]["json"]
+    assert client.calls[0]["url"] == "https://x/upload/quote/q/purchase"
+    assert KEYPAIR.verify(purchase_signing_string(KEYPAIR.ss58_address, "q"), bytes.fromhex(body["signature"]))
+
+    detail = {
+        "code": "insufficient_balance",
+        "price_usd": 5.74,
+        "price_alpha_rao": 2_296_000_000,
+        "balance_alpha_rao": 2_200_000_000,
+        "shortfall_alpha_rao": 96_000_000,
+    }
+    client = _FakeClient(_FakeResponse(402, json_data={"detail": detail}))
+    assert upload_module._purchase_quote(client, api_url="https://x", wallet=_keypair_wallet(), quote_id="q") == detail
+
+    client = _FakeClient(_FakeResponse(409, text="quote_cancelled"))
+    with pytest.raises(upload_module.click.ClickException, match="quote_cancelled"):
+        upload_module._purchase_quote(client, api_url="https://x", wallet=_keypair_wallet(), quote_id="q")
+
+
+def test_resume_upload_refuses_when_balance_is_short(monkeypatch, tmp_path: Path) -> None:
+    target = upload_module.UploadTarget("https://example.test", tmp_path / "agent.py", b"x", "h")
+    client_context = MagicMock()
+    client_context.__enter__.return_value = MagicMock()
+    monkeypatch.setattr(upload_module, "_resolve_wallet", MagicMock(return_value=_keypair_wallet()))
+    monkeypatch.setattr(upload_module, "_resolve_target", MagicMock(return_value=target))
+    monkeypatch.setattr(upload_module.httpx, "Client", MagicMock(return_value=client_context))
+    monkeypatch.setattr(upload_module, "_confirm_burn", MagicMock())
+    monkeypatch.setattr(
+        upload_module,
+        "_purchase_quote",
+        MagicMock(
+            return_value={
+                "code": "insufficient_balance",
+                "price_usd": 6,
+                "price_alpha_rao": 2_400_000_000,
+                "balance_alpha_rao": 2_200_000_000,
+                "shortfall_alpha_rao": 200_000_000,
+            }
+        ),
+    )
+    execute = MagicMock()
+    monkeypatch.setattr(upload_module, "_execute_upload", execute)
+
+    result = CliRunner().invoke(
+        upload_module.resume_upload,
+        ["--quote-id", "quote", "--payment-block-hash", CANON_HASH, "--payment-extrinsic-index", "3"],
+        obj={},
+    )
+
+    assert result.exit_code != 0
+    assert "ridges upload" in result.output
+    execute.assert_not_called()
+
+
+def test_upload_payload_omits_missing_receipt() -> None:
+    pending = upload_module.PendingUpload("Agent", 0, "file-info", "public", "signature")
+    receipt = upload_module.PaymentReceipt(block_hash=None, extrinsic_index=None, quote_id="q")
+    payload = upload_module._upload_payload(
+        pending=pending, receipt=receipt, credentials=upload_module.OpenRouterUploadCredentials("r", "m"), set_id=1
+    )
+    assert payload["quote_id"] == "q"
+    assert "payment_block_hash" not in payload and "payment_extrinsic_index" not in payload
+
+
+def test_balance_command_prints_the_coldkey_balance(monkeypatch) -> None:
+    import bittensor_wallet.wallet as wallet_module
+
+    monkeypatch.setattr(wallet_module, "Wallet", MagicMock(return_value=_keypair_wallet()))
+    response = MagicMock(status_code=200)
+    response.json.return_value = {"coldkey": "ck", "balance_alpha_rao": 12_500_000_000}
+    client = MagicMock()
+    client.get.return_value = response
+    client_context = MagicMock()
+    client_context.__enter__.return_value = client
+    monkeypatch.setattr(upload_module.httpx, "Client", MagicMock(return_value=client_context))
+
+    result = CliRunner().invoke(upload_module.balance, ["--coldkey-name", "c", "--hotkey-name", "h"], obj={})
+
+    assert result.exit_code == 0, result.output
+    assert "12.5000 alpha" in result.output
+    assert client.get.call_args.args[0].endswith("/upload/balance")
+
+
+def test_resume_upload_with_quote_only_skips_confirm_and_purchases(monkeypatch, tmp_path: Path) -> None:
+    target = upload_module.UploadTarget("https://example.test", tmp_path / "agent.py", b"x", "h")
+    client_context = MagicMock()
+    client_context.__enter__.return_value = MagicMock()
+    monkeypatch.setattr(upload_module, "_resolve_wallet", MagicMock(return_value=_keypair_wallet()))
+    monkeypatch.setattr(upload_module, "_resolve_target", MagicMock(return_value=target))
+    monkeypatch.setattr(upload_module.httpx, "Client", MagicMock(return_value=client_context))
+    monkeypatch.setattr(upload_module, "_select_upload_competition", MagicMock(return_value=1))
+    monkeypatch.setattr(upload_module, "_prepare_pending_upload", MagicMock())
+    monkeypatch.setattr(upload_module, "_resolve_openrouter_upload_credentials", MagicMock())
+    monkeypatch.setattr(upload_module, "_print_upload_preview", MagicMock())
+    confirm = MagicMock(side_effect=AssertionError("nothing was burned, so nothing to confirm"))
+    monkeypatch.setattr(upload_module, "_confirm_burn", confirm)
+    purchase = MagicMock(return_value=None)
+    monkeypatch.setattr(upload_module, "_purchase_quote", purchase)
+    execute = MagicMock()
+    monkeypatch.setattr(upload_module, "_execute_upload", execute)
+
+    result = CliRunner().invoke(upload_module.resume_upload, ["--quote-id", "quote"], obj={})
+
+    assert result.exit_code == 0, result.output
+    purchase.assert_called_once()
+    assert execute.call_args.kwargs["receipt"] == upload_module.PaymentReceipt(
+        block_hash=None, extrinsic_index=None, quote_id="quote"
     )
