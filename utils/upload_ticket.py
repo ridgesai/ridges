@@ -18,6 +18,7 @@ _TICKET_DOMAIN = "ridges-upload-ticket:v2"
 _PREPARE_DOMAIN = "ridges-upload-prepare:v2"
 _CONFIRM_DOMAIN = "ridges-upload-confirm:v1"
 _CANCEL_DOMAIN = "ridges-upload-cancel:v1"
+_PURCHASE_DOMAIN = "ridges-upload-purchase:v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +58,10 @@ def cancel_signing_string(hotkey: str, quote_id: str) -> str:
     return f"{_CANCEL_DOMAIN}:{hotkey}:{quote_id}"
 
 
+def purchase_signing_string(hotkey: str, quote_id: str) -> str:
+    return f"{_PURCHASE_DOMAIN}:{hotkey}:{quote_id}"
+
+
 def sign_ticket(ticket: UploadTicket, signer: Callable[[str], bytes]) -> UploadTicket:
     return dataclasses.replace(ticket, signature=signer(ticket_signing_string(ticket)).hex())
 
@@ -76,10 +81,13 @@ def _validate_fields(ticket: UploadTicket) -> None:
         raise ValueError("Upload ticket funding must be a string")
 
     if ticket.funding == FUNDING_BURN:
-        if (
-            not isinstance(ticket.quote_id, str)
-            or not ticket.quote_id
-            or not isinstance(ticket.payment_block_hash, str)
+        if not isinstance(ticket.quote_id, str) or not ticket.quote_id:
+            raise ValueError("Burn ticket is missing its quote_id")
+
+        # A prepaid quote covered entirely by the burn balance carries no receipt; otherwise both fields are needed.
+        has_receipt = ticket.payment_block_hash is not None or ticket.payment_extrinsic_index is not None
+        if has_receipt and (
+            not isinstance(ticket.payment_block_hash, str)
             or not ticket.payment_block_hash
             or type(ticket.payment_extrinsic_index) is not int
         ):
@@ -89,7 +97,7 @@ def _validate_fields(ticket: UploadTicket) -> None:
             raise ValueError("Burn ticket must not carry a credit_id")
 
         uuid.UUID(ticket.quote_id)
-        if ticket.payment_extrinsic_index < 0:
+        if has_receipt and ticket.payment_extrinsic_index < 0:
             raise ValueError("Burn ticket has an invalid payment_extrinsic_index")
 
     elif ticket.funding == FUNDING_CREDIT:

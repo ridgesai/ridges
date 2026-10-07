@@ -43,5 +43,11 @@ def current_price(*, price_usd: float, price_updated_at: datetime, settings: Pri
     return max(settings.floor_usd, price_usd * 0.5 ** (elapsed_minutes / settings.half_life_minutes))
 
 
+def exact_alpha_rao_for_usd(price_usd: float, alpha_price_usd: float) -> int:
+    """Exact alpha (in rao) worth `price_usd` at `alpha_price_usd`. What a purchase debits."""
+    return int(price_usd / alpha_price_usd * 1e9)
+
+
 def alpha_rao_for_usd(price_usd: float, alpha_price_usd: float) -> int:
+    """Alpha to burn for `price_usd`, with the buffer. The excess lands in the burn balance."""
     return int(price_usd / alpha_price_usd * 1e9 * ALPHA_BUFFER)
