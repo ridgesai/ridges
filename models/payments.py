@@ -37,3 +37,6 @@ class PaymentQuote(BaseModel):
     confirmed_payment_extrinsic_index: Optional[str] = None
     cancelled_at: Optional[datetime] = None
     is_legacy: bool = False
+    purchased_at: Optional[datetime] = None
+    redeemed_agent_id: Optional[UUID] = None
+    refunded_at: Optional[datetime] = None

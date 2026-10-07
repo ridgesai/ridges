@@ -44,7 +44,8 @@ class AgentCheckResponse(UploadStatusResponse):
     amount_alpha_rao: int = Field(..., description="Amount of SN62 alpha to burn (in rao)")
     payment_netuid: Optional[int] = Field(None, description="Subnet whose alpha must be burned")
     expires_at: Optional[datetime] = Field(None, description="Latest on-chain burn timestamp accepted for this quote")
-    price_usd: Optional[float] = Field(None, description="Locked USD price of this quote")
+    price_usd: Optional[float] = Field(None, description="Current upload price of the competition")
+    balance_alpha_rao: Optional[int] = Field(None, description="The coldkey's burn balance in rao, spent at purchase")
 
 
 class AgentDirectCheckResponse(AgentCheckResponse):
@@ -85,7 +86,7 @@ class TicketCheckResponse(BaseModel):
         description=(
             "Why the ticket is not redeemable: malformed_ticket, invalid_signature, owner_not_allowed, "
             "unknown_quote, already_redeemed, refunded, unknown_credit, credit_revoked, credit_expired, "
-            "burn_not_reported, quote_cancelled, competition_not_accepting"
+            "not_purchased, purchase_refunded, quote_cancelled, competition_not_accepting"
         ),
     )
     hotkey: Optional[str] = Field(None, description="Hotkey the ticket is bound to")
@@ -130,6 +131,19 @@ class CancelQuoteRequest(BaseModel):
     signature: str
 
 
+class PurchaseQuoteRequest(BaseModel):
+    """Buy the upload a quote is for, from the coldkey's burn balance. Signed by the quote's hotkey."""
+
+    hotkey: str
+    public_key: str
+    signature: str
+
+
 class QuoteActionResponse(BaseModel):
     quote_id: UUID
-    status: Literal["confirmed", "replayed", "cancelled", "legacy"]
+    status: Literal["confirmed", "replayed", "cancelled", "purchased", "already_purchased", "legacy"]
+
+
+class BalanceResponse(BaseModel):
+    coldkey: str
+    balance_alpha_rao: int
