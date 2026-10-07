@@ -56,9 +56,9 @@ def test_burn_mode_prints_verified_ticket(monkeypatch):
 
     monkeypatch.setattr(prepare_module, "_resolve_wallet", lambda coldkey_name, hotkey_name: _fake_wallet())
     monkeypatch.setattr(prepare_module, "_select_upload_competition", MagicMock(return_value=1))
-    monkeypatch.setattr(prepare_module, "_unlock_coldkey", MagicMock(side_effect=_fake_unlock))
-    monkeypatch.setattr(prepare_module, "_confirm_payment", MagicMock(side_effect=_fake_confirm))
-    monkeypatch.setattr(prepare_module, "_submit_eval_payment", MagicMock(side_effect=_fake_submit))
+    monkeypatch.setattr(upload_module, "_unlock_coldkey", MagicMock(side_effect=_fake_unlock))
+    monkeypatch.setattr(upload_module, "_confirm_payment", MagicMock(side_effect=_fake_confirm))
+    monkeypatch.setattr(upload_module, "_submit_eval_payment", MagicMock(side_effect=_fake_submit))
     client = MagicMock()
     client.post.return_value = _prepare_response(
         {
@@ -93,6 +93,7 @@ def test_burn_mode_prints_verified_ticket(monkeypatch):
     assert "bearer" in result.output.lower() or "password" in result.output.lower()
     urls = [call.args[0] for call in client.post.call_args_list]
     assert urls[0].endswith("/upload/prepare") and urls[1].endswith("/upload/payment/confirm")
+    assert urls[2].endswith(f"/upload/quote/{QUOTE_ID}/purchase")
     assert client.post.call_args_list[0].kwargs["json"]["set_id"] == 1
 
 
@@ -102,9 +103,9 @@ def test_burn_submission_failure_prints_recoverable_quote_id(monkeypatch):
     can recover with `prepare-upload --quote-id` instead of burning a second time."""
     monkeypatch.setattr(prepare_module, "_resolve_wallet", lambda coldkey_name, hotkey_name: _fake_wallet())
     monkeypatch.setattr(prepare_module, "_select_upload_competition", MagicMock(return_value=1))
-    monkeypatch.setattr(prepare_module, "_unlock_coldkey", MagicMock())
-    monkeypatch.setattr(prepare_module, "_confirm_payment", MagicMock(return_value=True))
-    monkeypatch.setattr(prepare_module, "_submit_eval_payment", MagicMock(side_effect=RuntimeError("rpc dropped")))
+    monkeypatch.setattr(upload_module, "_unlock_coldkey", MagicMock())
+    monkeypatch.setattr(upload_module, "_confirm_payment", MagicMock(return_value=True))
+    monkeypatch.setattr(upload_module, "_submit_eval_payment", MagicMock(side_effect=RuntimeError("rpc dropped")))
     client = MagicMock()
     client.post.return_value = _prepare_response(
         {
@@ -152,9 +153,9 @@ def test_burn_submission_keyboard_interrupt_prints_recoverable_quote_id(monkeypa
 
     monkeypatch.setattr(prepare_module, "_resolve_wallet", lambda coldkey_name, hotkey_name: _fake_wallet())
     monkeypatch.setattr(prepare_module, "_select_upload_competition", MagicMock(return_value=1))
-    monkeypatch.setattr(prepare_module, "_unlock_coldkey", MagicMock())
-    monkeypatch.setattr(prepare_module, "_confirm_payment", MagicMock(return_value=True))
-    monkeypatch.setattr(prepare_module, "_submit_eval_payment", MagicMock(side_effect=KeyboardInterrupt))
+    monkeypatch.setattr(upload_module, "_unlock_coldkey", MagicMock())
+    monkeypatch.setattr(upload_module, "_confirm_payment", MagicMock(return_value=True))
+    monkeypatch.setattr(upload_module, "_submit_eval_payment", MagicMock(side_effect=KeyboardInterrupt))
     client = MagicMock()
     client.post.return_value = _prepare_response(
         {
@@ -190,9 +191,9 @@ def test_burn_submission_keyboard_interrupt_prints_recoverable_quote_id(monkeypa
 def test_credit_mode_never_touches_coldkey(monkeypatch):
     monkeypatch.setattr(prepare_module, "_resolve_wallet", lambda coldkey_name, hotkey_name: _fake_wallet())
     unlock = MagicMock(side_effect=AssertionError("credit mode must not unlock the coldkey"))
-    monkeypatch.setattr(prepare_module, "_unlock_coldkey", unlock)
+    monkeypatch.setattr(upload_module, "_unlock_coldkey", unlock)
     submit = MagicMock(side_effect=AssertionError("credit mode must not burn"))
-    monkeypatch.setattr(prepare_module, "_submit_eval_payment", submit)
+    monkeypatch.setattr(upload_module, "_submit_eval_payment", submit)
     client = MagicMock()
     client.post.return_value = _prepare_response(
         {"payment_method": "credit", "credit_id": CREDIT_ID, "amount_alpha_rao": 0}
@@ -219,9 +220,10 @@ def test_credit_mode_never_touches_coldkey(monkeypatch):
 def test_resume_mode_confirms_then_mints_burn_ticket_without_burning(monkeypatch):
     monkeypatch.setattr(prepare_module, "_resolve_wallet", lambda coldkey_name, hotkey_name: _fake_wallet())
     submit = MagicMock(side_effect=AssertionError("resume mode must not burn again"))
-    monkeypatch.setattr(prepare_module, "_submit_eval_payment", submit)
+    monkeypatch.setattr(upload_module, "_submit_eval_payment", submit)
     confirm = MagicMock()
     monkeypatch.setattr(prepare_module, "_confirm_burn", confirm)
+    monkeypatch.setattr(prepare_module, "_purchase_quote", MagicMock(return_value=None))
 
     result = CliRunner().invoke(
         prepare_module.prepare_upload,
@@ -408,10 +410,10 @@ BURN_QUOTE = {
 def test_declined_burn_cancels_the_quote(monkeypatch):
     monkeypatch.setattr(prepare_module, "_resolve_wallet", lambda coldkey_name, hotkey_name: _fake_wallet())
     monkeypatch.setattr(prepare_module, "_select_upload_competition", MagicMock(return_value=1))
-    monkeypatch.setattr(prepare_module, "_unlock_coldkey", MagicMock())
-    monkeypatch.setattr(prepare_module, "_confirm_payment", MagicMock(return_value=False))
+    monkeypatch.setattr(upload_module, "_unlock_coldkey", MagicMock())
+    monkeypatch.setattr(upload_module, "_confirm_payment", MagicMock(return_value=False))
     submit = MagicMock()
-    monkeypatch.setattr(prepare_module, "_submit_eval_payment", submit)
+    monkeypatch.setattr(upload_module, "_submit_eval_payment", submit)
     client = _burn_client(_prepare_response(BURN_QUOTE), _prepare_response({"status": "cancelled"}))
     _patch_client(monkeypatch, client)
 
@@ -427,10 +429,10 @@ def test_declined_burn_cancels_the_quote(monkeypatch):
 def test_confirm_failure_keeps_receipt_on_screen_and_prints_no_ticket(monkeypatch):
     monkeypatch.setattr(prepare_module, "_resolve_wallet", lambda coldkey_name, hotkey_name: _fake_wallet())
     monkeypatch.setattr(prepare_module, "_select_upload_competition", MagicMock(return_value=1))
-    monkeypatch.setattr(prepare_module, "_unlock_coldkey", MagicMock())
-    monkeypatch.setattr(prepare_module, "_confirm_payment", MagicMock(return_value=True))
+    monkeypatch.setattr(upload_module, "_unlock_coldkey", MagicMock())
+    monkeypatch.setattr(upload_module, "_confirm_payment", MagicMock(return_value=True))
     monkeypatch.setattr(
-        prepare_module,
+        upload_module,
         "_submit_eval_payment",
         MagicMock(return_value=PaymentReceipt(block_hash="0x" + "87" * 32, extrinsic_index=7, quote_id=QUOTE_ID)),
     )
@@ -446,3 +448,25 @@ def test_confirm_failure_keeps_receipt_on_screen_and_prints_no_ticket(monkeypatc
     assert result.exit_code != 0
     assert "0x" + "87" * 32 in result.output
     assert "ridges1" not in result.output
+
+
+def test_resume_mode_with_quote_only_purchases_and_mints_a_receipt_free_ticket(monkeypatch):
+    monkeypatch.setattr(prepare_module, "_resolve_wallet", lambda coldkey_name, hotkey_name: _fake_wallet())
+    monkeypatch.setattr(
+        prepare_module,
+        "_confirm_burn",
+        MagicMock(side_effect=AssertionError("nothing was burned, so nothing to confirm")),
+    )
+    purchase = MagicMock(return_value=None)
+    monkeypatch.setattr(prepare_module, "_purchase_quote", purchase)
+
+    result = CliRunner().invoke(
+        prepare_module.prepare_upload,
+        ["--coldkey-name", "c", "--hotkey-name", "h", "--quote-id", QUOTE_ID],
+        obj={"url": None},
+    )
+
+    assert result.exit_code == 0, result.output
+    purchase.assert_called_once()
+    ticket = decode_ticket(_extract_ticket(result.output))
+    assert ticket.quote_id == QUOTE_ID and ticket.payment_block_hash is None

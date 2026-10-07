@@ -174,13 +174,14 @@ def _patch_upload_dependencies(
     async def fake_issue_competition_quote(
         *, set_id, miner_hotkey, miner_coldkey, alpha_price_usd, burnable_rao, ttl_seconds
     ):
-        return SimpleNamespace(
+        quote = SimpleNamespace(
             quote_id=uuid4(),
             miner_hotkey=miner_hotkey,
             amount_alpha_rao=1,
             price_usd=5.0,
             expires_at=datetime.now(timezone.utc),
         )
+        return SimpleNamespace(quote=quote, upload_price_usd=5.0, balance_alpha_rao=0)
 
     monkeypatch.setattr(upload_endpoint, "validate_openrouter_keys", fake_validate_openrouter_keys)
     monkeypatch.setattr(
