@@ -75,11 +75,24 @@ class UploadPaymentQuote(Base, CreatedAtMixin):
     confirmed_payment_extrinsic_index: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     cancelled_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
     is_legacy: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.text("false"))
+    purchased_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
+    purchase_price_usd: Mapped[Optional[Decimal]] = mapped_column(sa.Numeric(), nullable=True)
+    purchase_price_alpha_rao: Mapped[Optional[int]] = mapped_column(sa.BigInteger, nullable=True)
+    redeemed_agent_id: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    refunded_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
 
     __table_args__ = (
         sa.CheckConstraint(
             "num_nonnulls(amount_rao, amount_alpha_rao) = 1",
             name="ck_amount_rao_xor_amount_alpha_rao",
+        ),
+        sa.CheckConstraint(
+            "(purchased_at IS NULL) = (purchase_price_usd IS NULL) "
+            "AND (purchased_at IS NULL) = (purchase_price_alpha_rao IS NULL) "
+            "AND (redeemed_agent_id IS NULL OR purchased_at IS NOT NULL) "
+            "AND (refunded_at IS NULL OR (purchased_at IS NOT NULL AND redeemed_agent_id IS NULL)) "
+            "AND NOT (purchased_at IS NOT NULL AND cancelled_at IS NOT NULL)",
+            name="ck_upload_payment_quotes_purchase",
         ),
         sa.CheckConstraint(
             "is_legacy OR (set_id IS NOT NULL AND price_usd IS NOT NULL AND miner_coldkey IS NOT NULL)",
@@ -133,5 +146,33 @@ class CompetitionUploadPrice(Base):
         sa.CheckConstraint(
             "target_per_hour * half_life_minutes / 60 >= 1.71",
             name="ck_competition_upload_prices_max_multiplier",
+        ),
+    )
+
+
+class BurnBalanceEntry(Base):
+    """Append-only ledger of a coldkey's burn balance: burns and refunds credit, purchases debit."""
+
+    __tablename__ = "burn_balance_entries"
+
+    entry_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")
+    )
+    miner_coldkey: Mapped[str] = mapped_column(sa.Text, nullable=False, index=True)
+    quote_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), sa.ForeignKey("upload_payment_quotes.quote_id"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    amount_alpha_rao: Mapped[int] = mapped_column(sa.BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")
+    )
+
+    __table_args__ = (
+        sa.UniqueConstraint("quote_id", "kind", name="uq_burn_balance_entries_quote_kind"),
+        sa.CheckConstraint("kind IN ('burn', 'purchase', 'refund')", name="ck_burn_balance_entries_kind"),
+        sa.CheckConstraint(
+            "(kind = 'purchase' AND amount_alpha_rao < 0) OR (kind <> 'purchase' AND amount_alpha_rao > 0)",
+            name="ck_burn_balance_entries_sign",
         ),
     )

@@ -117,3 +117,22 @@ class ReceiptConflictError(Exception):
 
 class BurnNotReportedError(Exception):
     """The first confirmation arrived after the quote's expiry plus the grace period."""
+
+
+class QuoteNotConfirmedError(Exception):
+    """The quote asks for a burn that has not been confirmed yet."""
+
+
+class QuoteAlreadyPurchasedError(Exception):
+    pass
+
+
+class InsufficientBalanceError(Exception):
+    def __init__(self, *, price_usd: float, price_alpha_rao: int, balance_alpha_rao: int):
+        self.price_usd = price_usd
+        self.price_alpha_rao = price_alpha_rao
+        self.balance_alpha_rao = balance_alpha_rao
+        self.shortfall_alpha_rao = max(0, price_alpha_rao - balance_alpha_rao)
+        super().__init__(
+            f"Balance {balance_alpha_rao} rao does not cover the ${price_usd:.2f} upload price ({price_alpha_rao} rao)"
+        )
