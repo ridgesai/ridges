@@ -1,9 +1,11 @@
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Optional
 from uuid import UUID
 
 from models.competition import CompetitionState
 from models.payments import Payment, PaymentQuote
+from queries.burn_balance import balance_alpha_rao, credit_burn
 from queries.competition import lock_competition_for_admission
 from queries.errors import (
     BurnNotReportedError,
@@ -11,12 +13,13 @@ from queries.errors import (
     InsufficientAlphaError,
     OpenQuoteExistsError,
     QuoteAlreadyConfirmedError,
+    QuoteAlreadyPurchasedError,
     QuoteCancelledError,
     ReceiptConflictError,
 )
-from queries.upload_price import apply_bump, lock_competition_price
+from queries.upload_price import lock_competition_price
 from utils.database import DatabaseConnection, db_operation
-from utils.upload_pricing import alpha_rao_for_usd
+from utils.upload_pricing import ALPHA_BUFFER, exact_alpha_rao_for_usd
 
 
 @db_operation
@@ -159,6 +162,13 @@ async def retrieve_payment_quote(
     return PaymentQuote(**result)
 
 
+@dataclass(frozen=True, slots=True)
+class IssuedQuote:
+    quote: PaymentQuote
+    upload_price_usd: float
+    balance_alpha_rao: int
+
+
 @db_operation
 async def issue_competition_quote(
     conn: DatabaseConnection,
@@ -169,11 +179,12 @@ async def issue_competition_quote(
     alpha_price_usd: float,
     burnable_rao: int,
     ttl_seconds: int,
-) -> PaymentQuote:
-    """Issue a competition-bound burn quote at the competition's current price.
+) -> IssuedQuote:
+    """Issue a quote for the gap between the coldkey's burn balance and the competition's current price in alpha.
 
-    One open quote per coldkey per competition: the same hotkey gets its open quote back, another hotkey of
-    the same coldkey gets OpenQuoteExistsError.
+    The gap carries the 1.1 buffer; whatever is not spent at purchase stays in the balance. A gap of zero yields
+    a quote with nothing to burn. One open quote per coldkey per competition: the same hotkey gets its open quote
+    back, another hotkey of the same coldkey gets OpenQuoteExistsError.
     """
     async with conn.conn.transaction():
         competition = await lock_competition_for_admission(conn, set_id)
@@ -191,6 +202,7 @@ async def issue_competition_quote(
               AND miner_coldkey = $2
               AND NOT is_legacy
               AND confirmed_at IS NULL
+              AND purchased_at IS NULL
               AND cancelled_at IS NULL
               AND expires_at > $3
             ORDER BY created_at DESC
@@ -201,12 +213,14 @@ async def issue_competition_quote(
             price.as_of,
         )
 
+        balance = await balance_alpha_rao(conn, miner_coldkey)
         if open_quote is not None:
             if open_quote["miner_hotkey"] == miner_hotkey:
-                return PaymentQuote(**open_quote)
+                return IssuedQuote(PaymentQuote(**open_quote), price.price_usd, balance)
             raise OpenQuoteExistsError(quote_id=open_quote["quote_id"], expires_at=open_quote["expires_at"])
 
-        amount_alpha_rao = alpha_rao_for_usd(price.price_usd, alpha_price_usd)
+        gap_rao = max(0, exact_alpha_rao_for_usd(price.price_usd, alpha_price_usd) - balance)
+        amount_alpha_rao = int(gap_rao * ALPHA_BUFFER) if gap_rao > 0 else 0
         if amount_alpha_rao > burnable_rao:
             raise InsufficientAlphaError(amount_alpha_rao)
 
@@ -225,7 +239,7 @@ async def issue_competition_quote(
             price.as_of,
             price.as_of + timedelta(seconds=ttl_seconds),
         )
-        return PaymentQuote(**row)
+        return IssuedQuote(PaymentQuote(**row), price.price_usd, balance)
 
 
 @db_operation
@@ -292,7 +306,13 @@ async def confirm_quote_payment(
             payment_block_hash,
             payment_extrinsic_index,
         )
-        await apply_bump(conn, quote["set_id"])
+        burned_rao = quote["amount_alpha_rao"] if amount_alpha_rao is None else amount_alpha_rao
+        await credit_burn(
+            conn,
+            quote_id=quote_id,
+            miner_coldkey=quote["miner_coldkey"] if miner_coldkey is None else miner_coldkey,
+            amount_alpha_rao=burned_rao,
+        )
         return "confirmed"
 
 
@@ -301,8 +321,10 @@ async def cancel_payment_quote(conn: DatabaseConnection, quote_id: UUID) -> None
     """Release an unburned quote. A cancelled quote can never be confirmed. Idempotent."""
     async with conn.conn.transaction():
         quote = await conn.fetchrow(
-            "SELECT confirmed_at FROM upload_payment_quotes WHERE quote_id = $1 FOR UPDATE", quote_id
+            "SELECT confirmed_at, purchased_at FROM upload_payment_quotes WHERE quote_id = $1 FOR UPDATE", quote_id
         )
+        if quote["purchased_at"] is not None:
+            raise QuoteAlreadyPurchasedError()
         if quote["confirmed_at"] is not None:
             raise QuoteAlreadyConfirmedError()
 
