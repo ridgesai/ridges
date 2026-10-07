@@ -70,6 +70,15 @@ class CreditUploadFunding:
 
 
 @dataclass(slots=True, frozen=True)
+class PurchasedUploadFunding:
+    """A competition-bound quote whose upload was bought from the coldkey's burn balance."""
+
+    quote_id: UUID
+    miner_hotkey: str
+    miner_coldkey: str
+
+
+@dataclass(slots=True, frozen=True)
 class AgentAdmissionResult:
     agent_id: UUID
     replayed: bool = False
@@ -493,6 +502,26 @@ async def _lock_burn_funding(conn: DatabaseConnection, funding: BurnUploadFundin
         raise UploadFundingConflictError()
 
 
+async def _lock_purchase_funding(conn: DatabaseConnection, funding: PurchasedUploadFunding) -> None:
+    row = await conn.fetchrow(
+        """
+        SELECT miner_hotkey, purchased_at, refunded_at, redeemed_agent_id
+        FROM upload_payment_quotes
+        WHERE quote_id = $1
+        FOR UPDATE
+        """,
+        funding.quote_id,
+    )
+    if row is None or row["miner_hotkey"] != funding.miner_hotkey or row["purchased_at"] is None:
+        raise UploadFundingConflictError()
+
+    if row["refunded_at"] is not None:
+        raise UploadFundingConflictError()
+
+    if row["redeemed_agent_id"] is not None:
+        raise DuplicateAgentIDError(row["redeemed_agent_id"])
+
+
 async def _lock_credit_funding(
     conn: DatabaseConnection,
     funding: CreditUploadFunding,
@@ -587,7 +616,7 @@ async def admit_agent(
     openrouter_api_key_creator_user_id: str,
     openrouter_validated_at: datetime,
     miner_coldkey: Optional[str],
-    funding: BurnUploadFunding | CreditUploadFunding | None,
+    funding: BurnUploadFunding | CreditUploadFunding | PurchasedUploadFunding | None,
     enforce_cooldown: bool,
 ) -> AgentAdmissionResult:
     """Atomically bind a fresh upload to one competition and consume its funding."""
@@ -620,6 +649,9 @@ async def admit_agent(
         replay: AgentAdmissionResult | None = None
         if isinstance(funding, BurnUploadFunding):
             await _lock_burn_funding(conn, funding)
+
+        elif isinstance(funding, PurchasedUploadFunding):
+            await _lock_purchase_funding(conn, funding)
 
         elif isinstance(funding, CreditUploadFunding):
             replay = await _lock_credit_funding(
@@ -775,6 +807,16 @@ async def admit_agent(
                 agent_id,
             )
             if updated != "UPDATE 1":
+                raise UploadFundingConflictError()
+
+        elif isinstance(funding, PurchasedUploadFunding):
+            redeemed = await conn.execute(
+                "UPDATE upload_payment_quotes SET redeemed_agent_id = $2 "
+                "WHERE quote_id = $1 AND redeemed_agent_id IS NULL",
+                funding.quote_id,
+                agent_id,
+            )
+            if redeemed != "UPDATE 1":
                 raise UploadFundingConflictError()
 
         elif isinstance(funding, CreditUploadFunding):
