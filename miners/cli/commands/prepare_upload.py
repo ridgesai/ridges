@@ -4,24 +4,20 @@ from typing import Optional
 
 import httpx
 from bittensor_wallet.wallet import Wallet
-from rich.prompt import Prompt
 
 from miners.cli.click_ext import click, format_help
 from miners.cli.commands.upload import (
     DEFAULT_API_BASE_URL,
     UPLOAD_TIMEOUT_SECONDS,
     PaymentReceipt,
-    _cancel_quote,
     _confirm_burn,
-    _confirm_payment,
-    _ensure_quote_fresh,
-    _print_payment_receipt,
+    _fund_and_purchase,
     _print_ticket,
+    _purchase_quote,
     _raise_if_open_quote_exists,
+    _resolve_resume_receipt,
     _select_upload_competition,
     _signed_ticket,
-    _submit_eval_payment,
-    _unlock_coldkey,
     console,
     get_or_prompt,
 )
@@ -107,19 +103,23 @@ def prepare_upload(
 
     try:
         if resume_mode:
-            quote_id = quote_id or Prompt.ask("Payment Quote ID")
-            payment_block_hash = payment_block_hash or Prompt.ask("Payment Block Hash")
-            if payment_extrinsic_index is None:
-                try:
-                    payment_extrinsic_index = int(Prompt.ask("Payment Extrinsic Index"))
-                except ValueError:
-                    raise click.ClickException("Payment Extrinsic Index must be an integer") from None
-
+            quote_id, payment_block_hash, payment_extrinsic_index = _resolve_resume_receipt(
+                quote_id, payment_block_hash, payment_extrinsic_index
+            )
             receipt = PaymentReceipt(
                 block_hash=payment_block_hash, extrinsic_index=payment_extrinsic_index, quote_id=quote_id
             )
             with httpx.Client() as client:
-                _confirm_burn(client, api_url=api_url, wallet=wallet, receipt=receipt)
+                if receipt.block_hash is not None:
+                    _confirm_burn(client, api_url=api_url, wallet=wallet, receipt=receipt)
+                shortfall = _purchase_quote(client, api_url=api_url, wallet=wallet, quote_id=quote_id)
+            if shortfall is not None:
+                raise click.ClickException(
+                    f"Your balance ({shortfall['balance_alpha_rao'] / 1e9:,.4f} alpha) is "
+                    f"{shortfall['shortfall_alpha_rao'] / 1e9:,.4f} alpha short of "
+                    f"the ${shortfall['price_usd']:,.2f} upload price. Your burn is saved as balance; run "
+                    "`ridges prepare-upload` to top up and mint the ticket."
+                )
             ticket = _signed_ticket(
                 wallet,
                 funding=FUNDING_BURN,
@@ -137,36 +137,33 @@ def prepare_upload(
         else:
             with httpx.Client() as client:
                 set_id = _select_upload_competition(client, api_url=api_url, requested_set_id=competition)
-                details = _post_prepare(api_url, wallet=wallet, use_credit=False, credit_id=None, set_id=set_id)
-                if details.get("payment_method") != "burn" or not details.get("quote_id"):
-                    raise click.ClickException("Server did not issue a burn quote")
-                _unlock_coldkey(wallet)
 
-                if not _confirm_payment(details):
-                    _cancel_quote(client, api_url=api_url, wallet=wallet, quote_id=details["quote_id"])
-                    console.print("[bold red]Payment cancelled by user. No ticket issued.[/bold red]")
-                    return
-                _ensure_quote_fresh(client, api_url=api_url, wallet=wallet, payment_method_details=details)
+                def request_quote() -> dict:
+                    quoted = _post_prepare(api_url, wallet=wallet, use_credit=False, credit_id=None, set_id=set_id)
+                    if quoted.get("payment_method") != "burn" or not quoted.get("quote_id"):
+                        raise click.ClickException("Server did not issue a burn quote")
+                    return quoted
 
-                try:
-                    receipt: PaymentReceipt = _submit_eval_payment(wallet=wallet, payment_method_details=details)
-                except BaseException:
-                    console.print(
-                        "[bold red]The burn submission failed or its confirmation was interrupted. It may still have landed on-chain.[/bold red]\n"
-                        f"[yellow]Keep this Payment Quote ID:[/yellow] {details['quote_id']}\n"
-                        "[yellow]If the burn appears in your wallet/explorer history, mint your ticket without burning again:[/yellow]\n"
-                        f"  ridges prepare-upload --quote-id {details['quote_id']} --payment-block-hash <hash> --payment-extrinsic-index <index>"
-                    )
-                    raise
-
-                _print_payment_receipt(receipt)
-                _confirm_burn(client, api_url=api_url, wallet=wallet, receipt=receipt)
+                receipt = _fund_and_purchase(
+                    client,
+                    api_url=api_url,
+                    wallet=wallet,
+                    details=request_quote(),
+                    request_quote=request_quote,
+                    resume_hint=(
+                        "ridges prepare-upload --quote-id {quote_id} --payment-block-hash <hash> "
+                        "--payment-extrinsic-index <index>"
+                    ),
+                )
+            if receipt is None:
+                console.print("[bold red]No ticket issued.[/bold red]")
+                return
             ticket = _signed_ticket(
                 wallet,
                 funding=FUNDING_BURN,
                 quote_id=receipt.quote_id,
                 payment_block_hash=receipt.block_hash,
-                payment_extrinsic_index=int(receipt.extrinsic_index),
+                payment_extrinsic_index=None if receipt.extrinsic_index is None else int(receipt.extrinsic_index),
             )
 
         _print_ticket(ticket)

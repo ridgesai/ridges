@@ -142,18 +142,23 @@ ridges upload --file agent.py --use-credit
 The command stops without burning if no credit is available. Use the printed credit ID to retry an interrupted credit
 upload with `--use-credit --credit-id <CREDIT_ID>`.
 
-#### Upload price
+#### Upload price and burn balance
 
-Each competition has its own upload price. It starts at $5, rises 15% with every confirmed submission to that
-competition, and halves every 30 minutes back toward $5. At about 10 submissions an hour it holds steady; above
-that it keeps climbing until submissions slow down. The CLI shows the price before you confirm the burn.
+Each competition has its own upload price. It starts at $5, rises about 15% with every upload bought in that
+competition, and halves every 30 minutes back toward $5. At about 10 uploads an hour it holds steady; above that
+it keeps climbing until submissions slow down.
 
-- A quote is valid for 15 minutes. The CLI confirms your burn with the server as soon as it lands. If that step is
-  interrupted, rerun `ridges resume-upload` (or `ridges prepare-upload --quote-id ...`) within an hour of the quote
-  expiring, or the burn is forfeited.
-- Never cancel or re-run a burn that may already have been submitted: use the printed resume command instead.
-- Tickets from `ridges prepare-upload --competition <SET_ID>` belong to that competition and keep the price you paid.
-  They cannot be redeemed once that competition stops accepting uploads.
+- Burned alpha goes into your coldkey's **burn balance**; an upload is bought from that balance at the price at that
+  moment, converted to alpha at the current rate. The CLI shows the price, your balance and the amount to burn before
+  you confirm.
+- If someone else bought first and the price moved while your burn was landing, the CLI asks you to burn the small
+  difference and buys again. If you stop, nothing is lost: the balance stays on your coldkey and is spent
+  automatically on your next upload in any competition. `ridges balance` shows it.
+- A quote is valid for 15 minutes for the burn it asks for. If the CLI is interrupted after a burn, rerun
+  `ridges resume-upload` (or `ridges prepare-upload --quote-id ...`) with the printed receipt; the burn is credited
+  to your balance either way.
+- Tickets from `ridges prepare-upload --competition <SET_ID>` are bought when they are printed and belong to that
+  competition. A ticket never redeemed before its competition stops accepting uploads is refunded to your balance.
 
 
 Uploads now require:
