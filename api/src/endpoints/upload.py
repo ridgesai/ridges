@@ -1,7 +1,7 @@
 import hashlib
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Annotated, Optional
 from uuid import UUID
 
@@ -32,12 +32,14 @@ from models.upload import (
     AgentCheckResponse,
     AgentDirectCheckResponse,
     AgentUploadResponse,
+    BalanceResponse,
     CancelQuoteRequest,
     ConfirmPaymentRequest,
     ErrorResponse,
     OpenRouterKeysCheckRequest,
     OpenRouterKeysCheckResponse,
     PrepareUploadRequest,
+    PurchaseQuoteRequest,
     QuoteActionResponse,
     TicketCheckRequest,
     TicketCheckResponse,
@@ -46,12 +48,14 @@ from models.upload import (
 from queries.agent import (
     BurnUploadFunding,
     CreditUploadFunding,
+    PurchasedUploadFunding,
     _derive_agent_id,
     admit_agent,
     get_latest_agent_created_at_for_miner_hotkey_in_competition,
     record_upload_attempt,
 )
 from queries.banned_coldkey import get_banned_coldkey
+from queries.burn_balance import get_burn_balance, purchase_quote
 from queries.competition import get_public_competition, resolve_upload_competition
 from queries.errors import (
     BurnNotReportedError,
@@ -59,9 +63,12 @@ from queries.errors import (
     CompetitionNotAcceptingSubmissionsError,
     DuplicateAgentIDError,
     InsufficientAlphaError,
+    InsufficientBalanceError,
     OpenQuoteExistsError,
     QuoteAlreadyConfirmedError,
+    QuoteAlreadyPurchasedError,
     QuoteCancelledError,
+    QuoteNotConfirmedError,
     ReceiptConflictError,
     UploadCooldownError,
     UploadCreditAlreadyRedeemedError,
@@ -69,6 +76,7 @@ from queries.errors import (
     UploadFundingConflictError,
 )
 from queries.payments import (
+    IssuedQuote,
     cancel_payment_quote,
     confirm_quote_payment,
     issue_competition_quote,
@@ -90,6 +98,7 @@ from utils.upload_ticket import (
     confirm_signing_string,
     decode_ticket,
     prepare_signing_string,
+    purchase_signing_string,
     verify_ticket_signature,
 )
 
@@ -119,8 +128,8 @@ async def get_alpha_price_usd() -> float:
     return await get_alpha_price(config.NETUID)
 
 
-async def _issue_quote(*, set_id: int, miner_hotkey: str, miner_coldkey: str, burnable_rao: int) -> PaymentQuote:
-    """Issue (or reuse) a competition-bound burn quote. InsufficientAlphaError is left to the caller."""
+async def _issue_quote(*, set_id: int, miner_hotkey: str, miner_coldkey: str, burnable_rao: int) -> IssuedQuote:
+    """Issue (or reuse) a quote for the gap above the coldkey's balance. InsufficientAlphaError is left to the caller."""
     alpha_price_usd = await get_alpha_price_usd()
     try:
         return await issue_competition_quote(
@@ -406,7 +415,7 @@ async def check_agent_post(
         openrouter_management_key=openrouter_management_key,
     )
     try:
-        quote = await _issue_quote(
+        issued = await _issue_quote(
             set_id=resolved_set_id,
             miner_hotkey=miner_hotkey,
             miner_coldkey=coldkey,
@@ -426,11 +435,12 @@ async def check_agent_post(
         status="success",
         message="Agent check successful",
         payment_method="burn",
-        quote_id=quote.quote_id,
-        amount_alpha_rao=quote.amount_alpha_rao,
+        quote_id=issued.quote.quote_id,
+        amount_alpha_rao=issued.quote.amount_alpha_rao,
         payment_netuid=config.NETUID,
-        expires_at=quote.expires_at,
-        price_usd=quote.price_usd,
+        expires_at=issued.quote.expires_at,
+        price_usd=issued.upload_price_usd,
+        balance_alpha_rao=issued.balance_alpha_rao,
         set_id=resolved_set_id,
     )
 
@@ -497,7 +507,7 @@ async def prepare_upload(body: PrepareUploadRequest) -> AgentCheckResponse:
         raise HTTPException(status_code=503, detail="Burnable alpha stake could not be verified") from e
 
     try:
-        quote = await _issue_quote(
+        issued = await _issue_quote(
             set_id=resolved_set_id,
             miner_hotkey=body.hotkey,
             miner_coldkey=coldkey,
@@ -513,13 +523,14 @@ async def prepare_upload(body: PrepareUploadRequest) -> AgentCheckResponse:
         ) from exception
     return AgentCheckResponse(
         status="success",
-        message="Burn quote issued; pay then sign and mint your ticket",
+        message="Burn quote issued; pay, purchase, then sign and mint your ticket",
         payment_method="burn",
-        quote_id=quote.quote_id,
-        amount_alpha_rao=quote.amount_alpha_rao,
+        quote_id=issued.quote.quote_id,
+        amount_alpha_rao=issued.quote.amount_alpha_rao,
         payment_netuid=config.NETUID,
-        expires_at=quote.expires_at,
-        price_usd=quote.price_usd,
+        expires_at=issued.quote.expires_at,
+        price_usd=issued.upload_price_usd,
+        balance_alpha_rao=issued.balance_alpha_rao,
     )
 
 
@@ -586,18 +597,21 @@ async def _process_agent_upload(
             except ValueError as exception:
                 raise HTTPException(status_code=400, detail=str(exception)) from exception
 
-        if miner_burn and receipt_given and quote_id is not None:
+        bound_quote: Optional[PaymentQuote] = None
+        if miner_burn and quote_id is not None:
             try:
-                bound_quote = await retrieve_payment_quote(UUID(quote_id))
+                candidate = await retrieve_payment_quote(UUID(quote_id))
             except ValueError:
-                bound_quote = None
-            if bound_quote is not None and not bound_quote.is_legacy and bound_quote.miner_hotkey == miner_hotkey:
-                await _confirm_burn(
-                    quote=bound_quote,
-                    miner_hotkey=miner_hotkey,
-                    payment_block_hash=payment_block_hash,
-                    payment_extrinsic_index=payment_extrinsic_index,
-                )
+                candidate = None
+            if candidate is not None and not candidate.is_legacy and candidate.miner_hotkey == miner_hotkey:
+                bound_quote = candidate
+                if receipt_given:
+                    await _confirm_burn(
+                        quote=bound_quote,
+                        miner_hotkey=miner_hotkey,
+                        payment_block_hash=payment_block_hash,
+                        payment_extrinsic_index=payment_extrinsic_index,
+                    )
 
         if config.DISALLOW_UPLOADS and not is_owner_upload:
             raise PlatformFrozenError(config.DISALLOW_UPLOADS_REASON)
@@ -624,10 +638,25 @@ async def _process_agent_upload(
                 raise HTTPException(status_code=400, detail="Hotkey owner not found")
             await check_coldkey_banned(coldkey)
 
-        if not is_credit_upload and not prod_burn:
+        if not is_credit_upload and not prod_burn and bound_quote is None:
             resolved_set_id = await _resolve_upload_set_id(set_id)
 
-        if prod_burn:
+        if bound_quote is not None:
+            if bound_quote.redeemed_agent_id is not None:
+                raise DuplicateAgentIDError(agent_id=bound_quote.redeemed_agent_id)
+
+            if bound_quote.purchased_at is None:
+                raise HTTPException(status_code=402, detail="not_purchased")
+
+            if bound_quote.set_id != set_id:
+                raise HTTPException(status_code=409, detail="wrong_competition")
+
+            resolved_set_id = await _resolve_upload_set_id(set_id)
+            coldkey = bound_quote.miner_coldkey
+            if prod:
+                await check_coldkey_banned(coldkey)
+
+        elif prod_burn:
             if quote_id is None:
                 raise HTTPException(status_code=400, detail=OUTDATED_UPLOAD_CLIENT_MESSAGE)
             if not receipt_given:
@@ -648,8 +677,6 @@ async def _process_agent_upload(
             if quote.amount_alpha_rao is None:
                 raise HTTPException(status_code=400, detail=OUTDATED_UPLOAD_CLIENT_MESSAGE)
 
-            if not quote.is_legacy and quote.set_id != set_id:
-                raise HTTPException(status_code=409, detail="wrong_competition")
             resolved_set_id = await _resolve_upload_set_id(set_id)
 
             existing_payment = await retrieve_payment_by_hash(
@@ -666,16 +693,13 @@ async def _process_agent_upload(
                 logger.warning(f"Payment with block hash {payment_block_hash} has been refunded. Rejecting upload.")
                 raise PaymentRefunded()
 
-            if quote.is_legacy:
-                verified = await _verify_burn_on_chain(
-                    miner_hotkey=miner_hotkey,
-                    quote=quote,
-                    payment_block_hash=payment_block_hash,
-                    payment_extrinsic_index=payment_extrinsic_index,
-                )
-                coldkey, payment_value = verified.miner_coldkey, verified.amount_alpha_rao
-            else:
-                coldkey, payment_value = existing_payment.miner_coldkey, existing_payment.amount_alpha_rao
+            verified = await _verify_burn_on_chain(
+                miner_hotkey=miner_hotkey,
+                quote=quote,
+                payment_block_hash=payment_block_hash,
+                payment_extrinsic_index=payment_extrinsic_index,
+            )
+            coldkey, payment_value = verified.miner_coldkey, verified.amount_alpha_rao
             await check_coldkey_banned(coldkey)
 
         validated_openrouter_keys = await validate_openrouter_keys(
@@ -715,6 +739,9 @@ async def _process_agent_upload(
         if is_credit_upload:
             agent_payment_block_hash = f"credit:{credit_uuid}"
             agent_payment_extrinsic_index = "0"
+        elif bound_quote is not None:
+            agent_payment_block_hash = f"purchase:{bound_quote.quote_id}"
+            agent_payment_extrinsic_index = "0"
         else:
             agent_payment_block_hash = payment_block_hash
             agent_payment_extrinsic_index = payment_extrinsic_index
@@ -733,12 +760,18 @@ async def _process_agent_upload(
         agent_id = _derive_agent_id(agent_payment_block_hash, agent_payment_extrinsic_index)
         await upload_text_file_to_s3(f"{agent_id}/agent.py", agent_text)
 
-        funding: BurnUploadFunding | CreditUploadFunding | None
+        funding: BurnUploadFunding | CreditUploadFunding | PurchasedUploadFunding | None
         if prod and not is_owner_upload and is_credit_upload:
             funding = CreditUploadFunding(
                 credit_id=credit_uuid,
                 miner_hotkey=miner_hotkey,
                 miner_coldkey=coldkey,
+            )
+        elif bound_quote is not None:
+            funding = PurchasedUploadFunding(
+                quote_id=bound_quote.quote_id,
+                miner_hotkey=miner_hotkey,
+                miner_coldkey=bound_quote.miner_coldkey,
             )
         elif prod and not is_owner_upload:
             funding = BurnUploadFunding(
@@ -1032,7 +1065,9 @@ async def post_agent_ticket(
         miner_hotkey=decoded.hotkey,
         name=name,
         payment_block_hash=decoded.payment_block_hash,
-        payment_extrinsic_index=str(decoded.payment_extrinsic_index),
+        payment_extrinsic_index=None
+        if decoded.payment_extrinsic_index is None
+        else str(decoded.payment_extrinsic_index),
         quote_id=decoded.quote_id,
         credit_id=None,
         openrouter_api_key=openrouter_api_key,
@@ -1061,6 +1096,37 @@ async def check_ticket(body: TicketCheckRequest) -> TicketCheckResponse:
         )
 
     if ticket.funding == FUNDING_BURN:
+        quote = await retrieve_payment_quote(UUID(ticket.quote_id))
+        if quote is None or quote.miner_hotkey != ticket.hotkey:
+            return TicketCheckResponse(
+                valid=False, reason="unknown_quote", hotkey=ticket.hotkey, funding=ticket.funding
+            )
+
+        if not quote.is_legacy:
+            competition = await get_public_competition(quote.set_id)
+            bound = {
+                "hotkey": ticket.hotkey,
+                "funding": ticket.funding,
+                "set_id": quote.set_id,
+                "competition_state": None if competition is None else competition.state.value,
+            }
+            if quote.redeemed_agent_id is not None:
+                return TicketCheckResponse(
+                    valid=False, reason="already_redeemed", redeemed_agent_id=quote.redeemed_agent_id, **bound
+                )
+            if quote.cancelled_at is not None:
+                return TicketCheckResponse(valid=False, reason="quote_cancelled", **bound)
+
+            if quote.refunded_at is not None:
+                return TicketCheckResponse(valid=False, reason="purchase_refunded", **bound)
+
+            if quote.purchased_at is None:
+                return TicketCheckResponse(valid=False, reason="not_purchased", **bound)
+
+            if competition is None or not competition.accepting:
+                return TicketCheckResponse(valid=False, reason="competition_not_accepting", **bound)
+            return TicketCheckResponse(valid=True, amount_alpha_rao=quote.amount_alpha_rao, expires_at=None, **bound)
+
         try:
             payment_block_hash, payment_extrinsic_index = canonical_receipt(
                 ticket.payment_block_hash, ticket.payment_extrinsic_index
@@ -1068,12 +1134,6 @@ async def check_ticket(body: TicketCheckRequest) -> TicketCheckResponse:
         except ValueError:
             return TicketCheckResponse(
                 valid=False, reason="malformed_ticket", hotkey=ticket.hotkey, funding=ticket.funding
-            )
-
-        quote = await retrieve_payment_quote(UUID(ticket.quote_id))
-        if quote is None or quote.miner_hotkey != ticket.hotkey:
-            return TicketCheckResponse(
-                valid=False, reason="unknown_quote", hotkey=ticket.hotkey, funding=ticket.funding
             )
 
         payment = await retrieve_payment_by_hash(
@@ -1100,32 +1160,13 @@ async def check_ticket(body: TicketCheckRequest) -> TicketCheckResponse:
         ):
             return TicketCheckResponse(valid=False, reason="refunded", hotkey=ticket.hotkey, funding=ticket.funding)
 
-        if quote.is_legacy:
-            return TicketCheckResponse(
-                valid=True,
-                hotkey=ticket.hotkey,
-                funding=ticket.funding,
-                amount_alpha_rao=quote.amount_alpha_rao,
-                expires_at=None,
-            )
-
-        competition = await get_public_competition(quote.set_id)
-        bound = {
-            "hotkey": ticket.hotkey,
-            "funding": ticket.funding,
-            "set_id": quote.set_id,
-            "competition_state": None if competition is None else competition.state.value,
-        }
-        if quote.cancelled_at is not None:
-            return TicketCheckResponse(valid=False, reason="quote_cancelled", **bound)
-
-        deadline = as_utc(quote.expires_at) + timedelta(seconds=CONFIRM_GRACE_SECONDS)
-        if quote.confirmed_at is None and datetime.now(timezone.utc) > deadline:
-            return TicketCheckResponse(valid=False, reason="burn_not_reported", **bound)
-
-        if competition is None or not competition.accepting:
-            return TicketCheckResponse(valid=False, reason="competition_not_accepting", **bound)
-        return TicketCheckResponse(valid=True, amount_alpha_rao=quote.amount_alpha_rao, expires_at=None, **bound)
+        return TicketCheckResponse(
+            valid=True,
+            hotkey=ticket.hotkey,
+            funding=ticket.funding,
+            amount_alpha_rao=quote.amount_alpha_rao,
+            expires_at=None,
+        )
 
     credit = await get_upload_credit_by_id(credit_id=UUID(ticket.credit_id), miner_hotkey=ticket.hotkey)
     if credit is None:
@@ -1234,7 +1275,64 @@ async def cancel_quote(quote_id: UUID, body: CancelQuoteRequest) -> QuoteActionR
 
     try:
         await cancel_payment_quote(quote_id)
+    except QuoteAlreadyPurchasedError as exception:
+        raise HTTPException(status_code=409, detail="already_purchased") from exception
     except QuoteAlreadyConfirmedError as exception:
         raise HTTPException(status_code=409, detail="already_confirmed") from exception
 
     return QuoteActionResponse(quote_id=quote_id, status="cancelled")
+
+
+@router.post("/quote/{quote_id}/purchase", tags=["upload"], response_model=QuoteActionResponse)
+async def purchase_quote_endpoint(quote_id: UUID, body: PurchaseQuoteRequest) -> QuoteActionResponse:
+    """Buy the upload from the coldkey's burn balance at the competition's price right now. Idempotent."""
+    quote = await _owned_quote(
+        quote_id,
+        hotkey=body.hotkey,
+        public_key=body.public_key,
+        signature=body.signature,
+        message=purchase_signing_string(body.hotkey, str(quote_id)),
+    )
+    if quote.is_legacy:
+        return QuoteActionResponse(quote_id=quote_id, status="legacy")
+
+    if config.ENV == "prod":
+        coldkey = await subtensor_client.get_hotkey_owner(body.hotkey)
+        if coldkey is None:
+            raise HTTPException(status_code=402, detail="Hotkey owner not found")
+    else:
+        coldkey = quote.miner_coldkey
+
+    alpha_price_usd = await get_alpha_price_usd()
+    try:
+        status = await purchase_quote(quote_id, miner_coldkey=coldkey, alpha_price_usd=alpha_price_usd)
+    except ColdkeyBannedError as exception:
+        raise HTTPException(status_code=403, detail="Your miner coldkey has been banned") from exception
+
+    except InsufficientBalanceError as exception:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "code": "insufficient_balance",
+                "price_usd": exception.price_usd,
+                "price_alpha_rao": exception.price_alpha_rao,
+                "balance_alpha_rao": exception.balance_alpha_rao,
+                "shortfall_alpha_rao": exception.shortfall_alpha_rao,
+            },
+        ) from exception
+    except QuoteNotConfirmedError as exception:
+        raise HTTPException(status_code=402, detail="burn_not_confirmed") from exception
+
+    except QuoteCancelledError as exception:
+        raise HTTPException(status_code=409, detail="quote_cancelled") from exception
+
+    except CompetitionNotAcceptingSubmissionsError as exception:
+        raise HTTPException(status_code=409, detail=str(exception)) from exception
+
+    return QuoteActionResponse(quote_id=quote_id, status=status)
+
+
+@router.get("/balance", tags=["upload"], response_model=BalanceResponse)
+async def get_burn_balance_endpoint(coldkey: str) -> BalanceResponse:
+    """A coldkey's burn balance in rao."""
+    return BalanceResponse(coldkey=coldkey, balance_alpha_rao=await get_burn_balance(coldkey))
