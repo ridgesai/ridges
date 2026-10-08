@@ -1,25 +1,38 @@
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 import httpx
 from bittensor_wallet.wallet import Wallet
+from rich.panel import Panel
 
 from miners.cli.click_ext import click, format_help
 from miners.cli.commands.upload import (
     DEFAULT_API_BASE_URL,
+    _print_header,
+    _print_ticket,
+    _raise_if_open_quote_exists,
+    _resume_command_builder,
+    _select_upload_competition,
+    _signed_ticket,
+    _wallet_args,
+    get_or_prompt,
+)
+from miners.cli.commands.upload_payment import (
+    PRICING_HELP,
+    PRICING_HELP_CONFIG,
     UPLOAD_TIMEOUT_SECONDS,
+    AutoApproval,
     PaymentReceipt,
     _confirm_burn,
     _fund_and_purchase,
-    _print_ticket,
     _purchase_quote,
-    _raise_if_open_quote_exists,
     _resolve_resume_receipt,
-    _select_upload_competition,
-    _signed_ticket,
     console,
-    get_or_prompt,
+    help_section,
+    max_price_option,
+    yes_option,
 )
 from utils.upload_ticket import FUNDING_BURN, FUNDING_CREDIT, prepare_signing_string
 
@@ -58,21 +71,33 @@ def _post_prepare(
     name="prepare-upload",
     short_help="Reserve funding and print a ticket to finish the upload on the web.",
     help=format_help(
-        "Reserve an upload (alpha-burn quote by default, or an admin-granted upload credit with "
-        "--use-credit), sign a single-use upload ticket with your hotkey, and print it. Paste the "
-        "ticket on the Ridges dashboard (Miner -> Upload) together with your agent.py, name, and "
-        "OpenRouter keys. The ticket is a bearer credential. Treat it like a password. "
-        "Pass an existing receipt (--quote-id/--payment-block-hash/--payment-extrinsic-index) to "
-        "mint a ticket for a previous payment without burning again.",
+        "Buy an upload and print a ticket that finishes it on the web.\n\n"
+        + help_section(
+            "Paste the ticket on the Ridges dashboard (Miner -> Upload) with your agent.py, name and",
+            "OpenRouter keys. The upload is bought when the ticket is printed. The ticket is a bearer",
+            "credential: treat it like a password.",
+        )
+        + "\n\n"
+        + help_section(
+            "--use-credit spends an admin-granted upload credit instead of burning alpha. Pass an existing",
+            "receipt (--quote-id, --payment-block-hash, --payment-extrinsic-index) to mint a ticket for an",
+            "earlier payment without burning again.",
+        )
+        + "\n\n"
+        + PRICING_HELP,
         "ridges prepare-upload",
         "ridges prepare-upload --competition 29",
+        "ridges prepare-upload --competition 29 --max-price 50",
         "ridges prepare-upload --use-credit",
         "ridges prepare-upload --quote-id 2f3b... --payment-block-hash 0x87d2... --payment-extrinsic-index 7",
     ),
 )
+@click.rich_config(help_config=PRICING_HELP_CONFIG)
 @click.option("--coldkey-name", help="Coldkey name")
 @click.option("--hotkey-name", help="Hotkey name")
 @click.option("--competition", type=int, help="Competition set ID a new burn ticket is for.")
+@max_price_option
+@yes_option
 @click.option("--use-credit", is_flag=True, help="Use a one-shot upload credit instead of burning alpha.")
 @click.option("--credit-id", help="Specific upload credit ID to retry. Requires --use-credit.")
 @click.option("--quote-id", help="Existing Payment Quote ID (resume mode: no new burn).")
@@ -84,6 +109,8 @@ def prepare_upload(
     coldkey_name: Optional[str],
     hotkey_name: Optional[str],
     competition: Optional[int],
+    max_price: Optional[float],
+    assume_yes: bool,
     use_credit: bool,
     credit_id: Optional[str],
     quote_id: Optional[str],
@@ -97,6 +124,8 @@ def prepare_upload(
     resume_mode = any(value is not None for value in (quote_id, payment_block_hash, payment_extrinsic_index))
     if resume_mode and use_credit:
         raise click.ClickException("Resume fields describe a burn receipt; do not combine them with --use-credit")
+    if (resume_mode or use_credit) and (max_price is not None or assume_yes):
+        raise click.ClickException("--max-price and --yes only apply to new burns, not --use-credit or resume mode")
 
     api_url = ctx.obj.get("url") or DEFAULT_API_BASE_URL
     wallet = _resolve_wallet(coldkey_name, hotkey_name)
@@ -115,10 +144,10 @@ def prepare_upload(
                 shortfall = _purchase_quote(client, api_url=api_url, wallet=wallet, quote_id=quote_id)
             if shortfall is not None:
                 raise click.ClickException(
-                    f"Your balance ({shortfall['balance_alpha_rao'] / 1e9:,.4f} alpha) is "
+                    f"Your unused burn ({shortfall['balance_alpha_rao'] / 1e9:,.4f} alpha) is "
                     f"{shortfall['shortfall_alpha_rao'] / 1e9:,.4f} alpha short of "
-                    f"the ${shortfall['price_usd']:,.2f} upload price. Your burn is saved as balance; run "
-                    "`ridges prepare-upload` to top up and mint the ticket."
+                    f"the ${shortfall['price_usd']:,.2f} upload price. Nothing is lost: run "
+                    "`ridges prepare-upload` to burn the difference and mint the ticket."
                 )
             ticket = _signed_ticket(
                 wallet,
@@ -137,6 +166,14 @@ def prepare_upload(
         else:
             with httpx.Client() as client:
                 set_id = _select_upload_competition(client, api_url=api_url, requested_set_id=competition)
+                _print_header(
+                    f"Upload ticket · Competition {set_id}",
+                    [
+                        ("Hotkey", wallet.hotkey.ss58_address),
+                        ("API", api_url),
+                        ("Network", os.environ.get("SUBTENSOR_NETWORK", "finney")),
+                    ],
+                )
 
                 def request_quote() -> dict:
                     quoted = _post_prepare(api_url, wallet=wallet, use_credit=False, credit_id=None, set_id=set_id)
@@ -144,20 +181,25 @@ def prepare_upload(
                         raise click.ClickException("Server did not issue a burn quote")
                     return quoted
 
-                receipt = _fund_and_purchase(
+                purchase = _fund_and_purchase(
                     client,
                     api_url=api_url,
                     wallet=wallet,
                     details=request_quote(),
                     request_quote=request_quote,
-                    resume_hint=(
-                        "ridges prepare-upload --quote-id {quote_id} --payment-block-hash <hash> "
-                        "--payment-extrinsic-index <index>"
-                    ),
+                    resume_command=_resume_command_builder(api_url, "prepare-upload", *_wallet_args(wallet)),
+                    set_id=set_id,
+                    help_command="ridges prepare-upload",
+                    approval=AutoApproval(max_price_usd=max_price, assume_yes=assume_yes),
                 )
-            if receipt is None:
-                console.print("[bold red]No ticket issued.[/bold red]")
+            if purchase is None:
+                console.print("  No ticket issued.")
                 return
+            console.print()
+            console.print(
+                Panel("\n".join(purchase.lines()), title="Upload purchased", title_align="left", border_style="green")
+            )
+            receipt = purchase.receipt
             ticket = _signed_ticket(
                 wallet,
                 funding=FUNDING_BURN,
