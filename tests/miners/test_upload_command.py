@@ -644,13 +644,6 @@ def test_check_upload_allowed_sends_pricing_version(tmp_path: Path) -> None:
     assert client.calls[0]["data"]["pricing_version"] == 2
 
 
-def test_open_quote_exists_is_explained() -> None:
-    detail = {"code": "open_quote_exists", "quote_id": "q-1", "expires_at": "2026-10-06T12:15:00+00:00"}
-    with pytest.raises(upload_module.click.ClickException, match="q-1"):
-        upload_module._raise_if_open_quote_exists(_FakeResponse(409, json_data={"detail": detail}))
-    upload_module._raise_if_open_quote_exists(_FakeResponse(409, json_data={"detail": "Competition 1 is draining"}))
-
-
 def test_confirm_burn_posts_signed_canonical_receipt() -> None:
     client = _FakeClient(_FakeResponse(200, json_data={"status": "confirmed"}))
     receipt = upload_module.PaymentReceipt(block_hash="0x" + "AB" * 32, extrinsic_index=7, quote_id="q")

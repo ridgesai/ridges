@@ -12,7 +12,6 @@ from miners.cli.commands.upload import (
     DEFAULT_API_BASE_URL,
     _print_header,
     _print_ticket,
-    _raise_if_open_quote_exists,
     _resume_command_builder,
     _select_upload_competition,
     _signed_ticket,
@@ -62,7 +61,6 @@ def _post_prepare(
         response = client.post(f"{api_url}/upload/prepare", json=body, timeout=UPLOAD_TIMEOUT_SECONDS)
 
     if response.status_code != 200:
-        _raise_if_open_quote_exists(response)
         raise click.ClickException(f"Prepare failed ({response.status_code}): {response.text}")
     return response.json()
 

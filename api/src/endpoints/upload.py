@@ -66,7 +66,6 @@ from queries.errors import (
     DuplicateAgentIDError,
     InsufficientAlphaError,
     InsufficientBalanceError,
-    OpenQuoteExistsError,
     QuoteAlreadyConfirmedError,
     QuoteAlreadyPurchasedError,
     QuoteCancelledError,
@@ -143,15 +142,6 @@ async def _issue_quote(*, set_id: int, miner_hotkey: str, miner_coldkey: str, bu
             burnable_rao=burnable_rao,
             ttl_seconds=UPLOAD_PAYMENT_QUOTE_TTL_SECONDS,
         )
-    except OpenQuoteExistsError as exception:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "open_quote_exists",
-                "quote_id": str(exception.quote_id),
-                "expires_at": exception.expires_at.isoformat(),
-            },
-        ) from exception
     except CompetitionNotAcceptingSubmissionsError as exception:
         raise HTTPException(status_code=409, detail=str(exception)) from exception
 

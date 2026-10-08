@@ -1,7 +1,6 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from datetime import datetime
     from uuid import UUID
 
 
@@ -86,15 +85,6 @@ class CompetitionNotFoundError(Exception):
 
 class CompetitionAdminConflictError(Exception):
     """Raised when a requested competition target is invalid for current state."""
-
-
-class OpenQuoteExistsError(Exception):
-    """The coldkey already holds an open quote for this competition, issued to another hotkey."""
-
-    def __init__(self, quote_id: "UUID", expires_at: "datetime"):
-        super().__init__(f"Open quote {quote_id} exists until {expires_at}")
-        self.quote_id = quote_id
-        self.expires_at = expires_at
 
 
 class InsufficientAlphaError(Exception):

@@ -105,13 +105,6 @@ class UploadPaymentQuote(Base, CreatedAtMixin):
             "AND (confirmed_at IS NULL) = (confirmed_payment_extrinsic_index IS NULL)",
             name="ck_upload_payment_quotes_confirmed_receipt",
         ),
-        sa.Index(
-            "idx_upload_payment_quotes_open",
-            "set_id",
-            "miner_coldkey",
-            "expires_at",
-            postgresql_where=sa.text("NOT is_legacy"),
-        ),
     )
 
 

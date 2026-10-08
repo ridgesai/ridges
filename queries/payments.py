@@ -11,7 +11,6 @@ from queries.errors import (
     BurnNotReportedError,
     CompetitionNotAcceptingSubmissionsError,
     InsufficientAlphaError,
-    OpenQuoteExistsError,
     QuoteAlreadyConfirmedError,
     QuoteAlreadyPurchasedError,
     QuoteCancelledError,
@@ -183,8 +182,7 @@ async def issue_competition_quote(
     """Issue a quote for the gap between the coldkey's burn balance and the competition's current price in alpha.
 
     The gap carries the 1.1 buffer; whatever is not spent at purchase stays in the balance. A gap of zero yields
-    a quote with nothing to burn. One open quote per coldkey per competition: the same hotkey gets its open quote
-    back, another hotkey of the same coldkey gets OpenQuoteExistsError.
+    a quote with nothing to burn. Every call issues a new quote, so each burn has its own quote and is credited.
     """
     async with conn.conn.transaction():
         competition = await lock_competition_for_admission(conn, set_id)
@@ -194,31 +192,7 @@ async def issue_competition_quote(
             )
 
         price = await lock_competition_price(conn, set_id)
-        open_quote = await conn.fetchrow(
-            """
-            SELECT *
-            FROM upload_payment_quotes
-            WHERE set_id = $1
-              AND miner_coldkey = $2
-              AND NOT is_legacy
-              AND confirmed_at IS NULL
-              AND purchased_at IS NULL
-              AND cancelled_at IS NULL
-              AND expires_at > $3
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            set_id,
-            miner_coldkey,
-            price.as_of,
-        )
-
         balance = await balance_alpha_rao(conn, miner_coldkey)
-        if open_quote is not None:
-            if open_quote["miner_hotkey"] == miner_hotkey:
-                return IssuedQuote(PaymentQuote(**open_quote), price.price_usd, balance)
-            raise OpenQuoteExistsError(quote_id=open_quote["quote_id"], expires_at=open_quote["expires_at"])
-
         gap_rao = max(0, exact_alpha_rao_for_usd(price.price_usd, alpha_price_usd) - balance)
         amount_alpha_rao = int(gap_rao * ALPHA_BUFFER) if gap_rao > 0 else 0
         if amount_alpha_rao > burnable_rao:

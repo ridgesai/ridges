@@ -74,12 +74,6 @@ def upgrade() -> None:
         "(confirmed_at IS NULL) = (confirmed_payment_block_hash IS NULL) "
         "AND (confirmed_at IS NULL) = (confirmed_payment_extrinsic_index IS NULL)",
     )
-    op.create_index(
-        "idx_upload_payment_quotes_open",
-        "upload_payment_quotes",
-        ["set_id", "miner_coldkey", "expires_at"],
-        postgresql_where=sa.text("NOT is_legacy"),
-    )
 
 
 def downgrade() -> None:
@@ -89,7 +83,6 @@ def downgrade() -> None:
             "Cannot downgrade while competition-bound quotes exist: they would become unrestricted legacy tickets."
         )
 
-    op.drop_index("idx_upload_payment_quotes_open", table_name="upload_payment_quotes")
     for name in (
         "ck_upload_payment_quotes_confirmed_receipt",
         "ck_upload_payment_quotes_terminal",

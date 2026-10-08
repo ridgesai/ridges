@@ -10,7 +10,9 @@ from fastapi import HTTPException
 import utils.database as _db
 from api.src.endpoints import upload as upload_module
 from models.upload import PrepareUploadRequest
+from queries.burn_balance import get_burn_balance
 from queries.competition import initialize_current_competition_policy
+from queries.payments import confirm_quote_payment
 from utils.upload_pricing import alpha_rao_for_usd
 from utils.upload_ticket import prepare_signing_string
 
@@ -308,19 +310,32 @@ async def test_burn_quote_is_bound_to_competition_and_price():
     assert (row["expires_at"] - row["created_at"]).total_seconds() == 15 * 60
 
 
-async def test_same_hotkey_gets_its_open_quote_back():
+async def test_each_request_gets_its_own_quote():
     first = await upload_module.prepare_upload(_request())
     second = await upload_module.prepare_upload(_request())
-    assert second.quote_id == first.quote_id
+    assert second.quote_id != first.quote_id
 
 
-async def test_other_hotkey_of_same_coldkey_gets_409():
+async def test_hotkeys_of_one_coldkey_can_quote_at_the_same_time():
     first = await upload_module.prepare_upload(_request())
-    with pytest.raises(HTTPException) as exc:
-        await upload_module.prepare_upload(_second_request())
-    assert exc.value.status_code == 409
-    assert exc.value.detail["code"] == "open_quote_exists"
-    assert exc.value.detail["quote_id"] == str(first.quote_id)
+    second = await upload_module.prepare_upload(_second_request())
+    assert second.quote_id != first.quote_id
+
+
+async def test_two_burns_by_one_hotkey_are_both_credited():
+    """Two runs at once each burn for their own quote, so neither burn is lost."""
+    quotes = [await upload_module.prepare_upload(_request()) for _ in range(2)]
+    for index, quote in enumerate(quotes):
+        await confirm_quote_payment(
+            quote_id=quote.quote_id,
+            payment_block_hash="0x" + f"{index:02d}" * 32,
+            payment_extrinsic_index="7",
+            miner_hotkey=HOTKEY,
+            miner_coldkey=None,
+            amount_alpha_rao=None,
+            grace_seconds=3600,
+        )
+    assert await get_burn_balance(FAKE_COLDKEY) == sum(quote.amount_alpha_rao for quote in quotes)
 
 
 async def test_quote_uses_current_competition_price():

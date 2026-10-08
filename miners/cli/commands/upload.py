@@ -250,22 +250,6 @@ def _resolve_openrouter_upload_credentials(
     )
 
 
-def _raise_if_open_quote_exists(response: httpx.Response) -> None:
-    """Explain the one-open-quote-per-coldkey rule when the server refuses a quote for it."""
-    if response.status_code != 409:
-        return
-    try:
-        detail = response.json().get("detail")
-    except (ValueError, AttributeError):
-        return
-    if isinstance(detail, dict) and detail.get("code") == "open_quote_exists":
-        raise click.ClickException(
-            f"Another hotkey of this coldkey holds open quote {detail['quote_id']} for this competition until "
-            f"{detail['expires_at']}. If that hotkey already burned for it, finish with `ridges resume-upload "
-            f"--quote-id {detail['quote_id']} ...` from that hotkey. Otherwise wait for the quote to expire."
-        )
-
-
 def _check_upload_allowed(
     client: httpx.Client,
     *,
@@ -298,7 +282,6 @@ def _check_upload_allowed(
         timeout=UPLOAD_TIMEOUT_SECONDS,
     )
     if response.status_code != 200:
-        _raise_if_open_quote_exists(response)
         raise click.ClickException(f"Error checking agent: {response.text}")
     return response.json()
 
