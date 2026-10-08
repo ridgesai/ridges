@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import utils.database as _db
+from api.errors import PaymentAlreadyUsedError
 from api.src.endpoints import upload as upload_module
 from api.src.endpoints.upload import AgentUploadResponse
 from models.agent import AgentCreate
@@ -28,14 +29,17 @@ from queries.upload_credit import (
     get_exact_upload_credit_replay,
 )
 from utils.bittensor import SubtensorUnavailableError
+from utils.upload_pricing import alpha_rao_for_usd
 
 # ── constants ─────────────────────────────────────────────────────────────────
 
-FAKE_BLOCK_HASH = "0xdeadbeef1234"
+FAKE_BLOCK_HASH = "0x" + "de" * 32
 FAKE_EXTRINSIC_INDEX = "1"
 FAKE_HOTKEY = "5FHneTesthKey123"
 FAKE_COLDKEY = "5FColdKey456"
 FAKE_AMOUNT_ALPHA_RAO = 120_344_620_287_164
+FAKE_ALPHA_PRICE_USD = 2.5
+QUOTE_ALPHA_RAO = alpha_rao_for_usd(5.0, FAKE_ALPHA_PRICE_USD)
 FAKE_OWNER_HOTKEY = upload_module.config.OWNER_HOTKEY
 FAKE_BLOCK_TIME = datetime(2026, 6, 9, 18, 0, tzinfo=timezone.utc)
 
@@ -195,16 +199,7 @@ def _install_mocks(monkeypatch) -> None:
             )
         ),
     )
-    monkeypatch.setattr(
-        upload_module,
-        "get_upload_price",
-        AsyncMock(
-            return_value=MagicMock(
-                amount_alpha_rao=FAKE_AMOUNT_ALPHA_RAO,
-                payment_netuid=upload_module.config.NETUID,
-            )
-        ),
-    )
+    monkeypatch.setattr(upload_module, "get_alpha_price_usd", AsyncMock(return_value=FAKE_ALPHA_PRICE_USD))
     monkeypatch.setattr(upload_module, "upload_text_file_to_s3", AsyncMock())
     monkeypatch.setattr("queries.agent.upload_text_file_to_s3", AsyncMock())
     monkeypatch.setattr("queries.upload_credit.upload_text_file_to_s3", AsyncMock())
@@ -228,22 +223,51 @@ async def _insert_quote(
     amount_alpha_rao: int = FAKE_AMOUNT_ALPHA_RAO,
     created_at: datetime = FAKE_BLOCK_TIME - timedelta(minutes=1),
     expires_at: datetime = FAKE_BLOCK_TIME + timedelta(minutes=15),
+    set_id: int | None = None,
+    purchased: bool = False,
+    coldkey: str = FAKE_COLDKEY,
 ) -> uuid.UUID:
+    """Insert a quote. set_id=None inserts a legacy quote (today's behaviour); purchased=True a prepaid upload."""
     quote_id = uuid.uuid4()
     async with _db.pool.acquire() as conn:
         await conn.execute(
             """
             INSERT INTO upload_payment_quotes
-                (quote_id, miner_hotkey, amount_alpha_rao, created_at, expires_at)
-            VALUES ($1, $2, $3, $4, $5)
+                (quote_id, miner_hotkey, amount_alpha_rao, created_at, expires_at, set_id, price_usd, miner_coldkey,
+                 is_legacy, purchased_at, purchase_price_usd, purchase_price_alpha_rao)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             """,
             quote_id,
             hotkey,
             amount_alpha_rao,
             created_at,
             expires_at,
+            set_id,
+            None if set_id is None else 5,
+            None if set_id is None else coldkey,
+            set_id is None,
+            datetime.now(timezone.utc) if purchased else None,
+            5 if purchased else None,
+            2_000_000_000 if purchased else None,
         )
     return quote_id
+
+
+def _move_block_time_to_now(monkeypatch) -> datetime:
+    """Competition-bound quotes are confirmed against the real clock, so the burn block must be recent."""
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(
+        upload_module.subtensor_client,
+        "get_block_info",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                number=42,
+                timestamp=int(now.timestamp() * 1000),
+                extrinsics=[_make_fake_timestamp_extrinsic(), _make_fake_burn_extrinsic(FAKE_COLDKEY)],
+            )
+        ),
+    )
+    return now
 
 
 async def _insert_credit(
@@ -402,11 +426,12 @@ async def test_check_agent_persists_payment_quote():
         name="test-agent",
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
+        pricing_version=2,
         set_id=1,
     )
 
     assert response.status == "success"
-    assert response.amount_alpha_rao == FAKE_AMOUNT_ALPHA_RAO
+    assert response.amount_alpha_rao == QUOTE_ALPHA_RAO
     assert response.payment_netuid == upload_module.config.NETUID
     upload_module.subtensor_client.get_alpha_stake_availability.assert_awaited_once_with(
         coldkey=FAKE_COLDKEY,
@@ -424,7 +449,7 @@ async def test_check_agent_persists_payment_quote():
             response.quote_id,
         )
     assert row["miner_hotkey"] == FAKE_HOTKEY
-    assert row["amount_alpha_rao"] == FAKE_AMOUNT_ALPHA_RAO
+    assert row["amount_alpha_rao"] == QUOTE_ALPHA_RAO
     assert row["expires_at"] > row["created_at"]
 
 
@@ -446,6 +471,7 @@ async def test_check_agent_with_credit_skips_rate_limit_and_burn_checks(monkeypa
         name="test-agent",
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
+        pricing_version=2,
         use_credit=True,
         set_id=1,
     )
@@ -455,7 +481,7 @@ async def test_check_agent_with_credit_skips_rate_limit_and_burn_checks(monkeypa
     assert response.amount_alpha_rao == 0
     assert response.quote_id is None
     upload_module.subtensor_client.get_alpha_stake_availability.assert_not_awaited()
-    upload_module.get_upload_price.assert_not_awaited()
+    upload_module.get_alpha_price_usd.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -476,6 +502,7 @@ async def test_check_agent_dev_does_not_enforce_upload_cooldown(monkeypatch):
         name="test-agent",
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
+        pricing_version=2,
         set_id=1,
     )
 
@@ -497,13 +524,14 @@ async def test_check_agent_with_credit_never_falls_back_to_burn():
             name="test-agent",
             openrouter_api_key="sk-or-v1-runtime",
             openrouter_management_key="sk-or-v1-management",
+            pricing_version=2,
             use_credit=True,
             set_id=1,
         )
 
     assert exc_info.value.status_code == 402
     upload_module.subtensor_client.get_alpha_stake_availability.assert_not_awaited()
-    upload_module.get_upload_price.assert_not_awaited()
+    upload_module.get_alpha_price_usd.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -525,6 +553,7 @@ async def test_check_agent_rejects_unusable_credit(unusable: str):
             name="test-agent",
             openrouter_api_key="sk-or-v1-runtime",
             openrouter_management_key="sk-or-v1-management",
+            pricing_version=2,
             use_credit=True,
             credit_id=str(credit_id),
             set_id=1,
@@ -549,6 +578,7 @@ async def test_check_agent_rejects_banned_coldkey_before_stake_lookup():
             name="test-agent",
             openrouter_api_key="sk-or-v1-runtime",
             openrouter_management_key="sk-or-v1-management",
+            pricing_version=2,
             set_id=1,
         )
 
@@ -570,6 +600,7 @@ async def test_check_agent_owner_bypasses_coldkey_ban(monkeypatch):
         name="owner-agent",
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
+        pricing_version=2,
         set_id=1,
     )
 
@@ -580,12 +611,12 @@ async def test_check_agent_owner_bypasses_coldkey_ban(monkeypatch):
 @pytest.mark.parametrize(
     ("position_rao", "total_rao", "locked_rao", "burnable_rao"),
     [
-        (FAKE_AMOUNT_ALPHA_RAO - 1, FAKE_AMOUNT_ALPHA_RAO * 10, 0, FAKE_AMOUNT_ALPHA_RAO - 1),
+        (QUOTE_ALPHA_RAO - 1, QUOTE_ALPHA_RAO * 10, 0, QUOTE_ALPHA_RAO - 1),
         (
-            FAKE_AMOUNT_ALPHA_RAO * 10,
-            FAKE_AMOUNT_ALPHA_RAO * 10,
-            FAKE_AMOUNT_ALPHA_RAO * 10 - FAKE_AMOUNT_ALPHA_RAO + 1,
-            FAKE_AMOUNT_ALPHA_RAO - 1,
+            QUOTE_ALPHA_RAO * 10,
+            QUOTE_ALPHA_RAO * 10,
+            QUOTE_ALPHA_RAO * 10 - QUOTE_ALPHA_RAO + 1,
+            QUOTE_ALPHA_RAO - 1,
         ),
     ],
 )
@@ -621,6 +652,7 @@ async def test_check_agent_rejects_position_or_lock_limited_alpha(
             name="test-agent",
             openrouter_api_key="sk-or-v1-runtime",
             openrouter_management_key="sk-or-v1-management",
+            pricing_version=2,
             set_id=1,
         )
 
@@ -793,7 +825,7 @@ async def test_final_burn_admission_enforces_cooldown_and_rolls_back_reservation
     from fastapi import HTTPException
 
     await _call_post_agent(content=b"print('first')")
-    second_block = "0xsecond-burn"
+    second_block = "0x" + "02" * 32
 
     with pytest.raises(HTTPException) as exc_info:
         await _call_post_agent(content=b"print('second')", payment_block_hash=second_block)
@@ -817,7 +849,7 @@ async def test_final_cooldown_is_independent_across_competitions():
     second = await _call_post_agent(
         content=b"print('second')",
         set_id=2,
-        payment_block_hash="0xcross-set-burn",
+        payment_block_hash="0x" + "03" * 32,
     )
 
     assert first.status == second.status == "success"
@@ -881,9 +913,9 @@ async def test_final_upload_rejects_coldkey_banned_after_quote():
         await _call_post_agent(quote_id=quote_id)
 
     assert exc_info.value.status_code == 403
-    upload_module.subtensor_client.get_events.assert_not_awaited()
     async with _db.pool.acquire() as conn:
         assert await conn.fetchval("SELECT count(*) FROM agents") == 0
+        assert await conn.fetchval("SELECT count(*) FROM evaluation_payments") == 0
 
 
 @pytest.mark.anyio
@@ -1259,6 +1291,7 @@ async def test_preflight_requires_explicit_competition_and_honors_the_choice():
             name="test-agent",
             openrouter_api_key="sk-or-v1-runtime",
             openrouter_management_key="sk-or-v1-management",
+            pricing_version=2,
         )
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == upload_module.OUTDATED_UPLOAD_CLIENT_MESSAGE
@@ -1274,6 +1307,7 @@ async def test_preflight_requires_explicit_competition_and_honors_the_choice():
             name="test-agent",
             openrouter_api_key="sk-or-v1-runtime",
             openrouter_management_key="sk-or-v1-management",
+            pricing_version=2,
             set_id=chosen_set_id,
         )
         assert explicit.set_id == chosen_set_id
@@ -1296,13 +1330,14 @@ async def test_preflight_rejects_non_accepting_competition():
             name="test-agent",
             openrouter_api_key="sk-or-v1-runtime",
             openrouter_management_key="sk-or-v1-management",
+            pricing_version=2,
             set_id=1,
         )
     assert exc_info.value.status_code == 409
 
 
 @pytest.mark.anyio
-async def test_preflight_selection_is_pinned_when_another_competition_opens():
+async def test_preflight_selection_is_pinned_when_another_competition_opens(monkeypatch):
     preflight = await upload_module.check_agent_post(
         request=_make_request(),
         agent_file=_make_upload_file(),
@@ -1312,19 +1347,15 @@ async def test_preflight_selection_is_pinned_when_another_competition_opens():
         name="test-agent",
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
+        pricing_version=2,
         set_id=1,
     )
     assert preflight.set_id == 1
+    _move_block_time_to_now(monkeypatch)
     async with _db.pool.acquire() as conn:
         await conn.execute(
-            """
-            UPDATE upload_payment_quotes
-            SET created_at = $2, expires_at = $3
-            WHERE quote_id = $1
-            """,
+            "UPDATE upload_payment_quotes SET purchased_at = clock_timestamp(), purchase_price_usd = 5, purchase_price_alpha_rao = 2000000000 WHERE quote_id = $1",
             preflight.quote_id,
-            FAKE_BLOCK_TIME - timedelta(minutes=1),
-            FAKE_BLOCK_TIME + timedelta(minutes=15),
         )
     await _insert_competition(2, name="Two")
 
@@ -1539,7 +1570,8 @@ async def test_openapi_exposes_only_the_frozen_upload_competition_contract():
     for path in ("/upload/agent/check", "/upload/agent", "/upload/agent/ticket"):
         assert "set_id" in properties_for(path, "multipart/form-data")
 
-    assert "set_id" not in properties_for("/upload/prepare", "application/json")
+    assert "set_id" in properties_for("/upload/prepare", "application/json")
+    assert "pricing_version" in properties_for("/upload/agent/check", "multipart/form-data")
     assert "set_id" not in properties_for("/upload/ticket/check", "application/json")
 
     response_ref = schema["paths"]["/upload/agent/check"]["post"]["responses"]["200"]["content"]["application/json"][
@@ -1557,3 +1589,181 @@ async def test_openapi_exposes_only_the_frozen_upload_competition_contract():
     assert "set_id" not in prepare_response_properties
 
     assert "/upload/competitions" not in schema["paths"]
+
+
+@pytest.mark.anyio
+async def test_check_without_pricing_version_asks_for_upgrade():
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc:
+        await upload_module.check_agent_post(
+            request=_make_request(),
+            agent_file=_make_upload_file(),
+            public_key="deadbeef",
+            file_info=f"{FAKE_HOTKEY}:0",
+            signature="fakesig",
+            name="test-agent",
+            openrouter_api_key="sk-or-v1-runtime",
+            openrouter_management_key="sk-or-v1-management",
+            set_id=1,
+        )
+    assert exc.value.status_code == 400
+    assert exc.value.detail == upload_module.OUTDATED_UPLOAD_CLIENT_MESSAGE
+
+
+async def _price() -> float | None:
+    async with _db.pool.acquire() as conn:
+        return await conn.fetchval("SELECT price_usd::float8 FROM competition_upload_prices WHERE set_id = 1")
+
+
+async def _insert_fresh_bound_quote(
+    monkeypatch, *, purchased: bool = True, amount_alpha_rao: int = FAKE_AMOUNT_ALPHA_RAO
+) -> uuid.UUID:
+    now = _move_block_time_to_now(monkeypatch)
+    return await _insert_quote(
+        set_id=1,
+        created_at=now - timedelta(minutes=1),
+        expires_at=now + timedelta(minutes=14),
+        purchased=purchased,
+        amount_alpha_rao=amount_alpha_rao,
+    )
+
+
+async def _quote_row(quote_id: uuid.UUID):
+    async with _db.pool.acquire() as conn:
+        return await conn.fetchrow("SELECT * FROM upload_payment_quotes WHERE quote_id = $1", quote_id)
+
+
+@pytest.mark.anyio
+async def test_purchased_quote_redeems_exactly_once(monkeypatch):
+    quote_id = await _insert_fresh_bound_quote(monkeypatch)
+    response = await _call_post_agent(quote_id=quote_id)
+    assert response.status == "success"
+    assert response.agent_id == _derive_agent_id(f"purchase:{quote_id}", "0")
+    row = await _quote_row(quote_id)
+    assert row["redeemed_agent_id"] == response.agent_id
+    assert row["confirmed_at"] is not None, "the receipt is still confirmed as a backstop"
+    assert await _price() is None, "redemption never bumps; the purchase already did"
+    with pytest.raises(PaymentAlreadyUsedError):
+        await _call_post_agent(quote_id=quote_id, name="again", content=b"print('again')")
+
+
+@pytest.mark.anyio
+async def test_unpurchased_quote_is_refused_but_its_burn_is_confirmed(monkeypatch):
+    from fastapi import HTTPException
+
+    quote_id = await _insert_fresh_bound_quote(monkeypatch, purchased=False)
+    with pytest.raises(HTTPException) as exc:
+        await _call_post_agent(quote_id=quote_id)
+    assert (exc.value.status_code, exc.value.detail) == (402, "not_purchased")
+    row = await _quote_row(quote_id)
+    assert row["confirmed_at"] is not None and row["redeemed_agent_id"] is None
+    async with _db.pool.acquire() as conn:
+        assert await conn.fetchval("SELECT COUNT(*) FROM burn_balance_entries WHERE kind = 'burn'") == 1
+        assert await conn.fetchval("SELECT COUNT(*) FROM agents") == 0
+
+
+@pytest.mark.anyio
+async def test_purchased_quote_wrong_competition_rejected(monkeypatch):
+    from fastapi import HTTPException
+
+    await _insert_competition(2, name="Second")
+    quote_id = await _insert_fresh_bound_quote(monkeypatch)
+    with pytest.raises(HTTPException) as exc:
+        await _call_post_agent(quote_id=quote_id, set_id=2)
+    assert (exc.value.status_code, exc.value.detail) == (409, "wrong_competition")
+    assert (await _quote_row(quote_id))["redeemed_agent_id"] is None
+
+
+@pytest.mark.anyio
+async def test_failed_upload_keeps_the_prepaid_quote(monkeypatch):
+    from fastapi import HTTPException
+
+    quote_id = await _insert_fresh_bound_quote(monkeypatch)
+    monkeypatch.setattr(
+        upload_module, "check_if_python_file", MagicMock(side_effect=HTTPException(status_code=400, detail="bad file"))
+    )
+    with pytest.raises(HTTPException) as exc:
+        await _call_post_agent(quote_id=quote_id)
+    assert exc.value.status_code == 400
+    row = await _quote_row(quote_id)
+    assert row["purchased_at"] is not None and row["redeemed_agent_id"] is None
+
+
+@pytest.mark.anyio
+async def test_zero_quote_redeems_without_a_receipt(monkeypatch):
+    quote_id = await _insert_fresh_bound_quote(monkeypatch, amount_alpha_rao=0)
+    response = await _call_post_agent(quote_id=quote_id, payment_block_hash=None, payment_extrinsic_index=None)
+    assert response.status == "success"
+    assert (await _quote_row(quote_id))["redeemed_agent_id"] == response.agent_id
+
+
+@pytest.mark.anyio
+async def test_alias_receipt_cannot_fund_a_second_agent():
+    await _call_post_agent(payment_extrinsic_index="1")
+    with pytest.raises(PaymentAlreadyUsedError):
+        await _call_post_agent(name="second", payment_extrinsic_index="01", content=b"print('second')")
+
+
+@pytest.mark.anyio
+async def test_non_canonical_index_is_400():
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc:
+        await _call_post_agent(payment_extrinsic_index="+1")
+    assert exc.value.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_owner_synthetic_receipt_is_not_canonicalised():
+    response = await _call_post_agent(
+        hotkey=FAKE_OWNER_HOTKEY, name="owner-agent", payment_block_hash=uuid.uuid4().hex, payment_extrinsic_index="0"
+    )
+    assert response.status == "success"
+
+
+@pytest.mark.anyio
+async def test_redeemed_quote_replay_never_touches_s3(monkeypatch):
+    quote_id = await _insert_fresh_bound_quote(monkeypatch)
+    s3 = AsyncMock()
+    monkeypatch.setattr(upload_module, "upload_text_file_to_s3", s3)
+    await _call_post_agent(quote_id=quote_id)
+    assert s3.await_count == 1
+    with pytest.raises(PaymentAlreadyUsedError):
+        await _call_post_agent(quote_id=quote_id, name="again", content=b"print('replacement')")
+    assert s3.await_count == 1, "a rejected replay must never overwrite the admitted agent's code"
+
+
+@pytest.mark.anyio
+async def test_redemption_checks_the_ban_of_the_coldkey_that_paid(monkeypatch):
+    from fastapi import HTTPException
+
+    paying_coldkey = "5FColdKey789"
+    now = _move_block_time_to_now(monkeypatch)
+    quote_id = await _insert_quote(
+        set_id=1,
+        created_at=now - timedelta(minutes=1),
+        expires_at=now + timedelta(minutes=14),
+        purchased=True,
+        coldkey=paying_coldkey,
+        amount_alpha_rao=0,
+    )
+    await ban_coldkey(FAKE_COLDKEY, "old owner banned")
+    response = await _call_post_agent(quote_id=quote_id, payment_block_hash=None, payment_extrinsic_index=None)
+    assert response.status == "success"
+    assert response.miner_coldkey == paying_coldkey
+
+    second = await _insert_quote(
+        set_id=1,
+        created_at=now - timedelta(minutes=1),
+        expires_at=now + timedelta(minutes=14),
+        purchased=True,
+        coldkey=paying_coldkey,
+        amount_alpha_rao=0,
+    )
+    await ban_coldkey(paying_coldkey, "paying owner banned")
+    with pytest.raises(HTTPException) as exc:
+        await _call_post_agent(
+            quote_id=second, name="second", content=b"print('2')", payment_block_hash=None, payment_extrinsic_index=None
+        )
+    assert exc.value.status_code == 403

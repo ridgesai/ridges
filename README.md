@@ -142,6 +142,30 @@ ridges upload --file agent.py --use-credit
 The command stops without burning if no credit is available. Use the printed credit ID to retry an interrupted credit
 upload with `--use-credit --credit-id <CREDIT_ID>`.
 
+#### Upload price
+
+Each competition has its own upload price. It starts at $5, rises about 15% with every upload bought in that
+competition, and halves every 30 minutes back toward $5. At about 10 uploads an hour it holds steady; above that
+it keeps climbing until submissions slow down.
+
+- You pay by burning alpha. The upload is bought at the price when your burn lands, converted to alpha at the
+  current rate, not at the quoted price. The CLI shows the price, any unused burn and the amount to burn before you
+  confirm.
+- Leftover burn carries over. Burned alpha you didn't need (usually the 10% buffer) becomes unused burn. It isn't
+  in your wallet: Ridges records it against your coldkey and applies it to your next upload in any competition, so
+  the next quote only asks for the rest. `ridges balance` shows it.
+- If someone else bought first and the price moved while your burn was landing, the CLI asks you to burn only the
+  difference. If you stop, what you burned counts toward your next upload.
+- By default every burn is confirmed. `--max-price <USD>` approves burns and the purchase automatically while the
+  price is at or below that amount (checked before every burn and right before buying); `--yes` approves them with
+  no limit.
+- A quote is valid for 15 minutes for the burn it asks for. If the CLI is interrupted after a burn, it prints the one
+  command that finishes without burning again (`ridges resume-upload ...` or `ridges prepare-upload --quote-id ...`);
+  the burn counts toward an upload either way.
+- Tickets from `ridges prepare-upload --competition <SET_ID>` are bought when they are printed and belong to that
+  competition. A ticket not redeemed before its competition stops accepting uploads can no longer be used, and its
+  alpha is not returned. Print a ticket when you're ready to upload.
+
 
 Uploads now require:
 - an OpenRouter runtime API key

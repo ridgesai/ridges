@@ -17,7 +17,7 @@ KEYPAIR = Keypair.create_from_seed("0x" + "ab" * 32)
 HOTKEY = KEYPAIR.ss58_address
 OTHER_KEYPAIR = Keypair.create_from_seed("0x" + "cd" * 32)
 FAKE_COLDKEY = "5FColdKey456"
-FAKE_BLOCK_HASH = "0xdeadbeef1234"
+FAKE_BLOCK_HASH = "0x" + "de" * 32
 FAKE_EXTRINSIC_INDEX = 1
 FAKE_AMOUNT_ALPHA_RAO = 120_344_620_287_164
 FAKE_BLOCK_TIME = datetime(2026, 6, 9, 18, 0, tzinfo=timezone.utc)
@@ -137,8 +137,8 @@ async def _insert_quote(hotkey: str = HOTKEY) -> uuid.UUID:
     async with _db.pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO upload_payment_quotes (quote_id, miner_hotkey, amount_alpha_rao, created_at, expires_at)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO upload_payment_quotes (quote_id, miner_hotkey, amount_alpha_rao, created_at, expires_at, is_legacy)
+            VALUES ($1, $2, $3, $4, $5, TRUE)
             """,
             quote_id,
             hotkey,
@@ -168,14 +168,14 @@ async def _insert_credit(hotkey: str = HOTKEY, expires_at: datetime | None = Non
     return credit_id
 
 
-def _burn_ticket_blob(quote_id: uuid.UUID) -> str:
+def _burn_ticket_blob(quote_id: uuid.UUID, block_hash: str | None = FAKE_BLOCK_HASH) -> str:
     unsigned = UploadTicket(
         hotkey=HOTKEY,
         public_key=KEYPAIR.public_key.hex(),
         funding=FUNDING_BURN,
         quote_id=str(quote_id),
-        payment_block_hash=FAKE_BLOCK_HASH,
-        payment_extrinsic_index=FAKE_EXTRINSIC_INDEX,
+        payment_block_hash=block_hash,
+        payment_extrinsic_index=None if block_hash is None else FAKE_EXTRINSIC_INDEX,
     )
     return encode_ticket(sign_ticket(unsigned, KEYPAIR.sign))
 
@@ -538,3 +538,102 @@ async def test_validate_openrouter_keys_outage_stays_503(monkeypatch):
             OpenRouterKeysCheckRequest(openrouter_api_key="a", openrouter_management_key="b")
         )
     assert exc.value.status_code == 503
+
+
+async def _insert_bound_quote(
+    *,
+    purchased: bool = True,
+    confirmed: bool = True,
+    cancelled: bool = False,
+    redeemed_agent_id: uuid.UUID | None = None,
+    amount_alpha_rao: int = FAKE_AMOUNT_ALPHA_RAO,
+) -> uuid.UUID:
+    quote_id = uuid.uuid4()
+    now = datetime.now(timezone.utc)
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO upload_payment_quotes
+                (quote_id, miner_hotkey, amount_alpha_rao, created_at, expires_at, set_id, price_usd, miner_coldkey,
+                 is_legacy, confirmed_at, confirmed_payment_block_hash,
+                 confirmed_payment_extrinsic_index, cancelled_at, purchased_at, purchase_price_usd,
+                 purchase_price_alpha_rao, redeemed_agent_id)
+            VALUES ($1, $2, $3, $4, $5, 1, 5, $6, FALSE, $7, $8, $9, $10, $11, $12, $13, $14)
+            """,
+            quote_id,
+            HOTKEY,
+            amount_alpha_rao,
+            now - timedelta(minutes=1),
+            now + timedelta(minutes=14),
+            FAKE_COLDKEY,
+            now if confirmed and amount_alpha_rao else None,
+            FAKE_BLOCK_HASH if confirmed and amount_alpha_rao else None,
+            str(FAKE_EXTRINSIC_INDEX) if confirmed and amount_alpha_rao else None,
+            now if cancelled else None,
+            now if purchased else None,
+            5 if purchased else None,
+            2_000_000_000 if purchased else None,
+            redeemed_agent_id,
+        )
+    return quote_id
+
+
+async def _check(blob: str):
+    return await upload_module.check_ticket(upload_module.TicketCheckRequest(ticket=blob))
+
+
+async def test_check_purchased_ticket_is_valid_and_reports_competition():
+    quote_id = await _insert_bound_quote()
+    result = await _check(_burn_ticket_blob(quote_id))
+    assert result.valid is True
+    assert (result.set_id, result.competition_state) == (1, "open")
+
+
+async def test_check_unpurchased_ticket():
+    quote_id = await _insert_bound_quote(purchased=False)
+    result = await _check(_burn_ticket_blob(quote_id))
+    assert (result.valid, result.reason) == (False, "not_purchased")
+
+
+async def test_check_cancelled_ticket():
+    quote_id = await _insert_bound_quote(purchased=False, confirmed=False, cancelled=True)
+    result = await _check(_burn_ticket_blob(quote_id))
+    assert (result.valid, result.reason) == (False, "quote_cancelled")
+
+
+async def test_check_ticket_for_closed_competition():
+    quote_id = await _insert_bound_quote()
+    async with _db.pool.acquire() as conn:
+        await conn.execute("UPDATE competitions SET submissions_closed_at = NOW(), emissions_end_at = NOW()")
+    result = await _check(_burn_ticket_blob(quote_id))
+    assert (result.valid, result.reason, result.competition_state) == (False, "competition_not_accepting", "draining")
+
+
+async def test_check_redeemed_bound_ticket_reports_agent():
+    agent_id = uuid.uuid4()
+    quote_id = await _insert_bound_quote(redeemed_agent_id=agent_id)
+    result = await _check(_burn_ticket_blob(quote_id))
+    assert (result.valid, result.reason, result.redeemed_agent_id) == (False, "already_redeemed", agent_id)
+
+
+async def test_check_uppercase_hash_ticket_sees_redeemed_payment():
+    quote_id = await _insert_quote()
+    await _redeem(_burn_ticket_blob(quote_id))
+    result = await _check(_burn_ticket_blob(quote_id, block_hash="0x" + "DE" * 32))
+    assert (result.valid, result.reason) == (False, "already_redeemed")
+
+
+async def test_redeem_purchased_ticket_once():
+    quote_id = await _insert_bound_quote()
+    response = await _redeem(_burn_ticket_blob(quote_id))
+    assert response.status == "success"
+    with pytest.raises(HTTPException) as exc:
+        await _redeem(_burn_ticket_blob(quote_id), content=b"print('again')")
+    assert exc.value.status_code == 402
+
+
+async def test_zero_quote_ticket_without_receipt_checks_and_redeems():
+    quote_id = await _insert_bound_quote(amount_alpha_rao=0)
+    blob = _burn_ticket_blob(quote_id, block_hash=None)
+    assert (await _check(blob)).valid is True
+    assert (await _redeem(blob)).status == "success"

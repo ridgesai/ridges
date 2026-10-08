@@ -26,7 +26,7 @@ from db.models.internal_flag import (
     InternalFlag,
     InternalFlagName,  # noqa: F401
 )
-from db.models.payment import EvaluationPayment, UploadPaymentQuote
+from db.models.payment import BurnBalanceEntry, CompetitionUploadPrice, EvaluationPayment, UploadPaymentQuote
 from db.models.pre_screening_judge import PreScreeningJob, PreScreeningResult
 from db.models.refund import FailedUploadRefund
 from db.models.upload import UploadAttempt
@@ -43,6 +43,7 @@ __all__ = [
     "AgentScore",
     "ApprovedAgent",
     "BannedColdkey",
+    "BurnBalanceEntry",
     "BannedHotkey",
     "BenchmarkAgentId",
     "Embedding",
@@ -60,6 +61,7 @@ __all__ = [
     "UploadPaymentQuote",
     "Competition",
     "CompetitionAdminEvent",
+    "CompetitionUploadPrice",
     "CompetitionValidatorConcurrency",
     "CompetitionWorkCursor",
 ]
