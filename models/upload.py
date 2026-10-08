@@ -41,7 +41,6 @@ class UploadPricePurchase(BaseModel):
 
 
 class UploadPriceHistoryResponse(BaseModel):
-
     set_id: int
     price_usd: float = Field(..., description="Current price, at as_of")
     as_of: datetime
