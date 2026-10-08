@@ -505,7 +505,7 @@ async def _lock_burn_funding(conn: DatabaseConnection, funding: BurnUploadFundin
 async def _lock_purchase_funding(conn: DatabaseConnection, funding: PurchasedUploadFunding) -> None:
     row = await conn.fetchrow(
         """
-        SELECT miner_hotkey, purchased_at, refunded_at, redeemed_agent_id
+        SELECT miner_hotkey, purchased_at, redeemed_agent_id
         FROM upload_payment_quotes
         WHERE quote_id = $1
         FOR UPDATE
@@ -513,9 +513,6 @@ async def _lock_purchase_funding(conn: DatabaseConnection, funding: PurchasedUpl
         funding.quote_id,
     )
     if row is None or row["miner_hotkey"] != funding.miner_hotkey or row["purchased_at"] is None:
-        raise UploadFundingConflictError()
-
-    if row["refunded_at"] is not None:
         raise UploadFundingConflictError()
 
     if row["redeemed_agent_id"] is not None:

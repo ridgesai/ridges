@@ -41,42 +41,10 @@ async def credit_burn(conn: DatabaseConnection, *, quote_id: UUID, miner_coldkey
     )
 
 
-async def refund_stranded_purchases(conn: DatabaseConnection, miner_coldkey: str) -> None:
-    """Return purchases never redeemed before their competition stopped taking submissions. Call under lock.
-
-    A purchase is refunded to the coldkey that was debited for it, which is the balance it came from.
-    """
-    stranded = await conn.fetch(
-        """
-        UPDATE upload_payment_quotes q
-        SET refunded_at = clock_timestamp()
-        FROM competitions c, burn_balance_entries e
-        WHERE c.set_id = q.set_id
-          AND e.quote_id = q.quote_id
-          AND e.kind = 'purchase'
-          AND e.miner_coldkey = $1
-          AND q.purchased_at IS NOT NULL
-          AND q.redeemed_agent_id IS NULL
-          AND q.refunded_at IS NULL
-          AND (c.submissions_closed_at IS NOT NULL OR c.end_date IS NOT NULL)
-        RETURNING q.quote_id, q.purchase_price_alpha_rao
-        """,
-        miner_coldkey,
-    )
-    for row in stranded:
-        await conn.execute(
-            "INSERT INTO burn_balance_entries (miner_coldkey, quote_id, kind, amount_alpha_rao) VALUES ($1, $2, 'refund', $3)",
-            miner_coldkey,
-            row["quote_id"],
-            row["purchase_price_alpha_rao"],
-        )
-
-
 @db_operation
 async def get_burn_balance(conn: DatabaseConnection, miner_coldkey: str) -> int:
     async with conn.conn.transaction():
         await lock_balance(conn, miner_coldkey)
-        await refund_stranded_purchases(conn, miner_coldkey)
         return await balance_alpha_rao(conn, miner_coldkey)
 
 
@@ -112,7 +80,6 @@ async def purchase_quote(
         if await get_banned_coldkey(miner_coldkey) is not None:
             raise ColdkeyBannedError(miner_coldkey)
 
-        await refund_stranded_purchases(conn, miner_coldkey)
         balance = await balance_alpha_rao(conn, miner_coldkey)
         price = await lock_competition_price(conn, set_id)
         price_alpha_rao = exact_alpha_rao_for_usd(price.price_usd, alpha_price_usd)

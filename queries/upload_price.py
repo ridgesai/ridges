@@ -1,7 +1,7 @@
 """The live upload price of each competition.
 
 One row per competition stores the price as of its last bump; readers decay it to now.
-Only confirmed burns, settings changes and resets change the price.
+Only purchases, settings changes and resets change the price.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ async def lock_competition_price(conn: DatabaseConnection, set_id: int) -> Compe
 
 
 async def apply_bump(conn: DatabaseConnection, set_id: int) -> None:
-    """Raise the competition's price by one confirmed burn. Call inside a transaction."""
+    """Raise the competition's price by one purchase. Call inside a transaction."""
     locked = await lock_competition_price(conn, set_id)
     await conn.execute(
         "UPDATE competition_upload_prices SET price_usd = $2::float8, price_updated_at = $3 WHERE set_id = $1",
@@ -72,9 +72,7 @@ async def apply_bump(conn: DatabaseConnection, set_id: int) -> None:
     )
 
 
-@db_operation
-async def get_competition_price(conn: DatabaseConnection, set_id: int) -> Optional[CompetitionPrice]:
-    """Fetch current price. None when the competition does not exist."""
+async def _read_price(conn: DatabaseConnection, set_id: int) -> Optional[CompetitionPrice]:
     if await conn.fetchval("SELECT 1 FROM competitions WHERE set_id = $1", set_id) is None:
         return None
 
@@ -86,6 +84,52 @@ async def get_competition_price(conn: DatabaseConnection, set_id: int) -> Option
             set_id=set_id, settings=settings, price_usd=settings.floor_usd, price_updated_at=now, as_of=now
         )
     return _from_row(row, now)
+
+
+@db_operation
+async def get_competition_price(conn: DatabaseConnection, set_id: int) -> Optional[CompetitionPrice]:
+    """Fetch current price. None when the competition does not exist."""
+    return await _read_price(conn, set_id)
+
+
+@dataclass(frozen=True, slots=True)
+class PriceHistory:
+    """The current price plus the purchases a chart needs to redraw the curve since some time."""
+
+    set_id: int
+    settings: PricingSettings
+    price_usd: float
+    as_of: datetime
+    purchases: list[tuple[datetime, float]]
+
+
+@db_operation
+async def get_competition_price_history(
+    conn: DatabaseConnection, set_id: int, since: datetime
+) -> Optional[PriceHistory]:
+    current = await _read_price(conn, set_id)
+    if current is None:
+        return None
+
+    rows = await conn.fetch(
+        """
+        (SELECT purchased_at, purchase_price_usd::float8 AS price_usd FROM upload_payment_quotes
+         WHERE set_id = $1 AND purchased_at < $2 ORDER BY purchased_at DESC LIMIT 1)
+        UNION ALL
+        (SELECT purchased_at, purchase_price_usd::float8 AS price_usd FROM upload_payment_quotes
+         WHERE set_id = $1 AND purchased_at >= $2)
+        ORDER BY purchased_at
+        """,
+        set_id,
+        since,
+    )
+    return PriceHistory(
+        set_id=set_id,
+        settings=current.settings,
+        price_usd=current.price_usd,
+        as_of=current.as_of,
+        purchases=[(row["purchased_at"], row["price_usd"]) for row in rows],
+    )
 
 
 @db_operation
