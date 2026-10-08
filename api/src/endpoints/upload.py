@@ -1,7 +1,7 @@
 import hashlib
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 from uuid import UUID
 
@@ -43,6 +43,8 @@ from models.upload import (
     QuoteActionResponse,
     TicketCheckRequest,
     TicketCheckResponse,
+    UploadPriceHistoryResponse,
+    UploadPricePurchase,
     UploadPriceResponse,
 )
 from queries.agent import (
@@ -85,12 +87,13 @@ from queries.payments import (
 )
 from queries.refund import is_payment_refunded
 from queries.upload_credit import get_exact_upload_credit_replay, get_upload_credit_by_id, get_upload_credit_for_check
-from queries.upload_price import get_competition_price
+from queries.upload_price import PriceHistory, get_competition_price, get_competition_price_history
 from utils.agent_secrets import encrypt_agent_secret
 from utils.bittensor import SubtensorUnavailableError, subtensor_client
 from utils.burn_receipt import canonical_receipt
 from utils.s3 import upload_text_file_to_s3
-from utils.upload_pricing import alpha_rao_for_usd, multiplier
+from utils.ttl import ttl_cache
+from utils.upload_pricing import alpha_rao_for_usd, current_price, multiplier
 from utils.upload_ticket import (
     FUNDING_BURN,
     FUNDING_CREDIT,
@@ -1117,9 +1120,6 @@ async def check_ticket(body: TicketCheckRequest) -> TicketCheckResponse:
             if quote.cancelled_at is not None:
                 return TicketCheckResponse(valid=False, reason="quote_cancelled", **bound)
 
-            if quote.refunded_at is not None:
-                return TicketCheckResponse(valid=False, reason="purchase_refunded", **bound)
-
             if quote.purchased_at is None:
                 return TicketCheckResponse(valid=False, reason="not_purchased", **bound)
 
@@ -1213,7 +1213,7 @@ async def validate_openrouter_keys_endpoint(body: OpenRouterKeysCheckRequest) ->
 
 @router.get("/eval-pricing", tags=["eval-pricing"], response_model=UploadPriceResponse)
 async def get_upload_price(set_id: int) -> UploadPriceResponse:
-    """Current upload price of one competition. Never cached: it changes with every confirmed burn."""
+    """Current upload price of one competition. Never cached: it changes with every purchase."""
     price = await get_competition_price(set_id)
     if price is None:
         raise HTTPException(status_code=404, detail=f"Competition {set_id} not found")
@@ -1233,9 +1233,45 @@ async def get_upload_price(set_id: int) -> UploadPriceResponse:
     )
 
 
+PRICE_HISTORY_CACHE_SECONDS = 5
+
+
+async def _read_price_history(set_id: int, since: datetime) -> Optional[PriceHistory]:
+    return await get_competition_price_history(set_id, since)
+
+
+_cached_price_history = ttl_cache(ttl_seconds=PRICE_HISTORY_CACHE_SECONDS)(_read_price_history)
+
+
+@router.get("/eval-pricing/history", tags=["eval-pricing"], response_model=UploadPriceHistoryResponse)
+async def get_upload_price_history(set_id: int, since: Optional[datetime] = None) -> UploadPriceHistoryResponse:
+    if since is None:
+        since = datetime.now(timezone.utc) - timedelta(hours=1)
+
+    elif since.tzinfo is None:
+        since = since.replace(tzinfo=timezone.utc)
+
+    history = await _cached_price_history(set_id, since.replace(second=0, microsecond=0))
+    if history is None:
+        raise HTTPException(status_code=404, detail=f"Competition {set_id} not found")
+
+    now = datetime.now(timezone.utc)
+    return UploadPriceHistoryResponse(
+        set_id=set_id,
+        price_usd=current_price(
+            price_usd=history.price_usd, price_updated_at=history.as_of, settings=history.settings, now=now
+        ),
+        as_of=now,
+        floor_usd=history.settings.floor_usd,
+        half_life_minutes=history.settings.half_life_minutes,
+        multiplier=multiplier(history.settings),
+        purchases=[UploadPricePurchase(at=at, price_usd=price_usd) for at, price_usd in history.purchases],
+    )
+
+
 @router.post("/payment/confirm", tags=["upload"], response_model=QuoteActionResponse)
 async def confirm_payment(body: ConfirmPaymentRequest) -> QuoteActionResponse:
-    """Confirm a burn right after it lands. Raises the competition price once per quote; retries are safe."""
+    """Confirm a burn right after it lands. Credits the burn balance once per quote; retries are safe."""
     try:
         payment_block_hash, payment_extrinsic_index = canonical_receipt(
             body.payment_block_hash, body.payment_extrinsic_index
