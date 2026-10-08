@@ -1,9 +1,11 @@
 import asyncio
 import uuid
 
+import asyncpg
 import pytest
 
 import utils.database as db
+from db.base import Base
 from queries.burn_balance import credit_burn, get_burn_balance, purchase_quote
 from queries.competition import initialize_current_competition_policy
 from queries.errors import (
@@ -147,14 +149,29 @@ async def test_competition_not_accepting_blocks_purchase():
     assert await get_burn_balance(CK) == 4_000_000_000
 
 
-async def test_unredeemed_purchase_is_refunded_once_competition_closes():
+async def test_unredeemed_purchase_is_forfeited_once_competition_closes():
     quote_id = await _quote()
     await _credit(quote_id, BURN_RAO)
     await _purchase(quote_id)
     assert await get_burn_balance(CK) == BURN_RAO - PRICE_RAO
     async with db.pool.acquire() as conn:
         await conn.execute("UPDATE competitions SET submissions_closed_at = NOW(), emissions_end_at = NOW()")
-    assert await get_burn_balance(CK) == BURN_RAO
-    assert await get_burn_balance(CK) == BURN_RAO
+    assert await get_burn_balance(CK) == BURN_RAO - PRICE_RAO, "a ticket is only good in its own competition"
+
+
+async def test_schema_and_orm_keep_no_refund_state():
+    """Unredeemed purchases are forfeited, so neither the schema nor the ORM records refunds."""
+    quote_id = await _quote()
     async with db.pool.acquire() as conn:
-        assert await conn.fetchval("SELECT refunded_at FROM upload_payment_quotes WHERE quote_id = $1", quote_id)
+        columns = await conn.fetch(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'upload_payment_quotes'"
+        )
+        assert "refunded_at" not in {row["column_name"] for row in columns}
+        with pytest.raises(asyncpg.CheckViolationError):
+            await conn.execute(
+                "INSERT INTO burn_balance_entries (miner_coldkey, quote_id, kind, amount_alpha_rao) "
+                "VALUES ($1, $2, 'refund', 1)",
+                CK,
+                quote_id,
+            )
+    assert "refunded_at" not in Base.metadata.tables["upload_payment_quotes"].columns

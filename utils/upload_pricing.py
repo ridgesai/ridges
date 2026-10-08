@@ -1,9 +1,9 @@
 """Dynamic upload pricing.
 
 Each competition has one price.
-Every confirmed burn multiplies it by `multiplier(settings)`, and between
-burns it halves every `half_life_minutes`, never below `floor_usd`.
-The multiplier is chosen so that `target_per_hour` burns an hour exactly cancel the decay.
+Every purchase multiplies it by `multiplier(settings)`, and between
+purchases it halves every `half_life_minutes`, never below `floor_usd`.
+The multiplier is chosen so that `target_per_hour` purchases an hour exactly cancel the decay.
 """
 
 from __future__ import annotations

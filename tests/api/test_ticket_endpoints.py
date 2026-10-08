@@ -545,7 +545,6 @@ async def _insert_bound_quote(
     purchased: bool = True,
     confirmed: bool = True,
     cancelled: bool = False,
-    refunded: bool = False,
     redeemed_agent_id: uuid.UUID | None = None,
     amount_alpha_rao: int = FAKE_AMOUNT_ALPHA_RAO,
 ) -> uuid.UUID:
@@ -558,8 +557,8 @@ async def _insert_bound_quote(
                 (quote_id, miner_hotkey, amount_alpha_rao, created_at, expires_at, set_id, price_usd, miner_coldkey,
                  is_legacy, confirmed_at, confirmed_payment_block_hash,
                  confirmed_payment_extrinsic_index, cancelled_at, purchased_at, purchase_price_usd,
-                 purchase_price_alpha_rao, refunded_at, redeemed_agent_id)
-            VALUES ($1, $2, $3, $4, $5, 1, 5, $6, FALSE, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                 purchase_price_alpha_rao, redeemed_agent_id)
+            VALUES ($1, $2, $3, $4, $5, 1, 5, $6, FALSE, $7, $8, $9, $10, $11, $12, $13, $14)
             """,
             quote_id,
             HOTKEY,
@@ -574,7 +573,6 @@ async def _insert_bound_quote(
             now if purchased else None,
             5 if purchased else None,
             2_000_000_000 if purchased else None,
-            now if refunded else None,
             redeemed_agent_id,
         )
     return quote_id
@@ -609,12 +607,6 @@ async def test_check_ticket_for_closed_competition():
         await conn.execute("UPDATE competitions SET submissions_closed_at = NOW(), emissions_end_at = NOW()")
     result = await _check(_burn_ticket_blob(quote_id))
     assert (result.valid, result.reason, result.competition_state) == (False, "competition_not_accepting", "draining")
-
-
-async def test_check_refunded_purchase():
-    quote_id = await _insert_bound_quote(refunded=True)
-    result = await _check(_burn_ticket_blob(quote_id))
-    assert (result.valid, result.reason) == (False, "purchase_refunded")
 
 
 async def test_check_redeemed_bound_ticket_reports_agent():
