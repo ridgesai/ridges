@@ -79,7 +79,6 @@ class UploadPaymentQuote(Base, CreatedAtMixin):
     purchase_price_usd: Mapped[Optional[Decimal]] = mapped_column(sa.Numeric(), nullable=True)
     purchase_price_alpha_rao: Mapped[Optional[int]] = mapped_column(sa.BigInteger, nullable=True)
     redeemed_agent_id: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
-    refunded_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=True)
 
     __table_args__ = (
         sa.CheckConstraint(
@@ -90,7 +89,6 @@ class UploadPaymentQuote(Base, CreatedAtMixin):
             "(purchased_at IS NULL) = (purchase_price_usd IS NULL) "
             "AND (purchased_at IS NULL) = (purchase_price_alpha_rao IS NULL) "
             "AND (redeemed_agent_id IS NULL OR purchased_at IS NOT NULL) "
-            "AND (refunded_at IS NULL OR (purchased_at IS NOT NULL AND redeemed_agent_id IS NULL)) "
             "AND NOT (purchased_at IS NOT NULL AND cancelled_at IS NOT NULL)",
             name="ck_upload_payment_quotes_purchase",
         ),
@@ -151,7 +149,7 @@ class CompetitionUploadPrice(Base):
 
 
 class BurnBalanceEntry(Base):
-    """Append-only ledger of a coldkey's burn balance: burns and refunds credit, purchases debit."""
+    """Append-only ledger of a coldkey's burn balance: burns credit, purchases debit."""
 
     __tablename__ = "burn_balance_entries"
 
@@ -170,7 +168,7 @@ class BurnBalanceEntry(Base):
 
     __table_args__ = (
         sa.UniqueConstraint("quote_id", "kind", name="uq_burn_balance_entries_quote_kind"),
-        sa.CheckConstraint("kind IN ('burn', 'purchase', 'refund')", name="ck_burn_balance_entries_kind"),
+        sa.CheckConstraint("kind IN ('burn', 'purchase')", name="ck_burn_balance_entries_kind"),
         sa.CheckConstraint(
             "(kind = 'purchase' AND amount_alpha_rao < 0) OR (kind <> 'purchase' AND amount_alpha_rao > 0)",
             name="ck_burn_balance_entries_sign",

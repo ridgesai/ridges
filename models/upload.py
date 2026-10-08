@@ -35,6 +35,24 @@ class UploadPriceResponse(BaseModel):
     as_of: datetime = Field(..., description="Time price_usd was computed for")
 
 
+class UploadPricePurchase(BaseModel):
+    at: datetime
+    price_usd: float = Field(..., description="Price the purchase was charged")
+
+
+class UploadPriceHistoryResponse(BaseModel):
+
+    set_id: int
+    price_usd: float = Field(..., description="Current price, at as_of")
+    as_of: datetime
+    floor_usd: float
+    half_life_minutes: float
+    multiplier: float
+    purchases: list[UploadPricePurchase] = Field(
+        ..., description="Purchases since `since`, oldest first, led by the last one before it"
+    )
+
+
 class AgentCheckResponse(UploadStatusResponse):
     """Response model for successful agent upload preflight checks"""
 
@@ -86,7 +104,7 @@ class TicketCheckResponse(BaseModel):
         description=(
             "Why the ticket is not redeemable: malformed_ticket, invalid_signature, owner_not_allowed, "
             "unknown_quote, already_redeemed, refunded, unknown_credit, credit_revoked, credit_expired, "
-            "not_purchased, purchase_refunded, quote_cancelled, competition_not_accepting"
+            "not_purchased, quote_cancelled, competition_not_accepting"
         ),
     )
     hotkey: Optional[str] = Field(None, description="Hotkey the ticket is bound to")
