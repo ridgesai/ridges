@@ -4,39 +4,49 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shlex
 import sys
-import time
 import uuid as _uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 import httpx
-from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.prompt import Confirm, Prompt
+from rich.prompt import Prompt
+from rich.table import Table
 
 from miners.cli.click_ext import click, format_help
-from utils.burn_receipt import canonical_receipt
+from miners.cli.commands.upload_payment import (
+    PRICING_HELP,
+    PRICING_HELP_CONFIG,
+    UPLOAD_TIMEOUT_SECONDS,
+    AutoApproval,
+    PaymentReceipt,
+    PurchaseSummary,
+    _confirm_burn,
+    _fund_and_purchase,
+    _purchase_quote,
+    _resolve_resume_receipt,
+    _Steps,
+    console,
+    help_section,
+    max_price_option,
+    yes_option,
+)
 from utils.upload_ticket import (
     FUNDING_BURN,
     FUNDING_CREDIT,
     UploadTicket,
-    cancel_signing_string,
-    confirm_signing_string,
     encode_ticket,
-    purchase_signing_string,
     sign_ticket,
 )
 
-console = Console()
 DEFAULT_API_BASE_URL = "https://agent-upload.ridges.ai"
-UPLOAD_TIMEOUT_SECONDS = 120
 MAX_AGENT_FILE_SIZE_BYTES = 2 * 1024 * 1024
 PRICING_VERSION = 2
-MIN_QUOTE_SECONDS_BEFORE_BURN = 180
+
 
 if TYPE_CHECKING:
     from bittensor_wallet.wallet import Wallet
@@ -57,15 +67,6 @@ class PendingUpload:
     file_info: str
     public_key: str
     signature: str
-
-
-@dataclass(frozen=True, slots=True)
-class PaymentReceipt:
-    """A burn receipt. Both receipt fields are None when the burn balance covered the quote and nothing was burned."""
-
-    block_hash: Optional[str]
-    extrinsic_index: Optional[int]
-    quote_id: Optional[str] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,17 +118,33 @@ def _read_upload_target(api_url: str, path_str: str) -> UploadTarget:
     )
 
 
-def _print_upload_preview(*, hotkey: str, target: UploadTarget) -> None:
-    console.print(
-        Panel(
-            f"[bold cyan]Uploading Agent[/bold cyan]\n"
-            f"[yellow]Hotkey:[/yellow] {hotkey}\n"
-            f"[yellow]File:[/yellow] {target.agent_path}\n"
-            f"[yellow]API:[/yellow] {target.api_url}",
-            title="Upload",
-            border_style="cyan",
-        )
+def _print_upload_preview(*, hotkey: str, target: UploadTarget, set_id: Optional[int] = None) -> None:
+    _print_header(
+        "Upload" if set_id is None else f"Upload · Competition {set_id}",
+        [
+            ("Agent", f"{target.agent_path} ({len(target.file_content) / 1024:,.0f} KB)"),
+            ("Hotkey", hotkey),
+            ("API", target.api_url),
+            ("Network", os.environ.get("SUBTENSOR_NETWORK", "finney")),
+        ],
     )
+
+
+def _resume_command_builder(api_url: str, subcommand: str, *extra: str) -> Callable[..., str]:
+    """Build the copy-paste command that finishes a funded upload, with the receipt when one exists."""
+    base = ["ridges"] if api_url == DEFAULT_API_BASE_URL else ["ridges", "--url", shlex.quote(api_url)]
+
+    def build(quote_id: str, block_hash: Optional[str] = None, extrinsic_index: object = None) -> str:
+        parts = [*base, subcommand, "--quote-id", quote_id]
+        if block_hash is not None:
+            parts += ["--payment-block-hash", str(block_hash), "--payment-extrinsic-index", str(extrinsic_index)]
+        return " ".join([*parts, *extra])
+
+    return build
+
+
+def _wallet_args(wallet) -> list[str]:
+    return ["--coldkey-name", shlex.quote(str(wallet.name)), "--hotkey-name", shlex.quote(str(wallet.hotkey_str))]
 
 
 def _get_upload_competitions(client: httpx.Client, *, api_url: str) -> list[dict]:
@@ -286,256 +303,14 @@ def _check_upload_allowed(
     return response.json()
 
 
-def _unlock_coldkey(wallet) -> None:
-    """Unlock the coldkey, re-prompting on incorrect password."""
-    from bittensor_wallet.errors import KeyFileError, PasswordError
-
-    while True:
-        try:
-            wallet.unlock_coldkey()
-            return
-        except PasswordError:
-            console.print("[bold red]Failed:[/bold red] The password used to decrypt your Coldkey keyfile is invalid.")
-        except KeyFileError as exc:
-            raise click.ClickException(str(exc)) from exc
-
-
-def _confirm_payment(payment_method_details: dict) -> bool:
-    amount_alpha = payment_method_details["amount_alpha_rao"] / 1e9
-    payment_netuid = payment_method_details["payment_netuid"]
-    price_usd = payment_method_details.get("price_usd")
-    balance_alpha = (payment_method_details.get("balance_alpha_rao") or 0) / 1e9
-    if price_usd is not None:
-        console.print(
-            f"\n[cyan]Upload price:[/cyan] ${price_usd:,.2f} (your burn balance: {balance_alpha:,.4f} alpha). "
-            "The price rises with each purchased upload in this competition and falls back over time."
-        )
-    console.print(f"[cyan]Payment Quote ID:[/cyan] {payment_method_details['quote_id']}")
-    confirm_payment = Prompt.ask(
-        (
-            f"\n[bold yellow]Proceed with an IRREVERSIBLE burn of {amount_alpha:,.4f} alpha "
-            f"({payment_method_details['amount_alpha_rao']} rao) "
-            f"on SN{payment_netuid}?[/bold yellow]"
-        ),
-        choices=["y", "n"],
-        default="n",
-    )
-    return confirm_payment.lower() == "y"
-
-
-def _submit_eval_payment(*, wallet, payment_method_details: dict) -> PaymentReceipt:
-    from bittensor import Subtensor
-
-    subtensor = Subtensor(network=os.environ.get("SUBTENSOR_NETWORK", "finney"))
-    payment_payload = subtensor.substrate.compose_call(
-        call_module="SubtensorModule",
-        call_function="burn_alpha",
-        call_params={
-            "hotkey": wallet.hotkey.ss58_address,
-            "amount": payment_method_details["amount_alpha_rao"],
-            "netuid": payment_method_details["payment_netuid"],
-        },
-    )
-
-    payment_extrinsic = subtensor.substrate.create_signed_extrinsic(
-        call=payment_payload,
-        keypair=wallet.coldkey,
-    )
-    receipt = subtensor.substrate.submit_extrinsic(payment_extrinsic, wait_for_finalization=True)
-    if not receipt.is_success:
-        error_message = receipt.error_message or "Unknown chain error"
-        raise click.ClickException(f"Alpha burn failed on-chain: {error_message}")
-
-    return PaymentReceipt(
-        block_hash=receipt.block_hash,
-        extrinsic_index=receipt.extrinsic_idx,
-        quote_id=payment_method_details["quote_id"],
-    )
-
-
-def _print_payment_receipt(receipt: PaymentReceipt) -> None:
-    console.print(
-        "\n[yellow]Burn extrinsic submitted. This fee is not refundable and burns are irreversible; "
-        "if the upload fails, use this info with `ridges resume-upload` to retry[/yellow]"
-    )
-    if receipt.quote_id:
-        console.print(f"[cyan]Payment Quote ID:[/cyan] {receipt.quote_id}")
-    console.print(f"[cyan]Payment Block Hash:[/cyan] {receipt.block_hash}")
-    console.print(f"[cyan]Payment Extrinsic Index:[/cyan] {receipt.extrinsic_index}\n")
-    if receipt.quote_id:
-        console.print(
-            "[yellow]To resume: ridges resume-upload "
-            f"--quote-id {receipt.quote_id} --payment-block-hash {receipt.block_hash} "
-            f"--payment-extrinsic-index {receipt.extrinsic_index}[/yellow]\n"
-        )
-
-
-def _quote_seconds_left(payment_method_details: dict) -> float:
-    expires_at = payment_method_details.get("expires_at")
-    if not expires_at:
-        return float("inf")
-    expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
-    return (expiry - datetime.now(timezone.utc)).total_seconds()
-
-
-def _cancel_quote(client: httpx.Client, *, api_url: str, wallet, quote_id: str) -> None:
-    """Release a quote that was not burned for. Best effort: an unreleased quote expires on its own."""
-    hotkey = wallet.hotkey.ss58_address
-    body = {
-        "hotkey": hotkey,
-        "public_key": wallet.hotkey.public_key.hex(),
-        "signature": wallet.hotkey.sign(cancel_signing_string(hotkey, quote_id)).hex(),
-    }
-    try:
-        client.post(f"{api_url}/upload/quote/{quote_id}/cancel", json=body, timeout=UPLOAD_TIMEOUT_SECONDS)
-    except httpx.HTTPError as exc:
-        console.print(f"[yellow]Could not release quote {quote_id}: {exc}. It expires on its own.[/yellow]")
-
-
-def _ensure_quote_fresh(client: httpx.Client, *, api_url: str, wallet, payment_method_details: dict) -> None:
-    """Never burn against a quote that could expire before the burn lands."""
-    if _quote_seconds_left(payment_method_details) < MIN_QUOTE_SECONDS_BEFORE_BURN:
-        _cancel_quote(client, api_url=api_url, wallet=wallet, quote_id=payment_method_details["quote_id"])
-        raise click.ClickException(
-            "The quote expires in under 3 minutes, so it was cancelled and nothing was burned. Run the command again."
-        )
-
-
-def _purchase_quote(client: httpx.Client, *, api_url: str, wallet, quote_id: str) -> Optional[dict]:
-    """Buy the upload from the burn balance. Returns None when bought, or the shortfall detail when the balance is short."""
-    hotkey = wallet.hotkey.ss58_address
-    body = {
-        "hotkey": hotkey,
-        "public_key": wallet.hotkey.public_key.hex(),
-        "signature": wallet.hotkey.sign(purchase_signing_string(hotkey, quote_id)).hex(),
-    }
-    try:
-        response = client.post(f"{api_url}/upload/quote/{quote_id}/purchase", json=body, timeout=UPLOAD_TIMEOUT_SECONDS)
-    except httpx.HTTPError as exc:
-        raise click.ClickException(f"Could not purchase the upload: {exc}. Your burn is saved as balance.") from exc
-
-    if response.status_code == 200:
-        return None
-
-    if response.status_code == 402:
-        detail = response.json().get("detail")
-        if isinstance(detail, dict) and detail.get("code") == "insufficient_balance":
-            return detail
-    raise click.ClickException(f"Purchase failed ({response.status_code}): {response.text}")
-
-
-def _fund_and_purchase(
-    client: httpx.Client, *, api_url: str, wallet, details: dict, request_quote, resume_hint: str
-) -> Optional[PaymentReceipt]:
-    """Burn the quoted gap (if any), confirm it, and buy the upload; repeat with a fresh quote while the price
-    moves ahead of the balance. Returns the last receipt, or None when the miner stopped."""
-    receipt: Optional[PaymentReceipt] = None
-    unlocked = False
-    while True:
-        quote_id = details["quote_id"]
-        if details.get("amount_alpha_rao", 0) > 0:
-            if not unlocked:
-                _unlock_coldkey(wallet)
-                unlocked = True
-
-            if not _confirm_payment(details):
-                _cancel_quote(client, api_url=api_url, wallet=wallet, quote_id=quote_id)
-                console.print("[bold red]Payment cancelled by user.[/bold red]")
-                if receipt is not None:
-                    console.print("[yellow]Your earlier burn stays in your balance for any future upload.[/yellow]")
-                return None
-
-            _ensure_quote_fresh(client, api_url=api_url, wallet=wallet, payment_method_details=details)
-            try:
-                receipt = _submit_eval_payment(wallet=wallet, payment_method_details=details)
-            except BaseException:
-                console.print(
-                    "[bold red]The burn submission failed or its confirmation was interrupted. "
-                    "It may still have landed on-chain.[/bold red]\n"
-                    f"[yellow]Keep this Payment Quote ID:[/yellow] {quote_id}\n"
-                    "[yellow]If the burn appears in your wallet/explorer history, resume without burning again:[/yellow]\n"
-                    f"  {resume_hint.format(quote_id=quote_id)}"
-                )
-                raise
-
-            _print_payment_receipt(receipt)
-            _confirm_burn(client, api_url=api_url, wallet=wallet, receipt=receipt)
-        else:
-            console.print(
-                f"[cyan]Your burn balance ({(details.get('balance_alpha_rao') or 0) / 1e9:,.4f} alpha) covers the "
-                f"${details.get('price_usd', 0):,.2f} upload price; nothing to burn.[/cyan]"
-            )
-            console.print(f"[cyan]Payment Quote ID:[/cyan] {quote_id} (resume with `--quote-id` alone if interrupted)")
-            receipt = PaymentReceipt(block_hash=None, extrinsic_index=None, quote_id=quote_id)
-
-        shortfall = _purchase_quote(client, api_url=api_url, wallet=wallet, quote_id=quote_id)
-        if shortfall is None:
-            return receipt
-
-        console.print(
-            f"[yellow]The price moved to ${shortfall['price_usd']:,.2f} before your purchase landed; "
-            f"your balance is {shortfall['balance_alpha_rao'] / 1e9:,.4f} alpha, "
-            f"{shortfall['shortfall_alpha_rao'] / 1e9:,.4f} alpha short.[/yellow]"
-        )
-        if receipt.block_hash is None:
-            _cancel_quote(client, api_url=api_url, wallet=wallet, quote_id=quote_id)
-
-        if not Confirm.ask("Burn the difference and continue?", default=True):
-            console.print("[yellow]Stopped. Your balance stays on your coldkey for any future upload.[/yellow]")
-            return None
-        details = request_quote()
-
-
-def _resolve_resume_receipt(
-    quote_id: Optional[str], payment_block_hash: Optional[str], payment_extrinsic_index: Optional[int]
-) -> tuple[str, Optional[str], Optional[int]]:
-    """Resume inputs: a quote id, plus the receipt when something was burned for it."""
-    if quote_id is None:
-        quote_id = Prompt.ask("Payment Quote ID")
-        if payment_block_hash is None:
-            payment_block_hash = (
-                Prompt.ask("Payment Block Hash (leave empty if nothing was burned)", default="") or None
-            )
-
-    if payment_block_hash is not None and payment_extrinsic_index is None:
-        try:
-            payment_extrinsic_index = int(Prompt.ask("Payment Extrinsic Index"))
-        except ValueError:
-            raise click.ClickException("Payment Extrinsic Index must be an integer") from None
-
-    if payment_block_hash is None and payment_extrinsic_index is not None:
-        raise click.ClickException("--payment-extrinsic-index needs --payment-block-hash")
-    return quote_id, payment_block_hash, payment_extrinsic_index
-
-
-def _confirm_burn(client: httpx.Client, *, api_url: str, wallet, receipt: PaymentReceipt, attempts: int = 3) -> None:
-    """Report a burn right after it lands. Safe to retry: the server confirms each quote once."""
-    try:
-        block_hash, extrinsic_index = canonical_receipt(receipt.block_hash, receipt.extrinsic_index)
-    except ValueError as exc:
-        raise click.ClickException(str(exc)) from exc
-    hotkey = wallet.hotkey.ss58_address
-    message = confirm_signing_string(hotkey, receipt.quote_id, block_hash, extrinsic_index)
-    body = {
-        "quote_id": receipt.quote_id,
-        "payment_block_hash": block_hash,
-        "payment_extrinsic_index": int(extrinsic_index),
-        "hotkey": hotkey,
-        "public_key": wallet.hotkey.public_key.hex(),
-        "signature": wallet.hotkey.sign(message).hex(),
-    }
-    for attempt in range(1, attempts + 1):
-        try:
-            response = client.post(f"{api_url}/upload/payment/confirm", json=body, timeout=UPLOAD_TIMEOUT_SECONDS)
-        except httpx.HTTPError as exc:
-            if attempt == attempts:
-                raise click.ClickException(f"Could not confirm the burn: {exc}") from exc
-        else:
-            if response.status_code == 200:
-                return
-            if response.status_code < 500 or attempt == attempts:
-                raise click.ClickException(f"Burn confirmation failed ({response.status_code}): {response.text}")
-        time.sleep(2 * attempt)
+def _print_header(title: str, rows: list[tuple[str, str]]) -> None:
+    console.print()
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="cyan")
+    grid.add_column()
+    for label, value in rows:
+        grid.add_row(label, value)
+    console.print(Panel(grid, title=title, title_align="left", border_style="cyan"))
 
 
 def _print_credit_receipt(receipt: CreditReceipt) -> None:
@@ -622,16 +397,14 @@ def _submit_upload(client: httpx.Client, *, target: UploadTarget, payload: dict[
         )
 
 
-def _handle_upload_result(response: httpx.Response, *, name: str) -> None:
+def _handle_upload_result(response: httpx.Response, *, name: str, purchase: Optional[PurchaseSummary] = None) -> None:
     if response.status_code == 200:
         message = response.json().get("message") or f"Miner '{name}' uploaded successfully!"
-        console.print(
-            Panel(
-                f"[bold green]Upload Complete[/bold green]\n[cyan]{message}[/cyan]",
-                title="Success",
-                border_style="green",
-            )
-        )
+        body = f"[bold green]Upload complete[/bold green]\n[cyan]{message}[/cyan]"
+        if purchase is not None:
+            body += "\n\n" + "\n".join(purchase.lines())
+        console.print()
+        console.print(Panel(body, title="Success", title_align="left", border_style="green"))
         return
 
     error = (
@@ -674,6 +447,7 @@ def _execute_upload(
     pending: Optional[PendingUpload] = None,
     run_check: bool = True,
     emit_ticket_on_failure: bool = False,
+    purchase: Optional[PurchaseSummary] = None,
 ) -> None:
     """Shared post-payment upload steps used by both upload and resume-upload.
 
@@ -699,7 +473,7 @@ def _execute_upload(
     payload = _upload_payload(pending=pending, receipt=receipt, credentials=credentials, set_id=set_id)
     try:
         response = _submit_upload(client, target=target, payload=payload)
-        _handle_upload_result(response, name=pending.name)
+        _handle_upload_result(response, name=pending.name, purchase=purchase)
     except Exception:
         # Catches click.ClickException, httpx.HTTPError (timeouts, disconnects, DNS), and
         # malformed response bodies (JSONDecodeError/ValueError/AttributeError from
@@ -757,17 +531,23 @@ def _resolve_wallet_and_target(
 @click.command(
     short_help="Upload a miner agent to Ridges.",
     help=format_help(
-        "Upload a local agent.py to the Ridges API to enter the competition. "
-        "Uploads require both an OpenRouter runtime API key and an OpenRouter management key.",
+        "Upload a local agent.py to enter a competition.\n\n"
+        + help_section("Uploads need an OpenRouter runtime API key and an OpenRouter management key.")
+        + "\n\n"
+        + PRICING_HELP,
         "ridges upload --file agent.py",
+        "ridges upload --file agent.py --competition 29 --max-price 50",
         "ridges upload --file agent.py --use-credit",
         "ridges upload --file agent.py --coldkey-name miner --hotkey-name default",
     ),
 )
+@click.rich_config(help_config=PRICING_HELP_CONFIG)
 @click.option("--file", help="Path to agent.py file")
 @click.option("--coldkey-name", help="Coldkey name")
 @click.option("--hotkey-name", help="Hotkey name")
 @click.option("--competition", type=int, help="Competition set ID to enter.")
+@max_price_option
+@yes_option
 @click.option("--use-credit", is_flag=True, help="Use a one-shot upload credit instead of burning alpha.")
 @click.option("--credit-id", help="Specific upload credit ID to retry. Requires --use-credit.")
 @click.option(
@@ -785,6 +565,8 @@ def upload(
     coldkey_name: Optional[str],
     hotkey_name: Optional[str],
     competition: Optional[int],
+    max_price: Optional[float],
+    assume_yes: bool,
     use_credit: bool,
     credit_id: Optional[str],
     openrouter_api_key: Optional[str],
@@ -793,6 +575,8 @@ def upload(
     """Upload a miner agent to the Ridges API."""
     if credit_id is not None and not use_credit:
         raise click.ClickException("--credit-id requires --use-credit")
+    if use_credit and (max_price is not None or assume_yes):
+        raise click.ClickException("--max-price and --yes approve new burns; they don't apply to --use-credit")
 
     wallet, target = _resolve_wallet_and_target(ctx, file=file, coldkey_name=coldkey_name, hotkey_name=hotkey_name)
     try:
@@ -812,16 +596,19 @@ def upload(
                 openrouter_api_key=openrouter_api_key,
                 openrouter_management_key=openrouter_management_key,
             )
-            _print_upload_preview(hotkey=wallet.hotkey.ss58_address, target=target)
-            payment_method_details = _check_upload_allowed(
-                client,
-                target=target,
-                pending=pending,
-                credentials=credentials,
-                set_id=selected_set_id,
-                use_credit=use_credit,
-                credit_id=credit_id,
-            )
+            _print_upload_preview(hotkey=wallet.hotkey.ss58_address, target=target, set_id=selected_set_id)
+            with _Steps() as steps:
+                steps.start("Checking your agent and OpenRouter keys")
+                payment_method_details = _check_upload_allowed(
+                    client,
+                    target=target,
+                    pending=pending,
+                    credentials=credentials,
+                    set_id=selected_set_id,
+                    use_credit=use_credit,
+                    credit_id=credit_id,
+                )
+                steps.done("Agent and OpenRouter keys checked")
             preflight_set_id = payment_method_details.get("set_id")
             if type(preflight_set_id) is not int:
                 raise click.ClickException("Server did not return the selected competition; no payment was attempted")
@@ -835,9 +622,10 @@ def upload(
                 ):
                     raise click.ClickException("Server did not provide an upload credit; no burn was attempted")
                 receipt = CreditReceipt(credit_id=payment_method_details["credit_id"])
+                purchase = None
                 _print_credit_receipt(receipt)
             else:
-                receipt = _fund_and_purchase(
+                purchase = _fund_and_purchase(
                     client,
                     api_url=target.api_url,
                     wallet=wallet,
@@ -845,13 +633,22 @@ def upload(
                     request_quote=lambda: _check_upload_allowed(
                         client, target=target, pending=pending, credentials=credentials, set_id=selected_set_id
                     ),
-                    resume_hint=(
-                        "ridges resume-upload --quote-id {quote_id} --payment-block-hash <hash> "
-                        "--payment-extrinsic-index <index>"
+                    resume_command=_resume_command_builder(
+                        target.api_url,
+                        "resume-upload",
+                        "--file",
+                        shlex.quote(str(target.agent_path)),
+                        "--competition",
+                        str(selected_set_id),
+                        *_wallet_args(wallet),
                     ),
+                    set_id=selected_set_id,
+                    help_command="ridges upload",
+                    approval=AutoApproval(max_price_usd=max_price, assume_yes=assume_yes),
                 )
-                if receipt is None:
+                if purchase is None:
                     return
+                receipt = purchase.receipt
 
             _execute_upload(
                 client,
@@ -863,6 +660,7 @@ def upload(
                 pending=pending,
                 run_check=False,
                 emit_ticket_on_failure=True,
+                purchase=purchase,
             )
 
     except click.ClickException:
@@ -1001,10 +799,10 @@ def resume_upload(
             shortfall = _purchase_quote(client, api_url=api_url, wallet=wallet, quote_id=quote_id)
             if shortfall is not None:
                 raise click.ClickException(
-                    f"Your balance ({shortfall['balance_alpha_rao'] / 1e9:,.4f} alpha) is "
+                    f"Your unused burn ({shortfall['balance_alpha_rao'] / 1e9:,.4f} alpha) is "
                     f"{shortfall['shortfall_alpha_rao'] / 1e9:,.4f} alpha short of "
-                    f"the ${shortfall['price_usd']:,.2f} upload price. Your burn is saved as balance; run "
-                    "`ridges upload` to top up and finish."
+                    f"the ${shortfall['price_usd']:,.2f} upload price. Nothing is lost: run "
+                    "`ridges upload` to burn the difference and finish."
                 )
 
             target = _resolve_target(api_url, file)
@@ -1044,7 +842,7 @@ def resume_upload(
 
 
 @click.command(
-    short_help="Show your burn balance.",
+    short_help="Show your unused burn.",
     help=format_help(
         "Show the alpha you burned that has not yet bought an upload. It is spent automatically on your next "
         "upload in any competition.",
@@ -1063,4 +861,4 @@ def balance(ctx, coldkey_name: Optional[str], hotkey_name: Optional[str]):
         response = client.get(f"{api_url}/upload/balance", params={"coldkey": coldkey}, timeout=UPLOAD_TIMEOUT_SECONDS)
     if response.status_code != 200:
         raise click.ClickException(f"Could not read the balance: {response.text}")
-    console.print(f"[cyan]Burn balance for {coldkey}:[/cyan] {response.json()['balance_alpha_rao'] / 1e9:,.4f} alpha")
+    console.print(f"[cyan]Unused burn for {coldkey}:[/cyan] {response.json()['balance_alpha_rao'] / 1e9:,.4f} alpha")
