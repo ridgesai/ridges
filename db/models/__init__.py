@@ -17,6 +17,9 @@ from db.models.competition import (
     CompetitionAdminEvent,
     CompetitionValidatorConcurrency,
     CompetitionWorkCursor,
+    ValidatorCompetitionAllowlist,
+    ValidatorCompetitionAllowlistEntry,
+    ValidatorCompetitionLastServed,
 )
 from db.models.evaluation import ApprovedAgent, Evaluation
 from db.models.evaluation_run import EvaluationRun, EvaluationRunLog
@@ -64,4 +67,7 @@ __all__ = [
     "CompetitionUploadPrice",
     "CompetitionValidatorConcurrency",
     "CompetitionWorkCursor",
+    "ValidatorCompetitionAllowlist",
+    "ValidatorCompetitionAllowlistEntry",
+    "ValidatorCompetitionLastServed",
 ]

@@ -32,6 +32,7 @@ class Competition(Base, CreatedAtMixin):
         nullable=False,
         server_default=sa.text("0"),
     )
+    validator_scheduling_mode: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default=sa.text("'normal'"))
     scoring_mode: Mapped[Optional[str]] = mapped_column(sa.Text)
     screener_1_threshold: Mapped[Optional[Decimal]] = mapped_column(sa.Numeric())
     screener_2_threshold: Mapped[Optional[Decimal]] = mapped_column(sa.Numeric())
@@ -48,6 +49,10 @@ class Competition(Base, CreatedAtMixin):
     incentive_time_multiplier_scale_hours: Mapped[Optional[Decimal]] = mapped_column(sa.Numeric())
 
     __table_args__ = (
+        sa.CheckConstraint(
+            "validator_scheduling_mode IN ('disabled', 'normal', 'prioritized')",
+            name="ck_competitions_validator_scheduling_mode",
+        ),
         sa.CheckConstraint(
             "raw_emission_weight BETWEEN 0 AND 1 "
             "AND raw_emission_weight NOT IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)",
@@ -158,7 +163,8 @@ class CompetitionAdminEvent(Base, CreatedAtMixin):
 
     __table_args__ = (
         sa.CheckConstraint(
-            "operation IN ('state', 'policy', 'allocation', 'metadata', 'validator_concurrency')",
+            "operation IN ('state', 'policy', 'allocation', 'metadata', 'validator_concurrency', "
+            "'validator_scheduling', 'validator_allowlist')",
             name="ck_competition_admin_events_operation",
         ),
         sa.CheckConstraint(
@@ -184,3 +190,29 @@ class CompetitionWorkCursor(Base):
             name="ck_competition_work_cursors_family",
         ),
     )
+
+
+class ValidatorCompetitionAllowlist(Base):
+    __tablename__ = "validator_competition_allowlists"
+
+    validator_hotkey: Mapped[str] = mapped_column(sa.Text, primary_key=True)
+
+
+class ValidatorCompetitionAllowlistEntry(Base):
+    __tablename__ = "validator_competition_allowlist_entries"
+
+    validator_hotkey: Mapped[str] = mapped_column(
+        sa.Text,
+        sa.ForeignKey("validator_competition_allowlists.validator_hotkey", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    set_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("competitions.set_id"), primary_key=True)
+
+
+class ValidatorCompetitionLastServed(Base):
+    __tablename__ = "validator_competition_last_served"
+
+    set_id: Mapped[int] = mapped_column(
+        sa.Integer, sa.ForeignKey("competitions.set_id", ondelete="CASCADE"), primary_key=True
+    )
+    last_served_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
