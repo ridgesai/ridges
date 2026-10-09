@@ -25,6 +25,12 @@ from models.competition import (
     ValidatorConcurrencyUpdateRequest,
 )
 from models.upload_credit import UploadCredit
+from models.validator_scheduling import (
+    CompetitionSchedulingSnapshot,
+    CompetitionSchedulingUpdateRequest,
+    ValidatorAllowlistSnapshot,
+    ValidatorAllowlistUpdateRequest,
+)
 from queries.banned_coldkey import ban_coldkey, unban_coldkey
 from queries.competition import (
     get_competition_validator_concurrency,
@@ -37,6 +43,12 @@ from queries.competition import (
 from queries.internal_flag import add_hotkey_to_blacklist, remove_hotkey_from_blacklist, set_internal_flag
 from queries.upload_credit import grant_upload_credit
 from queries.upload_price import update_competition_pricing
+from queries.validator_scheduling import (
+    get_competition_scheduling,
+    get_validator_allowlist,
+    set_competition_scheduling,
+    set_validator_allowlist,
+)
 from utils.debug_lock import DebugLock
 from utils.ttl import clear_all_ttl_caches
 from utils.upload_pricing import multiplier
@@ -298,3 +310,43 @@ async def put_validators_paused() -> ValidatorsPausedResponse:
 async def delete_validators_paused() -> ValidatorsPausedResponse:
     await set_internal_flag(InternalFlagName.VALIDATORS_PAUSED, "false")
     return ValidatorsPausedResponse(validators_paused=False)
+
+
+@router.get(
+    "/competitions/{set_id}/validator-scheduling",
+    response_model=CompetitionSchedulingSnapshot,
+    dependencies=[Depends(require_coldkey_ban_admin)],
+)
+async def get_validator_scheduling(set_id: int) -> CompetitionSchedulingSnapshot:
+    return await get_competition_scheduling(set_id=set_id)
+
+
+@router.put("/competitions/{set_id}/validator-scheduling", response_model=CompetitionSchedulingSnapshot)
+async def put_validator_scheduling(
+    set_id: int,
+    request: CompetitionSchedulingUpdateRequest,
+    actor: Annotated[str, Depends(require_coldkey_ban_admin)],
+) -> CompetitionSchedulingSnapshot:
+    return await set_competition_scheduling(set_id=set_id, target=request, actor=actor)
+
+
+@router.get(
+    "/validators/{validator_hotkey}/competition-allowlist",
+    response_model=ValidatorAllowlistSnapshot,
+    dependencies=[Depends(require_coldkey_ban_admin)],
+)
+async def get_validator_competition_allowlist(validator_hotkey: str) -> ValidatorAllowlistSnapshot:
+    validate_hotkey(validator_hotkey)
+    return await get_validator_allowlist(validator_hotkey=validator_hotkey)
+
+
+@router.put("/validators/{validator_hotkey}/competition-allowlist", response_model=ValidatorAllowlistSnapshot)
+async def put_validator_competition_allowlist(
+    validator_hotkey: str,
+    request: ValidatorAllowlistUpdateRequest,
+    actor: Annotated[str, Depends(require_coldkey_ban_admin)],
+) -> ValidatorAllowlistSnapshot:
+    validate_hotkey(validator_hotkey)
+    if request.allowed_set_ids is not None and not is_validator_hotkey_whitelisted(validator_hotkey):
+        raise HTTPException(status_code=400, detail="Validator hotkey is not whitelisted")
+    return await set_validator_allowlist(validator_hotkey=validator_hotkey, target=request, actor=actor)

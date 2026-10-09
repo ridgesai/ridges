@@ -645,7 +645,15 @@ async def initialize_current_competition_policy(conn: DatabaseConnection) -> Com
 async def _insert_competition_admin_event(
     conn: DatabaseConnection,
     *,
-    operation: Literal["state", "policy", "allocation", "metadata", "validator_concurrency"],
+    operation: Literal[
+        "state",
+        "policy",
+        "allocation",
+        "metadata",
+        "validator_concurrency",
+        "validator_scheduling",
+        "validator_allowlist",
+    ],
     actor: str,
     reason: str,
     before_state: dict[str, object],

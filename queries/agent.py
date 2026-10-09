@@ -1296,7 +1296,8 @@ async def get_evaluation_candidates_for_validator_hotkey(
                     agents.agent_id,
                     agents.created_at,
                     agents.set_id,
-                    competitions.required_validator_count
+                    competitions.required_validator_count,
+                    competitions.validator_scheduling_mode
                 FROM
                     agents
                     INNER JOIN competitions ON competitions.set_id = agents.set_id
@@ -1307,6 +1308,15 @@ async def get_evaluation_candidates_for_validator_hotkey(
                     AND competitions.is_paused IS FALSE
                     AND competitions.scoring_mode IS NOT NULL
                     AND competitions.required_validator_count IS NOT NULL
+                    AND competitions.validator_scheduling_mode <> 'disabled'
+                    AND (
+                        NOT EXISTS (
+                            SELECT 1 FROM validator_competition_allowlists WHERE validator_hotkey = $2
+                        ) OR EXISTS (
+                            SELECT 1 FROM validator_competition_allowlist_entries
+                            WHERE validator_hotkey = $2 AND set_id = agents.set_id
+                        )
+                    )
                     AND NOT EXISTS (
                         SELECT
                             1
@@ -1391,6 +1401,7 @@ async def get_evaluation_candidates_for_validator_hotkey(
                 SELECT
                     c.agent_id,
                     c.set_id,
+                    c.validator_scheduling_mode,
                     ROW_NUMBER() OVER (
                         PARTITION BY c.set_id
                         ORDER BY
@@ -1406,7 +1417,7 @@ async def get_evaluation_candidates_for_validator_hotkey(
                       < c.required_validator_count
             ),
             competition_heads AS (
-                SELECT agent_id, set_id
+                SELECT agent_id, set_id, validator_scheduling_mode
                 FROM ranked_candidates
                 WHERE position_in_competition = 1
             )
@@ -1416,13 +1427,10 @@ async def get_evaluation_candidates_for_validator_hotkey(
                 head.set_id
             FROM cursor
             LEFT JOIN competition_heads head ON TRUE
+            LEFT JOIN validator_competition_last_served served ON served.set_id = head.set_id
             ORDER BY
-                CASE
-                    WHEN head.set_id IS NULL THEN 2
-                    WHEN cursor.last_served_set_id IS NULL
-                        OR head.set_id > cursor.last_served_set_id THEN 0
-                    ELSE 1
-                END,
+                (head.validator_scheduling_mode = 'prioritized') DESC NULLS LAST,
+                served.last_served_at ASC NULLS FIRST,
                 head.set_id ASC
             """,
             set_group.value,

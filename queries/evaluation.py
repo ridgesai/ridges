@@ -84,7 +84,7 @@ async def _lock_processable_competition(conn: DatabaseConnection, set_id: int):
     row = await conn.fetchrow(
         """
         SELECT start_date, end_date, is_paused, scoring_mode, required_validator_count,
-               max_concurrent_evaluation_runs
+               max_concurrent_evaluation_runs, validator_scheduling_mode
         FROM competitions
         WHERE set_id = $1
         FOR SHARE SKIP LOCKED
@@ -211,6 +211,25 @@ async def create_new_evaluation_and_evaluation_runs(
             )
             return None
 
+        if set_group is EvaluationSetGroup.validator:
+            allowed = await conn.fetchval(
+                """
+                SELECT NOT EXISTS (
+                    SELECT 1 FROM validator_competition_allowlists WHERE validator_hotkey = $1
+                ) OR EXISTS (
+                    SELECT 1 FROM validator_competition_allowlist_entries
+                    WHERE validator_hotkey = $1 AND set_id = $2
+                )
+                """,
+                validator_hotkey,
+                candidate.set_id,
+            )
+            if competition["validator_scheduling_mode"] == "disabled" or not allowed:
+                logger.info(
+                    f"Skipping evaluation issuance for agent {candidate.agent_id}: validator routing excludes it"
+                )
+                return None
+
         agent = await conn.fetchrow(
             """
             SELECT set_id, status::text AS status
@@ -303,6 +322,17 @@ async def create_new_evaluation_and_evaluation_runs(
 
         concurrency = None
         if set_group is EvaluationSetGroup.validator:
+            # Keep service history off competitions: updating that row would
+            # conflict with screeners' FOR SHARE locks. Claims already serialize
+            # on the validator cursor. Stamp actual claim time, not BEGIN time.
+            await conn.execute(
+                """
+                INSERT INTO validator_competition_last_served (set_id, last_served_at)
+                VALUES ($1, clock_timestamp())
+                ON CONFLICT (set_id) DO UPDATE SET last_served_at = EXCLUDED.last_served_at
+                """,
+                candidate.set_id,
+            )
             override = await conn.fetchval(
                 "SELECT max_concurrent_evaluation_runs FROM competition_validator_concurrency "
                 "WHERE set_id = $1 AND validator_hotkey = $2",
