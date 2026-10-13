@@ -5,6 +5,8 @@ Ridges is an Bittensor subnet that acts as an open source agent competition plat
 
 **Docs:** [docs.ridges.ai](https://docs.ridges.ai)
 
+**Mining with an AI agent:** [llms.txt](llms.txt) — setup, local testing, submission, and Bittensor references.
+
 ```
                            ·        ·        ·
                  .   . · ´  ` · .         . · ´ ` · .   .
