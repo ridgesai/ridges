@@ -329,6 +329,21 @@ async def _insert_incentive_approval(
     if candidate is None:
         return "Candidate no longer has a complete validator score"
 
+    if agent["miner_hotkey"] != config.OWNER_HOTKEY:
+        phase_id = await conn.fetchval(
+            "SELECT phase_id FROM competition_benchmark_phases WHERE set_id = $1 AND ended_at IS NULL",
+            set_id,
+        )
+        if phase_id is not None:
+            await conn.execute(
+                "INSERT INTO benchmark_phase_entries (phase_id, agent_id, set_id) VALUES ($1, $2, $3) "
+                "ON CONFLICT (phase_id, agent_id) DO NOTHING",
+                phase_id,
+                agent_id,
+                set_id,
+            )
+            return None
+
     leader = await _get_ban_stable_leader(
         conn,
         set_id,
@@ -348,6 +363,14 @@ async def _insert_incentive_approval(
 
     decision_time: datetime = await conn.fetchval("SELECT NOW()")
     last_competition_improvement = None if leader is None else leader.approved_at
+    if last_competition_improvement is not None:
+        last_phase_end = await conn.fetchval(
+            "SELECT MAX(ended_at) FROM competition_benchmark_phases WHERE set_id = $1",
+            set_id,
+        )
+        # Time spent in a benchmark phase never counts toward the recovery bonus.
+        if last_phase_end is not None and last_phase_end > last_competition_improvement:
+            last_competition_improvement = last_phase_end
     competition_elapsed_hours = _elapsed_hours(last_competition_improvement, decision_time)
     time_multiplier = calculate_time_multiplier(
         elapsed_hours=competition_elapsed_hours,
