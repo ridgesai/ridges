@@ -5,7 +5,9 @@ from uuid import UUID, uuid4
 import pytest
 
 from utils.incentives import (
+    BenchmarkReward,
     RewardCandidate,
+    calculate_benchmark_reward,
     calculate_initial_reward_score,
     calculate_relative_improvement,
     calculate_time_multiplier,
@@ -241,3 +243,47 @@ def test_normalized_ratios_stay_constant_when_candidate_pool_does_not_change() -
     )
 
     assert later == pytest.approx(initial)
+
+
+def test_benchmark_reward_without_leader_is_score_times_100() -> None:
+    reward = calculate_benchmark_reward(
+        candidate_score=0.16, candidate_cost=0.07, leader_cost=None, cost_threshold=0.06
+    )
+    assert reward == BenchmarkReward(
+        score_points=pytest.approx(16.0), cost_points=0.0, cost_delta=None, total_points=pytest.approx(16.0)
+    )
+
+
+def test_benchmark_reward_adds_capped_cost_points_against_the_leader() -> None:
+    reward = calculate_benchmark_reward(
+        candidate_score=0.16, candidate_cost=0.0726, leader_cost=0.2539, cost_threshold=0.06
+    )
+    assert reward.cost_delta == pytest.approx((0.2539 - 0.0726) / 0.2539)
+    assert reward.cost_points == pytest.approx(1 / 0.06)
+    assert reward.total_points == pytest.approx(16.0 + 1 / 0.06)
+
+
+def test_benchmark_cost_points_match_the_relative_cost_units() -> None:
+    reward = calculate_benchmark_reward(candidate_score=0.5, candidate_cost=0.09, leader_cost=0.1, cost_threshold=0.06)
+    relative = calculate_relative_improvement(
+        candidate_score=0.5,
+        candidate_cost=0.09,
+        leader_score=0.5,
+        leader_cost=0.1,
+        performance_threshold=0.03,
+        cost_threshold=0.06,
+    )
+    assert reward.cost_points == pytest.approx(relative.relative_improvement_units)
+
+
+def test_benchmark_reward_gives_no_cost_points_when_more_expensive() -> None:
+    reward = calculate_benchmark_reward(candidate_score=0.2, candidate_cost=0.3, leader_cost=0.1, cost_threshold=0.06)
+    assert reward.cost_delta == pytest.approx(-2.0)
+    assert reward.cost_points == 0.0
+    assert reward.total_points == pytest.approx(20.0)
+
+
+@pytest.mark.parametrize("score", [-0.1, math.nan, math.inf])
+def test_benchmark_reward_rejects_invalid_scores(score: float) -> None:
+    with pytest.raises(ValueError):
+        calculate_benchmark_reward(candidate_score=score, candidate_cost=None, leader_cost=None, cost_threshold=0.06)

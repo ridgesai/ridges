@@ -29,6 +29,10 @@ class CompetitionState(str, Enum):
     open = "open"
 
 
+class PublicBenchmarkPhase(BaseModel):
+    started_at: datetime
+
+
 class PublicCompetition(BaseModel):
     set_id: int
     name: str | None
@@ -44,6 +48,7 @@ class PublicCompetition(BaseModel):
     emissions_end_at: datetime | None
     end_date: datetime | None
     raw_emission_weight: float
+    benchmark_phase: PublicBenchmarkPhase | None = None
 
 
 def exact_decimal_sum(values: Iterable[Decimal]) -> Decimal:

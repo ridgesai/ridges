@@ -13,8 +13,10 @@ from db.models.approval import (
     ApprovalJobRound,
 )
 from db.models.competition import (
+    BenchmarkPhaseEntry,
     Competition,
     CompetitionAdminEvent,
+    CompetitionBenchmarkPhase,
     CompetitionValidatorConcurrency,
     CompetitionWorkCursor,
     ValidatorCompetitionAllowlist,
@@ -62,7 +64,9 @@ __all__ = [
     "UploadAttempt",
     "UploadCredit",
     "UploadPaymentQuote",
+    "BenchmarkPhaseEntry",
     "Competition",
+    "CompetitionBenchmarkPhase",
     "CompetitionAdminEvent",
     "CompetitionUploadPrice",
     "CompetitionValidatorConcurrency",
