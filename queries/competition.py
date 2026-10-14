@@ -926,7 +926,6 @@ async def replace_competition_policy(
         if before.policy == policy:
             return before
 
-        # With incentives off, approvals would skip a benchmark phase's hold and the phase could not end.
         if not policy.incentive_enabled:
             active_phase = await conn.fetchval(
                 "SELECT 1 FROM competition_benchmark_phases WHERE set_id = $1 AND ended_at IS NULL",
