@@ -20,6 +20,7 @@ from models.competition import (
     CompetitionState,
     CompetitionStateUpdateRequest,
     CompetitionValidatorConcurrencySnapshot,
+    PublicBenchmarkPhase,
     PublicCompetition,
     ValidatorConcurrencySnapshot,
     derive_competition_capabilities,
@@ -122,6 +123,12 @@ _PUBLIC_COMPETITION_SELECT = f"""
         competition.raw_emission_weight,
         num_nonnulls({", ".join(f"competition.{column}" for column in POLICY_COLUMNS)})
             = {len(POLICY_COLUMNS)} AS policy_complete,
+        (
+            SELECT phase.started_at
+            FROM competition_benchmark_phases phase
+            WHERE phase.set_id = competition.set_id
+              AND phase.ended_at IS NULL
+        ) AS benchmark_phase_started_at,
         observation.observed_at
     FROM competitions competition
     CROSS JOIN observation
@@ -239,6 +246,9 @@ def _public_competition_from_row(row: Mapping[str, object]) -> PublicCompetition
         emissions_end_at=row["emissions_end_at"],
         end_date=row["end_date"],
         raw_emission_weight=float(raw_emission_weight),
+        benchmark_phase=None
+        if row["benchmark_phase_started_at"] is None
+        else PublicBenchmarkPhase(started_at=row["benchmark_phase_started_at"]),
     )
 
 
@@ -653,6 +663,8 @@ async def _insert_competition_admin_event(
         "validator_concurrency",
         "validator_scheduling",
         "validator_allowlist",
+        "benchmark_phase_start",
+        "benchmark_phase_end",
     ],
     actor: str,
     reason: str,
@@ -913,6 +925,15 @@ async def replace_competition_policy(
         before = _admin_snapshot_from_row(row)
         if before.policy == policy:
             return before
+
+        # With incentives off, approvals would skip a benchmark phase's hold and the phase could not end.
+        if not policy.incentive_enabled:
+            active_phase = await conn.fetchval(
+                "SELECT 1 FROM competition_benchmark_phases WHERE set_id = $1 AND ended_at IS NULL",
+                set_id,
+            )
+            if active_phase is not None:
+                raise CompetitionAdminConflictError("benchmark_phase_active")
 
         policy_values = policy.model_dump()
         await conn.execute(
