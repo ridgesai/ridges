@@ -18,6 +18,8 @@ from pydantic import (
     model_validator,
 )
 
+from utils.upload_pricing import PricingSettings, validate_settings
+
 
 class CompetitionState(str, Enum):
     ended = "ended"
@@ -255,3 +257,33 @@ class CompetitionAdminSnapshot(BaseModel):
 class CompetitionAllocationSnapshot(BaseModel):
     allocations: list[CompetitionAllocation]
     owner_emission_weight: RawEmissionWeight
+
+
+class UploadPricingUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    floor_usd: PositiveFiniteFloat
+    target_per_hour: PositiveFiniteFloat
+    half_life_minutes: PositiveFiniteFloat
+    reason: AdminReason
+
+    @model_validator(mode="after")
+    def check_settings(self) -> UploadPricingUpdateRequest:
+        validate_settings(self.settings())
+        return self
+
+    def settings(self) -> PricingSettings:
+        return PricingSettings(
+            floor_usd=self.floor_usd, target_per_hour=self.target_per_hour, half_life_minutes=self.half_life_minutes
+        )
+
+
+class UploadPricingSnapshot(BaseModel):
+    set_id: int
+    floor_usd: float
+    target_per_hour: float
+    half_life_minutes: float
+    multiplier: float
+    price_usd: float
+    price_updated_at: datetime
+    as_of: datetime

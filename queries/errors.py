@@ -85,3 +85,44 @@ class CompetitionNotFoundError(Exception):
 
 class CompetitionAdminConflictError(Exception):
     """Raised when a requested competition target is invalid for current state."""
+
+
+class InsufficientAlphaError(Exception):
+    def __init__(self, amount_alpha_rao: int):
+        super().__init__(f"{amount_alpha_rao} rao of burnable alpha is required")
+        self.amount_alpha_rao = amount_alpha_rao
+
+
+class QuoteCancelledError(Exception):
+    pass
+
+
+class QuoteAlreadyConfirmedError(Exception):
+    pass
+
+
+class ReceiptConflictError(Exception):
+    """The quote was confirmed with another burn, or this burn already confirmed another quote."""
+
+
+class BurnNotReportedError(Exception):
+    """The first confirmation arrived after the quote's expiry plus the grace period."""
+
+
+class QuoteNotConfirmedError(Exception):
+    """The quote asks for a burn that has not been confirmed yet."""
+
+
+class QuoteAlreadyPurchasedError(Exception):
+    pass
+
+
+class InsufficientBalanceError(Exception):
+    def __init__(self, *, price_usd: float, price_alpha_rao: int, balance_alpha_rao: int):
+        self.price_usd = price_usd
+        self.price_alpha_rao = price_alpha_rao
+        self.balance_alpha_rao = balance_alpha_rao
+        self.shortfall_alpha_rao = max(0, price_alpha_rao - balance_alpha_rao)
+        super().__init__(
+            f"Balance {balance_alpha_rao} rao does not cover the ${price_usd:.2f} upload price ({price_alpha_rao} rao)"
+        )

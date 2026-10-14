@@ -21,10 +21,35 @@ class AgentUploadResponse(UploadStatusResponse):
 
 
 class UploadPriceResponse(BaseModel):
-    """Response model for upload pricing"""
+    """Current upload price of one competition. price_usd is already decayed to as_of."""
 
-    amount_alpha_rao: int = Field(..., description="Amount of SN62 alpha to burn (in rao)")
+    amount_alpha_rao: int = Field(..., description="Amount of SN62 alpha to burn (in rao) at price_usd")
     payment_netuid: int = Field(..., description="Subnet whose alpha must be burned")
+    set_id: int
+    price_usd: float = Field(..., description="Price for a new quote right now")
+    floor_usd: float
+    target_per_hour: float
+    half_life_minutes: float
+    multiplier: float
+    price_updated_at: datetime = Field(..., description="Time of the last bump or settings change")
+    as_of: datetime = Field(..., description="Time price_usd was computed for")
+
+
+class UploadPricePurchase(BaseModel):
+    at: datetime
+    price_usd: float = Field(..., description="Price the purchase was charged")
+
+
+class UploadPriceHistoryResponse(BaseModel):
+    set_id: int
+    price_usd: float = Field(..., description="Current price, at as_of")
+    as_of: datetime
+    floor_usd: float
+    half_life_minutes: float
+    multiplier: float
+    purchases: list[UploadPricePurchase] = Field(
+        ..., description="Purchases since `since`, oldest first, led by the last one before it"
+    )
 
 
 class AgentCheckResponse(UploadStatusResponse):
@@ -36,6 +61,8 @@ class AgentCheckResponse(UploadStatusResponse):
     amount_alpha_rao: int = Field(..., description="Amount of SN62 alpha to burn (in rao)")
     payment_netuid: Optional[int] = Field(None, description="Subnet whose alpha must be burned")
     expires_at: Optional[datetime] = Field(None, description="Latest on-chain burn timestamp accepted for this quote")
+    price_usd: Optional[float] = Field(None, description="Current upload price of the competition")
+    balance_alpha_rao: Optional[int] = Field(None, description="The coldkey's burn balance in rao, spent at purchase")
 
 
 class AgentDirectCheckResponse(AgentCheckResponse):
@@ -58,6 +85,7 @@ class PrepareUploadRequest(BaseModel):
     signature: str = Field(..., description="Hex signature over the prepare signing string")
     use_credit: bool = Field(False, description="Reserve an admin-granted upload credit instead of quoting a burn")
     credit_id: Optional[UUID] = Field(None, description="Specific upload credit ID for a retry")
+    set_id: Optional[int] = Field(None, description="Competition the burn quote is for; required for burn quotes")
 
 
 class TicketCheckRequest(BaseModel):
@@ -74,7 +102,8 @@ class TicketCheckResponse(BaseModel):
         None,
         description=(
             "Why the ticket is not redeemable: malformed_ticket, invalid_signature, owner_not_allowed, "
-            "unknown_quote, already_redeemed, refunded, unknown_credit, credit_revoked, credit_expired"
+            "unknown_quote, already_redeemed, refunded, unknown_credit, credit_revoked, credit_expired, "
+            "not_purchased, quote_cancelled, competition_not_accepting"
         ),
     )
     hotkey: Optional[str] = Field(None, description="Hotkey the ticket is bound to")
@@ -82,6 +111,8 @@ class TicketCheckResponse(BaseModel):
     amount_alpha_rao: Optional[int] = Field(None, description="Alpha paid (0 for credit tickets)")
     expires_at: Optional[datetime] = Field(None, description="Credit expiry; null for burn tickets (no expiry)")
     redeemed_agent_id: Optional[UUID] = Field(None, description="Agent that already consumed this ticket's funding")
+    set_id: Optional[int] = Field(None, description="Competition a competition-bound ticket belongs to")
+    competition_state: Optional[str] = Field(None, description="State of that competition")
 
 
 class OpenRouterKeysCheckRequest(BaseModel):
@@ -96,3 +127,40 @@ class OpenRouterKeysCheckResponse(BaseModel):
 
     valid: bool = Field(..., description="Whether the key pair passed platform validation")
     reason: Optional[str] = Field(None, description="Human-readable reason when invalid")
+
+
+class ConfirmPaymentRequest(BaseModel):
+    """Burn receipt reported right after the burn lands. Signed over the canonical receipt."""
+
+    quote_id: UUID
+    payment_block_hash: str
+    payment_extrinsic_index: int | str
+    hotkey: str
+    public_key: str
+    signature: str
+
+
+class CancelQuoteRequest(BaseModel):
+    """Release an unburned quote. Signed by the quote's hotkey."""
+
+    hotkey: str
+    public_key: str
+    signature: str
+
+
+class PurchaseQuoteRequest(BaseModel):
+    """Buy the upload a quote is for, from the coldkey's burn balance. Signed by the quote's hotkey."""
+
+    hotkey: str
+    public_key: str
+    signature: str
+
+
+class QuoteActionResponse(BaseModel):
+    quote_id: UUID
+    status: Literal["confirmed", "replayed", "cancelled", "purchased", "already_purchased", "legacy"]
+
+
+class BalanceResponse(BaseModel):
+    coldkey: str
+    balance_alpha_rao: int
