@@ -246,3 +246,20 @@ def test_duplicate_json_keys_raise():
     forged = base64.b64encode(duplicated.encode()).decode()
     with pytest.raises(ValueError):
         decode_ticket(forged)
+
+
+def test_burn_ticket_without_receipt_round_trips():
+    """A prepaid quote covered by the burn balance has no receipt of its own."""
+    ticket = _burn_ticket()
+    unsigned = dataclasses.replace(ticket, signature="", payment_block_hash=None, payment_extrinsic_index=None)
+    signed = sign_ticket(unsigned, KEYPAIR.sign)
+    decoded = decode_ticket(encode_ticket(signed))
+    assert decoded.payment_block_hash is None and decoded.payment_extrinsic_index is None
+    assert verify_ticket_signature(decoded)
+
+
+def test_burn_ticket_with_half_a_receipt_raises():
+    ticket = _burn_ticket()
+    half = dataclasses.replace(ticket, payment_extrinsic_index=None)
+    with pytest.raises(ValueError):
+        encode_ticket(half)
