@@ -68,6 +68,10 @@ class ApprovedAgent(Base):
     relative_improvement_units: Mapped[Optional[float]] = mapped_column(sa.Float)
     time_multiplier: Mapped[Optional[float]] = mapped_column(sa.Float)
     initial_reward_score: Mapped[Optional[float]] = mapped_column(sa.Float)
+    benchmark_phase_id: Mapped[Optional[UUID]] = mapped_column(
+        PG_UUID(as_uuid=True),
+        sa.ForeignKey("competition_benchmark_phases.phase_id", name="fk_approved_agents_benchmark_phase"),
+    )
 
     __table_args__ = (
         sa.UniqueConstraint("agent_id", "set_id"),
@@ -82,4 +86,10 @@ class ApprovedAgent(Base):
             name="fk_approved_agents_baseline_competition",
         ),
         sa.Index("idx_approved_agents_set_approved_at", "set_id", approved_at.desc()),
+        sa.Index(
+            "uq_approved_agents_benchmark_phase",
+            "benchmark_phase_id",
+            unique=True,
+            postgresql_where=sa.text("benchmark_phase_id IS NOT NULL"),
+        ),
     )
