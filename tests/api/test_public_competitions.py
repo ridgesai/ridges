@@ -257,6 +257,7 @@ async def test_public_openapi_is_lean_and_explicit_detail_hides_drafts() -> None
         "emissions_end_at",
         "end_date",
         "raw_emission_weight",
+        "benchmark_phase",
     }
     assert "policy" not in public_schema
 
@@ -288,3 +289,20 @@ async def test_metadata_defaults_to_null_description_and_empty_links() -> None:
     detail = await competitions_endpoint.competition_detail(1)
     assert detail.description is None
     assert detail.links == []
+
+
+async def test_detail_shows_only_an_active_benchmark_phase() -> None:
+    async with _db.pool.acquire() as conn:
+        await _insert_competition(conn, set_id=1, name="Phased")
+        await conn.execute(
+            "INSERT INTO competition_benchmark_phases (set_id, started_by, start_reason) VALUES (1, 'admin', 'launch')"
+        )
+    detail = await competitions_endpoint.competition_detail(1)
+    assert detail.benchmark_phase is not None
+
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE competition_benchmark_phases SET ended_at = NOW(), ended_by = 'admin', end_reason = 'done'"
+        )
+    detail = await competitions_endpoint.competition_detail(1)
+    assert detail.benchmark_phase is None
