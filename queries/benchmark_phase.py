@@ -6,17 +6,17 @@ import api.config as config
 from models.agent import AgentStatus
 from models.benchmark_phase import BenchmarkPhaseSnapshot, BenchmarkPoolEntry, BenchmarkWinnerReward
 from models.competition import CompetitionPolicy
-from queries.approval import INCENTIVE_APPROVAL_LOCK_NAMESPACE, _get_ban_stable_leader
+from queries.approval import _get_ban_stable_leader, lock_incentive_approval
 from queries.banned_coldkey import get_banned_coldkey, lock_coldkey_ban_state
-from queries.competition import _get_competition_policy, _insert_competition_admin_event
+from queries.competition import (
+    _active_benchmark_phase_id,
+    _get_competition_policy,
+    _insert_competition_admin_event,
+)
 from queries.errors import CompetitionAdminConflictError, CompetitionNotFoundError
 from queries.evaluation import get_validator_agent_score_for_set
 from utils.database import DatabaseConnection, db_operation
 from utils.incentives import calculate_benchmark_reward
-
-
-async def _lock(conn: DatabaseConnection, set_id: int) -> None:
-    await conn.execute("SELECT pg_advisory_xact_lock($1, $2)", INCENTIVE_APPROVAL_LOCK_NAMESPACE, set_id)
 
 
 def _audit(row: Mapping[str, object]) -> dict[str, object]:
@@ -158,7 +158,7 @@ async def start_benchmark_phase(
     conn: DatabaseConnection, *, set_id: int, actor: str, reason: str
 ) -> BenchmarkPhaseSnapshot:
     async with conn.conn.transaction():
-        await _lock(conn, set_id)
+        await lock_incentive_approval(conn, set_id)
         competition = await conn.fetchrow("SELECT end_date FROM competitions WHERE set_id = $1 FOR UPDATE", set_id)
         if competition is None:
             raise CompetitionNotFoundError(set_id)
@@ -170,10 +170,7 @@ async def start_benchmark_phase(
         if policy is None or not policy.incentive_enabled:
             raise CompetitionAdminConflictError("incentives_disabled")
 
-        active = await conn.fetchval(
-            "SELECT 1 FROM competition_benchmark_phases WHERE set_id = $1 AND ended_at IS NULL", set_id
-        )
-        if active is not None:
+        if await _active_benchmark_phase_id(conn, set_id) is not None:
             raise CompetitionAdminConflictError("benchmark_phase_active")
 
         phase = await conn.fetchrow(
@@ -199,7 +196,7 @@ async def end_benchmark_phase(
     conn: DatabaseConnection, *, set_id: int, winner_agent_id: UUID | None, actor: str, reason: str
 ) -> BenchmarkPhaseSnapshot:
     async with conn.conn.transaction():
-        await _lock(conn, set_id)
+        await lock_incentive_approval(conn, set_id)
         if await conn.fetchval("SELECT 1 FROM competitions WHERE set_id = $1 FOR UPDATE", set_id) is None:
             raise CompetitionNotFoundError(set_id)
 
