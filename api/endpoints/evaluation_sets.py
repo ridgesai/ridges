@@ -2,7 +2,7 @@ import asyncio
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.incentives import CurrentAllocations, get_current_allocations
 from api.src.utils.leaderboard_cache import get_cached_leaderboard_rows
@@ -23,6 +23,8 @@ from models.evaluation_set import (
     EvaluationSetOverviewPreScreening,
     EvaluationSetOverviewScoreBucket,
 )
+from models.leaderboard import LeaderboardQuery
+from models.pagination import Page, paginate
 from queries.competition import (
     PublicEvaluationSetContext,
     get_competition_for_set,
@@ -292,17 +294,19 @@ async def evaluation_set_overview(
 @router.get("/{set_id}/leaderboard")
 async def evaluation_set_leaderboard(
     set_id: Annotated[int, Depends(resolve_set_id)],
-) -> list[PublicAgent]:
-    """Retrieve the agent's leaderboard per evaluation set.
+    query: Annotated[LeaderboardQuery, Query()],
+) -> Page[PublicAgent]:
+    """Retrieve one page of the agent's leaderboard per evaluation set, filtered, searched and sorted.
 
+    `total` counts the agents matching the filters; `rank` stays the agent's global rank.
     Data for historical sets is cached for 24 hours while
     data for active sets is cached for 15 seconds.
     """
     context = await _public_evaluation_set_or_404(set_id)
     agent_rows = await get_cached_leaderboard_rows(
-        set_id, context.required_validator_count, context.use_historical_cache
+        set_id, context.required_validator_count, context.use_historical_cache, query
     )
-    return [PublicAgent(**dict(row), set_id=set_id) for row in agent_rows]
+    return paginate(agent_rows, query, lambda row: PublicAgent(**dict(row), set_id=set_id))
 
 
 #
