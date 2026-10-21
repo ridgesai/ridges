@@ -18,7 +18,7 @@ class LeaderboardSortField(str, Enum):
 
 
 class LeaderboardQuery(PageParams):
-    """Query params for GET /evaluation-sets/{set_id}/leaderboard. Every filter is ANDed together."""
+    """Query params for GET /evaluation-sets/{set_id}/leaderboard. Every filter is ANDed together"""
 
     model_config = ConfigDict(extra="forbid")
 
