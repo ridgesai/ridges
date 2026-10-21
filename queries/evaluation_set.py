@@ -150,11 +150,12 @@ def _sql_validator_metrics_cte(include_validator_hotkeys: bool, agent_filter_cte
         f"            WHERE\n"
         f"                evaluations.evaluation_set_group = 'validator'::EvaluationSetGroup\n"
         f"                AND evaluations.set_id = $1\n"
+        # Filter agents before aggregating so the planner can index into evaluation_runs instead of seq-scanning it
+        f"                AND evaluations.agent_id IN (SELECT agent_id FROM {agent_filter_cte})\n"
         f"            GROUP BY\n"
         f"                evaluations.agent_id,\n"
         f"                evaluations.evaluation_id\n"
         f"        ) AS ranked\n"
-        f"        JOIN {agent_filter_cte} aiw ON aiw.agent_id = ranked.agent_id\n"
         f"        where ranked.status in ('running', 'success') or ranked.cancelled is true\n"
         f"    ) AS sample\n"
         f"    WHERE sample.rn <= $2::integer\n"
