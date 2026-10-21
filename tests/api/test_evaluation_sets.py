@@ -1,15 +1,19 @@
 import json
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import HTTPException
 
 import api.endpoints.evaluation_sets as evaluation_sets_endpoint
 import utils.database as _db
+from api.src.utils.leaderboard_cache import get_cached_leaderboard_rows
 from models.agent import AgentStatus
+from models.leaderboard import LeaderboardQuery
+from queries.competition import get_public_evaluation_set_context
 from queries.evaluation_set import get_evaluation_set_performance_improvement
 from utils.ttl import clear_all_ttl_caches
+from utils.validator_hotkeys import validator_name_to_hotkey
 
 
 @pytest.fixture(autouse=True)
@@ -762,7 +766,7 @@ async def test_evaluation_set_detail_happy_path():
     assert result.efficiency.average_agent_cost_usd == 0.2
     assert result.efficiency.average_agent_runtime_seconds == 75
 
-    leaderboard = await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2)
+    leaderboard = (await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2, query=LeaderboardQuery())).items
     agents_by_id = {agent.agent_id: agent for agent in leaderboard}
     assert set(agents_by_id) == {agent_a, agent_b, agent_c}
     agent_a_state = agents_by_id[agent_a].competition_state
@@ -889,7 +893,7 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
                 final_score=final_score,
             )
 
-    leaderboard = await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2)
+    leaderboard = (await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2, query=LeaderboardQuery())).items
 
     ranked_agent_ids = [
         agent.agent_id
@@ -965,7 +969,7 @@ async def test_coldkey_ban_disqualifies_competitor_and_removes_approved_output()
             "INSERT INTO banned_coldkeys (miner_coldkey, banned_reason) VALUES ('banned-coldkey', 'test ban')"
         )
 
-    leaderboard = await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2)
+    leaderboard = (await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2, query=LeaderboardQuery())).items
     by_id = {agent.agent_id: agent for agent in leaderboard}
     assert by_id[banned_agent].competition_state is not None
     assert by_id[banned_agent].competition_state.disqualified is True
@@ -1025,7 +1029,7 @@ async def test_evaluation_set_detail_efficiency_uses_all_ranked_agents_not_top_2
                 final_score=final_score,
             )
 
-    leaderboard = await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2)
+    leaderboard = (await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2, query=LeaderboardQuery())).items
     assert (
         len(
             [
@@ -1122,7 +1126,7 @@ async def test_evaluation_set_detail_no_scores_returns_null_best_and_average():
     assert result.efficiency.average_agent_cost_usd is None
     assert result.efficiency.average_agent_runtime_seconds is None
 
-    leaderboard = await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2)
+    leaderboard = (await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2, query=LeaderboardQuery())).items
     assert len(leaderboard) == 1
     assert leaderboard[0].agent_id == agent_a
     assert leaderboard[0].competition_state is not None
@@ -1644,6 +1648,149 @@ async def test_evaluation_set_detail_minus_one_resolves_to_newest_open_competiti
     assert result.id == 2
     assert result.top_agent is None
 
-    leaderboard = await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=resolved)
+    leaderboard = (
+        await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=resolved, query=LeaderboardQuery())
+    ).items
     assert len(leaderboard) == 1
     assert leaderboard[0].agent_id == agent_a
+
+
+# Leaderboard query: rank 1 zeta (approved), 2 alpha, 3 mid (no evaluations, so no cost/runtime/validators),
+# then unranked beta (failed_pre_screening) and gamma (screening_1). _insert_agent uses the hotkey as the name.
+async def _seed_query_leaderboard() -> dict[str, UUID]:
+    agents = {key: uuid4() for key in ["zeta", "alpha", "mid", "beta", "gamma"]}
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
+        for minutes, (key, name, status) in enumerate(
+            [
+                ("zeta", "Zeta-Agent", "finished"),
+                ("alpha", "alpha-agent", "finished"),
+                ("mid", "Mid-Agent", "finished"),
+                ("beta", "BETA-agent", "failed_pre_screening"),
+                ("gamma", "Gamma Agent", "screening_1"),
+            ]
+        ):
+            await _insert_agent(
+                conn,
+                agent_id=agents[key],
+                miner_hotkey=name,
+                status=status,
+                created_at=AGENT_TS_SET_2 + timedelta(minutes=minutes),
+                set_id=2,
+            )
+        for key, validator_name, cost_usd, runtime_seconds in [
+            ("zeta", "Uncle Tao", 3.0, 30),
+            ("alpha", "Yuma", 1.0, 80),
+        ]:
+            evaluation_id = await _insert_evaluation(
+                conn,
+                agent_id=agents[key],
+                set_id=2,
+                set_group="validator",
+                validator_hotkey=validator_name_to_hotkey(validator_name),
+            )
+            await _insert_finished_evaluation_run(
+                conn, evaluation_id=evaluation_id, cost_usd=cost_usd, runtime_seconds=runtime_seconds
+            )
+        # Approve before scoring: inserting an approval re-derives agent_scores for the agent
+        await _insert_approved_agent(conn, agent_id=agents["zeta"], set_id=2)
+        for key, name, final_score in [
+            ("zeta", "Zeta-Agent", 0.9),
+            ("alpha", "alpha-agent", 0.8),
+            ("mid", "Mid-Agent", 0.7),
+        ]:
+            await _insert_agent_score(conn, agent_id=agents[key], miner_hotkey=name, set_id=2, final_score=final_score)
+    return agents
+
+
+async def _query_leaderboard(**params):
+    return await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2, query=LeaderboardQuery(**params))
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("sort", "expected"),
+    [
+        ("rank", ["zeta", "alpha", "mid", "beta", "gamma"]),
+        ("-rank", ["mid", "alpha", "zeta", "beta", "gamma"]),
+        ("score", ["mid", "alpha", "zeta", "beta", "gamma"]),
+        ("-score", ["zeta", "alpha", "mid", "beta", "gamma"]),
+        ("cost", ["alpha", "zeta", "mid", "beta", "gamma"]),
+        ("-cost", ["zeta", "alpha", "mid", "beta", "gamma"]),
+        ("runtime", ["zeta", "alpha", "mid", "beta", "gamma"]),
+        ("-runtime", ["alpha", "zeta", "mid", "beta", "gamma"]),
+        ("name", ["alpha", "beta", "gamma", "mid", "zeta"]),
+        ("-name", ["zeta", "mid", "gamma", "beta", "alpha"]),
+        ("submitted_at", ["zeta", "alpha", "mid", "beta", "gamma"]),
+        ("-submitted_at", ["gamma", "beta", "mid", "alpha", "zeta"]),
+        # Derived status: failed_pre_screening < screening_1 < didnt_qualify (alpha, mid tie) < approved
+        ("status", ["beta", "gamma", "alpha", "mid", "zeta"]),
+        ("-status", ["zeta", "alpha", "mid", "gamma", "beta"]),
+    ],
+)
+async def test_evaluation_set_leaderboard_sorts_nulls_last_and_ties_in_rank_order(sort, expected):
+    agents = await _seed_query_leaderboard()
+
+    page = await _query_leaderboard(sort=sort)
+
+    assert [agent.agent_id for agent in page.items] == [agents[key] for key in expected]
+    assert page.total == 5
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("params", "expected"),
+    [
+        ({"status": ["didnt_qualify"]}, ["alpha", "mid"]),
+        ({"status": ["approved", "screening_1"]}, ["zeta", "gamma"]),
+        ({"ranked": True}, ["zeta", "alpha", "mid"]),
+        ({"approved": True}, ["zeta"]),
+        ({"validator": ["Uncle Tao"]}, ["zeta"]),
+        ({"validator": ["Uncle Tao", "Yuma"]}, ["zeta", "alpha"]),
+        ({"validator": ["Rizzo"]}, []),
+        ({"search": " ALPHA "}, ["alpha"]),
+        ({"search": "-agent"}, ["zeta", "alpha", "mid", "beta"]),
+        ({"search": "   "}, ["zeta", "alpha", "mid", "beta", "gamma"]),
+        ({"ranked": True, "search": "a-agent", "sort": "cost"}, ["alpha", "zeta"]),
+    ],
+)
+async def test_evaluation_set_leaderboard_filters_and_search(params, expected):
+    agents = await _seed_query_leaderboard()
+
+    page = await _query_leaderboard(**params)
+
+    assert [agent.agent_id for agent in page.items] == [agents[key] for key in expected]
+    assert page.total == len(expected)
+
+
+@pytest.mark.anyio
+async def test_evaluation_set_leaderboard_paginates_and_keeps_global_rank():
+    agents = await _seed_query_leaderboard()
+
+    second_page = await _query_leaderboard(page=2, page_size=2)
+    assert [agent.agent_id for agent in second_page.items] == [agents["mid"], agents["beta"]]
+    assert (second_page.total, second_page.page, second_page.page_size) == (5, 2, 2)
+
+    filtered = await _query_leaderboard(status=["didnt_qualify"], page_size=1, page=2)
+    assert [agent.agent_id for agent in filtered.items] == [agents["mid"]]
+    assert filtered.items[0].competition_state is not None
+    assert filtered.items[0].competition_state.rank == 3
+
+    past_the_end = await _query_leaderboard(page=4, page_size=2)
+    assert past_the_end.items == []
+    assert past_the_end.total == 5
+
+
+@pytest.mark.anyio
+async def test_evaluation_set_leaderboard_query_does_not_mutate_shared_cached_rows():
+    await _seed_query_leaderboard()
+    context = await get_public_evaluation_set_context(2)
+    assert context is not None
+
+    def cached_rows():
+        return get_cached_leaderboard_rows(2, context.required_validator_count, context.use_historical_cache)
+
+    before = [row["agent_id"] for row in await cached_rows()]
+    await _query_leaderboard(sort="-name", ranked=True)
+
+    assert [row["agent_id"] for row in await cached_rows()] == before
