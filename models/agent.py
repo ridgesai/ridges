@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any, Mapping, Optional
+from typing import Any, Literal, Mapping, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, computed_field, model_validator
@@ -25,6 +25,8 @@ class ApprovalReviewStatus(str, Enum):
     under_review = "under_review"
     approved = "approved"
     rejected = "rejected"
+    benchmark_pool = "benchmark_pool"
+    benchmark_not_selected = "benchmark_not_selected"
 
 
 class AgentCompetitionStatus(str, Enum):
@@ -43,6 +45,7 @@ class AgentCompetitionStatus(str, Enum):
     rejected = "rejected"
     didnt_qualify = "didnt_qualify"
     under_review = "under_review"
+    benchmark_pool = "benchmark_pool"
     approved = "approved"
     baseline = "baseline"
 
@@ -58,6 +61,7 @@ def derive_agent_competition_status(
     relative_improvement_units: float | None = None,
     approved_at: datetime | None = None,
     baseline_agent_id: UUID | None = None,
+    benchmark_win: bool = False,
 ) -> AgentCompetitionStatus:
     """Derive the single public competition status for an agent.
 
@@ -79,8 +83,15 @@ def derive_agent_competition_status(
     if approval_review_status is ApprovalReviewStatus.rejected:
         return AgentCompetitionStatus.rejected
 
+    if approval_review_status is ApprovalReviewStatus.benchmark_pool:
+        return AgentCompetitionStatus.benchmark_pool
+    if approval_review_status is ApprovalReviewStatus.benchmark_not_selected:
+        return AgentCompetitionStatus.didnt_qualify
+
     is_approved = approved is True or approval_review_status is ApprovalReviewStatus.approved
     if is_approved:
+        if benchmark_win:
+            return AgentCompetitionStatus.approved
         if performance_delta is None and cost_delta is None and relative_improvement_units is not None:
             return AgentCompetitionStatus.baseline
         return AgentCompetitionStatus.approved
@@ -127,6 +138,7 @@ class AgentCompetitionState(BaseModel):
     baseline_agent_id: UUID | None = None
     baseline_agent_name: str | None = None
     baseline_agent_version_num: int | None = None
+    reward_basis: Literal["relative", "benchmark"] | None = None
 
 
 def build_agent_competition_state(
@@ -151,6 +163,7 @@ def build_agent_competition_state(
     baseline_agent_id: UUID | None = None,
     baseline_agent_name: str | None = None,
     baseline_agent_version_num: int | None = None,
+    benchmark_phase_id: UUID | None = None,
 ) -> AgentCompetitionState:
     competition_status = derive_agent_competition_status(
         status=status,
@@ -162,6 +175,7 @@ def build_agent_competition_state(
         relative_improvement_units=relative_improvement_units,
         approved_at=approved_at,
         baseline_agent_id=baseline_agent_id,
+        benchmark_win=benchmark_phase_id is not None,
     )
     return AgentCompetitionState(
         set_id=set_id,
@@ -184,6 +198,7 @@ def build_agent_competition_state(
         baseline_agent_id=baseline_agent_id,
         baseline_agent_name=baseline_agent_name,
         baseline_agent_version_num=baseline_agent_version_num,
+        reward_basis="benchmark" if benchmark_phase_id is not None else ("relative" if approved else None),
     )
 
 
@@ -258,6 +273,7 @@ class PublicAgent(BaseModel):
                 baseline_agent_id=values.get("baseline_agent_id"),
                 baseline_agent_name=values.get("baseline_agent_name"),
                 baseline_agent_version_num=values.get("baseline_agent_version_num"),
+                benchmark_phase_id=values.get("benchmark_phase_id"),
             )
         return values
 

@@ -41,12 +41,38 @@ class RankedRewardCandidate:
     current_reward_score: float
 
 
+@dataclass(frozen=True, slots=True)
+class BenchmarkReward:
+    """A benchmark-phase winner's points: its score in points plus cost points against the leader."""
+
+    score_points: float
+    cost_points: float
+    cost_delta: float | None
+    total_points: float
+
+
 def _is_finite_nonnegative(value: float | None) -> bool:
     return value is not None and math.isfinite(value) and value >= 0
 
 
 def _meets_threshold(value: float, threshold: float) -> bool:
     return value > threshold or math.isclose(value, threshold, rel_tol=1e-9, abs_tol=1e-12)
+
+
+def _cost_delta(candidate_cost: float | None, leader_cost: float | None) -> float | None:
+    if _is_finite_nonnegative(candidate_cost) and _is_finite_nonnegative(leader_cost) and leader_cost > 0:
+        return (leader_cost - candidate_cost) / leader_cost
+    return None
+
+
+def _cost_units(cost_delta: float | None, cost_threshold: float) -> float:
+    if cost_delta is None or cost_delta <= 0:
+        return 0.0
+
+    maximum_cost_units = 1 / cost_threshold
+    if cost_delta >= 1:
+        return maximum_cost_units
+    return min(math.log1p(-cost_delta) / math.log1p(-cost_threshold), maximum_cost_units)
 
 
 def calculate_relative_improvement(
@@ -95,21 +121,12 @@ def calculate_relative_improvement(
     else:
         performance_delta = (candidate_score - leader_score) / leader_score
 
-    cost_delta = None
-    if _is_finite_nonnegative(candidate_cost) and _is_finite_nonnegative(leader_cost) and leader_cost > 0:
-        cost_delta = (leader_cost - candidate_cost) / leader_cost
+    cost_delta = _cost_delta(candidate_cost, leader_cost)
 
     performance_units = (
         math.log1p(performance_delta) / math.log1p(performance_threshold) if performance_delta > 0 else 0.0
     )
-    cost_units = 0.0
-    if cost_delta is not None and cost_delta > 0:
-        maximum_cost_units = 1 / cost_threshold
-        cost_units = (
-            maximum_cost_units
-            if cost_delta >= 1
-            else min(math.log1p(-cost_delta) / math.log1p(-cost_threshold), maximum_cost_units)
-        )
+    cost_units = _cost_units(cost_delta, cost_threshold)
 
     # Check if the candidate meets the performance and cost thresholds.
     performance_qualified = _meets_threshold(performance_delta, performance_threshold)
@@ -152,6 +169,34 @@ def calculate_initial_reward_score(
         raise ValueError("Time multiplier must be finite and at least 1")
 
     return relative_improvement_units * time_multiplier
+
+
+def calculate_benchmark_reward(
+    *,
+    candidate_score: float,
+    candidate_cost: float | None,
+    leader_cost: float | None,
+    cost_threshold: float,
+) -> BenchmarkReward:
+    """
+    Reward a benchmark-phase winner in absolute points: its score times 100, plus cost points against the
+    leader when there is one and the winner is cheaper. No recovery bonus applies.
+    """
+    if not 0 < cost_threshold < 1:
+        raise ValueError("Cost improvement threshold must be between 0 and 1")
+
+    if not _is_finite_nonnegative(candidate_score):
+        raise ValueError("Benchmark winner score must be finite and non-negative")
+
+    cost_delta = _cost_delta(candidate_cost, leader_cost)
+    score_points = candidate_score * 100.0
+    cost_points = _cost_units(cost_delta, cost_threshold)
+    return BenchmarkReward(
+        score_points=score_points,
+        cost_points=cost_points,
+        cost_delta=cost_delta,
+        total_points=score_points + cost_points,
+    )
 
 
 def decay_reward_score(*, value: float, elapsed_hours: float, half_life_hours: float) -> float:

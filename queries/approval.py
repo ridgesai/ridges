@@ -20,7 +20,7 @@ from models.competition import CompetitionPolicy
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
 from queries.banned_coldkey import get_banned_coldkey, lock_coldkey_ban_state
-from queries.competition import _get_competition_policy
+from queries.competition import _active_benchmark_phase_id, _get_competition_policy
 from queries.errors import AgentCompetitionMembershipMismatchError
 from queries.evaluation import (
     AgentRankingProfile,
@@ -37,6 +37,14 @@ from utils.incentives import (
 logger = logging.getLogger(__name__)
 
 INCENTIVE_APPROVAL_LOCK_NAMESPACE = -1730
+
+
+async def lock_incentive_approval(conn: DatabaseConnection, set_id: int) -> None:
+    await conn.execute(
+        "SELECT pg_advisory_xact_lock($1, $2)",
+        INCENTIVE_APPROVAL_LOCK_NAMESPACE,
+        set_id,
+    )
 
 
 def _pre_screening_verdict_from_job_status(job_status: str) -> str:
@@ -294,11 +302,7 @@ async def _insert_incentive_approval(
     set_id: int,
     policy: CompetitionPolicy,
 ) -> str | None:
-    await conn.execute(
-        "SELECT pg_advisory_xact_lock($1, $2)",
-        INCENTIVE_APPROVAL_LOCK_NAMESPACE,
-        set_id,
-    )
+    await lock_incentive_approval(conn, set_id)
 
     agent = await conn.fetchrow(
         """
@@ -329,6 +333,18 @@ async def _insert_incentive_approval(
     if candidate is None:
         return "Candidate no longer has a complete validator score"
 
+    if agent["miner_hotkey"] != config.OWNER_HOTKEY:
+        phase_id = await _active_benchmark_phase_id(conn, set_id)
+        if phase_id is not None:
+            await conn.execute(
+                "INSERT INTO benchmark_phase_entries (phase_id, agent_id, set_id) VALUES ($1, $2, $3) "
+                "ON CONFLICT (phase_id, agent_id) DO NOTHING",
+                phase_id,
+                agent_id,
+                set_id,
+            )
+            return None
+
     leader = await _get_ban_stable_leader(
         conn,
         set_id,
@@ -348,6 +364,14 @@ async def _insert_incentive_approval(
 
     decision_time: datetime = await conn.fetchval("SELECT NOW()")
     last_competition_improvement = None if leader is None else leader.approved_at
+    if last_competition_improvement is not None:
+        last_phase_end = await conn.fetchval(
+            "SELECT MAX(ended_at) FROM competition_benchmark_phases WHERE set_id = $1",
+            set_id,
+        )
+        # Time spent in a benchmark phase never counts toward the recovery bonus.
+        if last_phase_end is not None and last_phase_end > last_competition_improvement:
+            last_competition_improvement = last_phase_end
     competition_elapsed_hours = _elapsed_hours(last_competition_improvement, decision_time)
     time_multiplier = calculate_time_multiplier(
         elapsed_hours=competition_elapsed_hours,
