@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal, Mapping
+from uuid import UUID
 
 import asyncpg
 
@@ -448,6 +449,13 @@ async def lock_competition_for_admission(
         set_id,
     )
     return None if row is None else _context_from_row(row)
+
+
+async def _active_benchmark_phase_id(conn: DatabaseConnection, set_id: int) -> UUID | None:
+    return await conn.fetchval(
+        "SELECT phase_id FROM competition_benchmark_phases WHERE set_id = $1 AND ended_at IS NULL",
+        set_id,
+    )
 
 
 async def _get_competition_policy(conn: DatabaseConnection, set_id: int) -> CompetitionPolicy | None:
@@ -926,13 +934,8 @@ async def replace_competition_policy(
         if before.policy == policy:
             return before
 
-        if not policy.incentive_enabled:
-            active_phase = await conn.fetchval(
-                "SELECT 1 FROM competition_benchmark_phases WHERE set_id = $1 AND ended_at IS NULL",
-                set_id,
-            )
-            if active_phase is not None:
-                raise CompetitionAdminConflictError("benchmark_phase_active")
+        if not policy.incentive_enabled and await _active_benchmark_phase_id(conn, set_id) is not None:
+            raise CompetitionAdminConflictError("benchmark_phase_active")
 
         policy_values = policy.model_dump()
         await conn.execute(
