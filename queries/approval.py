@@ -20,7 +20,7 @@ from models.competition import CompetitionPolicy
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
 from queries.banned_coldkey import get_banned_coldkey, lock_coldkey_ban_state
-from queries.competition import _get_competition_policy
+from queries.competition import _active_benchmark_phase_id, _get_competition_policy
 from queries.errors import AgentCompetitionMembershipMismatchError
 from queries.evaluation import (
     AgentRankingProfile,
@@ -37,6 +37,14 @@ from utils.incentives import (
 logger = logging.getLogger(__name__)
 
 INCENTIVE_APPROVAL_LOCK_NAMESPACE = -1730
+
+
+async def lock_incentive_approval(conn: DatabaseConnection, set_id: int) -> None:
+    await conn.execute(
+        "SELECT pg_advisory_xact_lock($1, $2)",
+        INCENTIVE_APPROVAL_LOCK_NAMESPACE,
+        set_id,
+    )
 
 
 def _pre_screening_verdict_from_job_status(job_status: str) -> str:
@@ -294,11 +302,7 @@ async def _insert_incentive_approval(
     set_id: int,
     policy: CompetitionPolicy,
 ) -> str | None:
-    await conn.execute(
-        "SELECT pg_advisory_xact_lock($1, $2)",
-        INCENTIVE_APPROVAL_LOCK_NAMESPACE,
-        set_id,
-    )
+    await lock_incentive_approval(conn, set_id)
 
     agent = await conn.fetchrow(
         """
@@ -330,10 +334,7 @@ async def _insert_incentive_approval(
         return "Candidate no longer has a complete validator score"
 
     if agent["miner_hotkey"] != config.OWNER_HOTKEY:
-        phase_id = await conn.fetchval(
-            "SELECT phase_id FROM competition_benchmark_phases WHERE set_id = $1 AND ended_at IS NULL",
-            set_id,
-        )
+        phase_id = await _active_benchmark_phase_id(conn, set_id)
         if phase_id is not None:
             await conn.execute(
                 "INSERT INTO benchmark_phase_entries (phase_id, agent_id, set_id) VALUES ($1, $2, $3) "
