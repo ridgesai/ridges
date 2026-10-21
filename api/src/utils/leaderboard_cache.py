@@ -54,7 +54,7 @@ _STATUS_SORT_PRIORITY = {
 
 _SORT_KEYS: dict[LeaderboardSortField, Callable[[asyncpg.Record, AgentCompetitionStatus], Any]] = {
     LeaderboardSortField.rank: lambda row, _: row["rank"],
-    LeaderboardSortField.name: lambda row, _: (row["name"].casefold(), row["version_num"]),
+    LeaderboardSortField.agent_name: lambda row, _: (row["name"].casefold(), row["version_num"]),
     LeaderboardSortField.score: lambda row, _: row["final_score"],
     LeaderboardSortField.cost: lambda row, _: row["average_cost_usd"],
     LeaderboardSortField.runtime: lambda row, _: row["average_runtime_seconds"],

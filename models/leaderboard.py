@@ -1,13 +1,10 @@
 from enum import Enum
-from typing import TYPE_CHECKING
 
 from pydantic import ConfigDict, Field, field_validator
 
+from models.agent import AgentCompetitionStatus
 from models.pagination import PageParams
-
-if TYPE_CHECKING:
-    from models.agent import AgentCompetitionStatus
-    from utils.validator_hotkeys import ValidatorName
+from utils.validator_hotkeys import ValidatorName
 
 
 class LeaderboardSortField(str, Enum):
