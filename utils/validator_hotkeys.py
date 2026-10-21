@@ -1,3 +1,5 @@
+from enum import Enum
+
 # List of whitelisted validators (including their names and hotkeys)
 WHITELISTED_VALIDATORS = [
     {"name": "RoundTable 21", "short_name": "RT21", "hotkey": "5Djyacas3eWLPhCKsS3neNSJonzfxJmD3gcrMTFDc4eHsn62"},
@@ -19,6 +21,17 @@ WHITELISTED_VALIDATORS = [
     # Developer validators, used for testing
     {"name": "Testnet Validator", "hotkey": "5G699LghHWA18yEPq8NpX9gYi8ZDM3fy2BJvSvYWqtt2DHGE"},
 ]
+
+# Public, name-based handle for a whitelisted validator (e.g. leaderboard filters); resolve with validator_name_to_hotkey
+ValidatorName = Enum(
+    "ValidatorName",
+    {
+        validator["name"]: validator["name"]
+        for validator in WHITELISTED_VALIDATORS
+        if validator["name"] != "Testnet Validator"
+    },
+    type=str,
+)
 
 
 def is_validator_hotkey_whitelisted(validator_hotkey: str) -> bool:
