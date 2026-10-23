@@ -174,6 +174,18 @@ async def test_legacy_run_without_attempts_is_not_retried(monkeypatch) -> None:
     assert capture["created_attempts"] == 0
 
 
+async def test_platform_validator_run_is_not_retried(monkeypatch) -> None:
+    evaluation_run, validator, capture = _make_setup(monkeypatch)
+    validator.hotkey = "platform-validator-1"
+
+    response = await _call_update(
+        _error_request(evaluation_run, EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR), validator
+    )
+
+    assert response.retry is False
+    assert capture["created_attempts"] == 0
+
+
 async def test_stopped_agent_blocks_retry(monkeypatch) -> None:
     evaluation_run, validator, capture = _make_setup(monkeypatch, agent_status=AgentStatus.cancelled)
 
