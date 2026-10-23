@@ -14,6 +14,11 @@ from queries.errors import EvaluationSetMembershipMismatchError
 from queries.evaluation_run import create_evaluation_runs, get_all_evaluation_runs_in_evaluation_id
 from queries.evaluation_set import get_all_evaluation_set_problems_in_set_group_in_set_id
 from utils.database import DatabaseConnection, db_operation
+from utils.validator_hotkeys import (
+    PLATFORM_VALIDATOR_PREFIX,
+    is_platform_validator_hotkey,
+    max_platform_validator_evaluations_per_agent,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +175,9 @@ async def _evaluation_claim_stats(
         )
         SELECT
             COUNT(*) FILTER (WHERE computed_status IN ('running', 'success'))::int AS active_count,
+            COUNT(*) FILTER (
+                WHERE computed_status IN ('running', 'success') AND validator_hotkey LIKE $5
+            )::int AS platform_validator_active_count,
             COALESCE(
                 BOOL_OR(
                     validator_hotkey = $4
@@ -183,6 +191,7 @@ async def _evaluation_claim_stats(
         set_id,
         set_group.value,
         validator_hotkey,
+        f"{PLATFORM_VALIDATOR_PREFIX}%",
     )
 
 
@@ -286,6 +295,17 @@ async def create_new_evaluation_and_evaluation_runs(
                 f"Skipping evaluation issuance for agent {candidate.agent_id}: validator target is already satisfied"
             )
             return None
+
+        if is_platform_validator_hotkey(validator_hotkey):
+            platform_validator_cap = max_platform_validator_evaluations_per_agent(
+                competition["required_validator_count"]
+            )
+            if claim_stats["platform_validator_active_count"] >= platform_validator_cap:
+                logger.info(
+                    f"Skipping evaluation issuance for agent {candidate.agent_id}: "
+                    "platform validator share is already used"
+                )
+                return None
 
         logger.debug(
             f"Creating new evaluation and evaluation runs for agent {candidate.agent_id} with validator hotkey "

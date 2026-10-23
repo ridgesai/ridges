@@ -331,3 +331,74 @@ async def test_slow_screener_reregistration_does_not_block_different_screener(mo
     assert independent_completed_before_release
     assert blocked_response.session_id in validator_endpoint.SESSION_ID_TO_VALIDATOR
     assert independent_response.session_id in validator_endpoint.SESSION_ID_TO_VALIDATOR
+
+
+def _platform_validator_request(**overrides) -> ScreenerRegistrationRequest:
+    fields = {"name": "platform-validator-1", "password": "platform-password", "commit_hash": "test-commit"}
+    return ScreenerRegistrationRequest(**(fields | overrides))
+
+
+@pytest.fixture
+def _platform_validator_enabled(monkeypatch) -> None:
+    monkeypatch.setattr(validator_endpoint, "SESSION_ID_TO_VALIDATOR", {})
+    monkeypatch.setattr(validator_endpoint.config, "PLATFORM_VALIDATOR_PASSWORD", "platform-password")
+    monkeypatch.setattr(validator_endpoint, "COMMIT_HASH", "test-commit")
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("_platform_validator_enabled")
+async def test_platform_validator_registration_creates_session() -> None:
+    response = await validator_endpoint.validator_register_as_platform_validator(
+        _make_request("127.0.0.1"), _platform_validator_request()
+    )
+
+    assert validator_endpoint.SESSION_ID_TO_VALIDATOR[response.session_id].hotkey == "platform-validator-1"
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("_platform_validator_enabled")
+async def test_platform_validator_commit_mismatch_returns_the_commit_to_update_to() -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        await validator_endpoint.validator_register_as_platform_validator(
+            _make_request("127.0.0.1"), _platform_validator_request(commit_hash="old-commit")
+        )
+
+    # The client resets itself to this commit and restarts (UPDATE_AUTOMATICALLY).
+    assert exc_info.value.status_code == 426
+    assert exc_info.value.headers == {"X-Commit-Hash": "test-commit"}
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("_platform_validator_enabled")
+@pytest.mark.parametrize(
+    ("overrides", "status_code"),
+    [
+        ({"commit_hash": "old-commit"}, 426),
+        ({"name": "validator-1"}, 400),
+        ({"name": "platform-validator-1x"}, 400),
+        ({"password": "wrong"}, 403),
+    ],
+)
+async def test_platform_validator_registration_rejects_bad_requests(overrides, status_code) -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        await validator_endpoint.validator_register_as_platform_validator(
+            _make_request("127.0.0.1"), _platform_validator_request(**overrides)
+        )
+
+    assert exc_info.value.status_code == status_code
+    assert validator_endpoint.SESSION_ID_TO_VALIDATOR == {}
+
+
+@pytest.mark.anyio
+@pytest.mark.usefixtures("_platform_validator_enabled")
+@pytest.mark.parametrize("configured_password", [None, ""])
+async def test_platform_validator_registration_is_off_without_a_password(monkeypatch, configured_password) -> None:
+    monkeypatch.setattr(validator_endpoint.config, "PLATFORM_VALIDATOR_PASSWORD", configured_password)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await validator_endpoint.validator_register_as_platform_validator(
+            _make_request("127.0.0.1"), _platform_validator_request(password="")
+        )
+
+    assert exc_info.value.status_code == 403
+    assert validator_endpoint.SESSION_ID_TO_VALIDATOR == {}
