@@ -1,12 +1,14 @@
 import logging
 import os
 import re
+import socket
 
 from bittensor_wallet.wallet import Wallet
 from dotenv import load_dotenv
 
 from utils.docker import get_prune_timeout_seconds
 from utils.logger import setup_logging
+from utils.validator_hotkeys import PLATFORM_VALIDATOR_PREFIX
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -33,8 +35,8 @@ MODE = os.getenv("MODE")
 if not MODE:
     logger.fatal("MODE is not set in .env")
 
-if MODE != "screener" and MODE != "validator":
-    logger.fatal("MODE must be either 'screener' or 'validator'")
+if MODE not in ("screener", "validator", "platform"):
+    logger.fatal("MODE must be one of 'screener', 'validator' or 'platform'")
 
 
 if MODE == "validator":
@@ -68,6 +70,16 @@ elif MODE == "screener":
     SCREENER_PASSWORD = os.getenv("SCREENER_PASSWORD")
     if not SCREENER_PASSWORD:
         logger.fatal("SCREENER_PASSWORD is not set in .env")
+
+
+elif MODE == "platform":
+    PLATFORM_VALIDATOR_NAME = os.getenv("PLATFORM_VALIDATOR_NAME") or socket.gethostname().split(".")[0]
+    if not re.fullmatch(rf"{PLATFORM_VALIDATOR_PREFIX}\d+", PLATFORM_VALIDATOR_NAME):
+        logger.fatal("PLATFORM_VALIDATOR_NAME (or the hostname) must be in the format platform-validator-NUM")
+
+    PLATFORM_VALIDATOR_PASSWORD = os.getenv("PLATFORM_VALIDATOR_PASSWORD")
+    if not PLATFORM_VALIDATOR_PASSWORD:
+        logger.fatal("PLATFORM_VALIDATOR_PASSWORD is not set in .env")
 
 
 RIDGES_PLATFORM_URL = os.getenv("RIDGES_PLATFORM_URL")
@@ -141,6 +153,8 @@ if MODE == "validator":
     logger.info(f"Validator Hotkey: {VALIDATOR_HOTKEY.ss58_address}")
 elif MODE == "screener":
     logger.info(f"Screener Name: {SCREENER_NAME}")
+elif MODE == "platform":
+    logger.info(f"Platform Validator Name: {PLATFORM_VALIDATOR_NAME}")
 logger.info("-------------------------------")
 
 logger.info(f"Ridges Platform URL: {RIDGES_PLATFORM_URL}")
@@ -172,12 +186,12 @@ SCREENER_DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS = 10
 HARDCODED_MAX_COST_USD = 0.29
 
 MAX_CONCURRENT_EVALUATION_RUNS = os.getenv("MAX_CONCURRENT_EVALUATION_RUNS")
-if MODE == "validator":
+if MODE in ("validator", "platform"):
     # Validators receive this per-competition on /validator/request-evaluation. The value
     # below is only the fallback used before the first assignment arrives, or when the
     # competition carries no policy.
     if MAX_CONCURRENT_EVALUATION_RUNS:
-        logger.warning("Ignoring MAX_CONCURRENT_EVALUATION_RUNS in validator mode; the competition configures it")
+        logger.warning(f"Ignoring MAX_CONCURRENT_EVALUATION_RUNS in {MODE} mode; the competition configures it")
     MAX_CONCURRENT_EVALUATION_RUNS = DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS
 else:
     if not MAX_CONCURRENT_EVALUATION_RUNS:
