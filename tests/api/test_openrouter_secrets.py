@@ -667,6 +667,42 @@ async def test_validator_request_evaluation_allows_missing_openrouter_record(mon
 
     assert response is not None
     assert response.openrouter_config is None
+    assert response.openrouter_verifier_config is None
+
+
+@pytest.mark.anyio
+async def test_validator_request_evaluation_sends_verifier_key_only_when_required(monkeypatch) -> None:
+    agent_id = uuid4()
+    validator_hotkey = "screener-1-test"
+    _, evaluation_runs = _patch_validator_dependencies(
+        monkeypatch,
+        agent_id=agent_id,
+        validator_hotkey=validator_hotkey,
+        openrouter_secrets=None,
+    )
+    evaluation_runs[0].execution_spec = {"required_verifier_env": ["OPENROUTER_VERIFIER_API_KEY"]}
+    monkeypatch.setattr(
+        validator_endpoint.config,
+        "OPENROUTER_VERIFIER_API_KEY",
+        "verifier-secret",
+    )
+    validator = validator_endpoint.Validator(
+        session_id=uuid4(),
+        name="validator",
+        hotkey=validator_hotkey,
+        time_connected=datetime.now(timezone.utc),
+        ip_address="127.0.0.1",
+    )
+
+    response = await validator_endpoint.validator_request_evaluation(
+        ValidatorRequestEvaluationRequest(),
+        validator=validator,
+    )
+
+    assert response is not None
+    assert response.openrouter_config is None
+    assert response.openrouter_verifier_config is not None
+    assert response.openrouter_verifier_config.api_key == "verifier-secret"
 
 
 @pytest.mark.anyio
