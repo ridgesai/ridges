@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from models.competition import PositiveStrictInt
 from models.evaluation_run import EvaluationRunStatus
-from models.openrouter import OpenRouterRuntimeConfig
+from models.openrouter import OpenRouterRuntimeConfig, OpenRouterVerifierRuntimeConfig
 from models.problem import ProblemTestResult
 from utils.system_metrics import SystemMetrics
 
@@ -58,6 +58,7 @@ class ValidatorRequestEvaluationResponse(BaseModel):
     evaluation_runs: List[ValidatorRequestEvaluationResponseEvaluationRun]
     artifact_upload_urls: dict[str, str] = Field(default_factory=dict)
     openrouter_config: OpenRouterRuntimeConfig | None = None
+    openrouter_verifier_config: OpenRouterVerifierRuntimeConfig | None = None
     # Effective validator override or competition default. None for screeners.
     max_concurrent_evaluation_runs: PositiveStrictInt | None = None
 
