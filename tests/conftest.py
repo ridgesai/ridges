@@ -47,6 +47,7 @@ TEST_ENV_DEFAULTS = {
     "NETUID": "1",
     "NUM_EVALS_PER_AGENT": "1",
     "OWNER_HOTKEY": "test-owner-hotkey",
+    "OPENROUTER_VERIFIER_API_KEY": "test-verifier-key",
     "PORT": "8000",
     "PRUNE_THRESHOLD": "0.4",
     "REQUEST_EVALUATION_INTERVAL_SECONDS": "10",
