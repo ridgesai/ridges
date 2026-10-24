@@ -71,3 +71,21 @@ async def test_external_validators_always_keep_a_majority(required, platform_val
     assert await offered(next_platform_validator) == []
     assert await claim(agent, next_platform_validator) is None
     assert await offered("validator-a") == [agent]
+
+
+async def test_failed_platform_evaluation_frees_its_slot_for_another_platform_validator():
+    agent = await seed_agent(required_validator_count=3)
+    assert await claim(agent, "platform-validator-1") is not None
+    async with db.pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE evaluation_runs SET status = 'error', error_code = 2000, finished_or_errored_at = NOW()
+            WHERE evaluation_id IN (SELECT evaluation_id FROM evaluations WHERE validator_hotkey = 'platform-validator-1')
+            """
+        )
+
+    # The candidate query (via its running/success aggregate join) and the claim check must agree that a failed
+    # evaluation no longer holds the slot.
+    assert await offered("platform-validator-2") == [agent]
+    assert await claim(agent, "platform-validator-2") is not None
+    assert await offered("platform-validator-3") == []
