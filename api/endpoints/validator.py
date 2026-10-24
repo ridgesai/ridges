@@ -97,7 +97,6 @@ from utils.s3 import download_text_file_from_s3, generate_presigned_upload_url, 
 from utils.system_metrics import SystemMetrics
 from utils.validator_hotkeys import (
     PLATFORM_VALIDATOR_PREFIX,
-    is_platform_validator_hotkey,
     is_validator_hotkey_whitelisted,
     validator_hotkey_to_name,
 )
@@ -803,9 +802,6 @@ async def _maybe_grant_retry(
     """
 
     if not is_retryable_error_code(int(evaluation_run.error_code) if evaluation_run.error_code is not None else None):
-        return None
-
-    if is_platform_validator_hotkey(validator.hotkey):
         return None
 
     try:

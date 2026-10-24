@@ -174,7 +174,8 @@ async def test_legacy_run_without_attempts_is_not_retried(monkeypatch) -> None:
     assert capture["created_attempts"] == 0
 
 
-async def test_platform_validator_run_is_not_retried(monkeypatch) -> None:
+async def test_platform_validator_run_is_retried_like_any_validator(monkeypatch) -> None:
+    """Without a retry, an infra error hands the evaluation to an external validator, adding the load we offload."""
     evaluation_run, validator, capture = _make_setup(monkeypatch)
     validator.hotkey = "platform-validator-1"
 
@@ -182,8 +183,8 @@ async def test_platform_validator_run_is_not_retried(monkeypatch) -> None:
         _error_request(evaluation_run, EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR), validator
     )
 
-    assert response.retry is False
-    assert capture["created_attempts"] == 0
+    assert response.retry is True
+    assert capture["created_attempts"] == 1
 
 
 async def test_stopped_agent_blocks_retry(monkeypatch) -> None:
