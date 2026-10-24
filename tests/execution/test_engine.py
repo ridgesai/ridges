@@ -9,7 +9,7 @@ from execution.errors import EvaluationRunException
 from execution.types import TrialSnapshot
 from models.evaluation_run import EvaluationRunErrorCode
 from models.harbor_task import HarborRemoteTaskExecutionSpec
-from models.openrouter import OpenRouterRuntimeConfig
+from models.openrouter import OpenRouterRuntimeConfig, OpenRouterVerifierRuntimeConfig
 from ridges_harbor._stdlib_contract import HARBOR_RUNNER_ERROR_FILENAME, SETUP_LOG_FILENAME
 from ridges_harbor.seed import problem_seed
 
@@ -120,6 +120,27 @@ async def test_malformed_remote_execution_spec_is_wrapped_as_validator_internal_
     assert "Invalid Harbor execution spec for 'update-status-file'" in exc_info.value.error_message
     assert "dataset_name" in exc_info.value.error_message
     assert "task_digest" in exc_info.value.error_message
+
+
+@pytest.mark.anyio
+async def test_remote_execution_spec_rejects_unknown_verifier_environment(tmp_path: Path) -> None:
+    agent_path = tmp_path / "agent.py"
+    write(agent_path, "def agent_main(_input):\n    return ''\n")
+
+    with pytest.raises(EvaluationRunException) as exc_info:
+        await ExecutionEngine().evaluate(
+            evaluation_run_id=uuid4(),
+            problem_name="update-status-file",
+            execution_spec={
+                **valid_execution_spec(),
+                "required_verifier_env": ["UNSUPPORTED_SECRET"],
+            },
+            agent_path=agent_path,
+            agent_code=None,
+        )
+
+    assert exc_info.value.error_code == EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR
+    assert "required_verifier_env.0" in exc_info.value.error_message
 
 
 @pytest.mark.anyio
@@ -240,6 +261,7 @@ async def test_evaluate_orchestrates_run_task_with_stable_request(tmp_path: Path
             workspace_id="workspace-1",
             expected_api_key_sha256="expected-hash",
         ),
+        openrouter_verifier_config=OpenRouterVerifierRuntimeConfig(api_key="unused-verifier-key"),
     )
 
     assert result.backend == "harbor"
@@ -258,6 +280,66 @@ async def test_evaluate_orchestrates_run_task_with_stable_request(tmp_path: Path
         expected_api_key_sha256="expected-hash",
     )
     assert captured["max_cost_usd"] == 12.5
+    assert captured["verifier_env"] == {}
+
+
+@pytest.mark.anyio
+async def test_evaluate_supplies_required_verifier_key_only_to_verifier(tmp_path: Path, monkeypatch) -> None:
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    agent_path = tmp_path / "agent.py"
+    write(agent_path, "def agent_main(_input):\n    return ''\n")
+    captured: dict[str, object] = {}
+
+    async def fake_resolve_task_dir(self, execution_spec, problem_name, fetch_task_url):
+        return task_dir
+
+    async def fake_run_task(_task_dir, **kwargs):
+        captured.update(kwargs)
+        return make_summary(
+            tmp_path,
+            test_results=None,
+            verifier_result=successful_verifier_result(),
+        )
+
+    monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
+    monkeypatch.setattr(engine_module, "run_task", fake_run_task)
+    execution_spec = {
+        **valid_execution_spec(),
+        "required_verifier_env": ["OPENROUTER_VERIFIER_API_KEY"],
+    }
+
+    await ExecutionEngine().evaluate(
+        evaluation_run_id=uuid4(),
+        problem_name="update-status-file",
+        execution_spec=execution_spec,
+        agent_path=agent_path,
+        agent_code=None,
+        openrouter_verifier_config=OpenRouterVerifierRuntimeConfig(api_key="verifier-secret"),
+    )
+
+    assert captured["verifier_env"] == {"OPENROUTER_VERIFIER_API_KEY": "verifier-secret"}
+
+
+@pytest.mark.anyio
+async def test_evaluate_rejects_missing_required_verifier_key(tmp_path: Path) -> None:
+    agent_path = tmp_path / "agent.py"
+    write(agent_path, "def agent_main(_input):\n    return ''\n")
+
+    with pytest.raises(EvaluationRunException) as exc_info:
+        await ExecutionEngine().evaluate(
+            evaluation_run_id=uuid4(),
+            problem_name="update-status-file",
+            execution_spec={
+                **valid_execution_spec(),
+                "required_verifier_env": ["OPENROUTER_VERIFIER_API_KEY"],
+            },
+            agent_path=agent_path,
+            agent_code=None,
+        )
+
+    assert exc_info.value.error_code == EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR
+    assert "requires platform verifier credentials" in exc_info.value.error_message
 
 
 @pytest.mark.anyio
