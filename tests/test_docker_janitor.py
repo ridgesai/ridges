@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
+from docker.errors import APIError as docker_errors_APIError
 from docker.errors import NotFound as docker_errors_NotFound
 
 import utils.docker as docker_utils
@@ -96,9 +98,10 @@ class FakeNetwork:
 
 
 class FakeImage:
-    def __init__(self, image_id, tags, *, last_tag_age=timedelta(hours=12), size=1_000_000_000):
+    def __init__(self, image_id, tags, *, last_tag_age=timedelta(hours=12), size=1_000_000_000, repo_digests=None):
         self.id = image_id
         self.tags = tags
+        self.repo_digests = repo_digests
         metadata = {"LastTagTime": _iso(last_tag_age) if last_tag_age is not None else "0001-01-01T00:00:00Z"}
         self.attrs = {
             "Metadata": metadata,
@@ -117,13 +120,19 @@ class FakeClient:
         vanished_container_ids=(),
         vanished_image_ids=(),
         image_prune_reclaimed=None,
+        image_remove_status_codes=None,
+        forget_removals=False,
     ):
+        self.forget_removals = forget_removals
         self._containers = containers or []
         self._networks = networks or []
         self._images = images or []
         self.vanished_container_ids = set(vanished_container_ids)
         self.vanished_image_ids = set(vanished_image_ids)
+        self.image_remove_status_codes = dict(image_remove_status_codes or {})
         self.removed_tags = []
+        self.removed_image_ids = []
+        self.image_list_filters = []
         self.pruned_images = False
         self.image_prune_filters = []
         self.image_prune_reclaimed = list(image_prune_reclaimed or [])
@@ -174,18 +183,48 @@ class FakeClient:
                     result = [c for c in result if filters["label"] in c.labels]
                 return [c.summary() for c in result]
 
-            def images(self):
-                return [{"Id": i.id, "RepoTags": list(i.tags) if i.tags is not None else None} for i in client._images]
+            def images(self, filters=None):
+                if filters is None:
+                    return [
+                        {"Id": i.id, "RepoTags": list(i.tags) if i.tags is not None else None} for i in client._images
+                    ]
+                client.image_list_filters.append(filters)
+                return [
+                    {"Id": i.id, "RepoTags": None, "RepoDigests": i.repo_digests, "Size": i.attrs["Size"]}
+                    for i in client._images
+                    if not i.tags and (client.forget_removals or i.id not in client.removed_image_ids)
+                ]
 
-            def prune_builds(self, filters=None, all=None):
+            def remove_image(self, image, force=False, noprune=False):
+                assert force is False and noprune is False
+                status_code = client.image_remove_status_codes.get(image)
+                if status_code is not None:
+                    response = SimpleNamespace(status_code=status_code, reason="test", url=f"/images/{image}")
+                    raise docker_errors_APIError("remove failed", response=response)
+                client.removed_image_ids.append(image)
+
+            def prune_builds(self, filters=None, keep_storage=None, all=None):
                 client.pruned_builds = True
-                client.build_prune_calls.append({"filters": filters, "all": all})
+                client.build_prune_calls.append({"keep_storage": keep_storage, "all": all})
                 return {"SpaceReclaimed": 456}
 
         self.containers = Containers()
         self.networks = Networks()
         self.images = Images()
         self.api = Api()
+
+
+@pytest.fixture(autouse=True)
+def no_real_docker_daemon(monkeypatch):
+    """These tests run destructive prunes; reaching the host daemon would delete the developer's images and cache."""
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("janitor test tried to create a real Docker client")
+
+    monkeypatch.setattr(docker_utils, "docker_client", None)
+    monkeypatch.setattr(docker_utils, "docker_client_long_timeout", None)
+    monkeypatch.setattr(docker_utils.docker, "from_env", refuse)
+    monkeypatch.setattr(docker_utils.docker, "DockerClient", refuse)
 
 
 @pytest.fixture
@@ -563,6 +602,8 @@ async def test_restart_reconciles_sidecars_then_images_and_keeps_shared_referenc
     loop = validator_main.asyncio.get_running_loop()
     monkeypatch.setattr(loop, "add_signal_handler", lambda *_args: None)
     monkeypatch.setattr(validator_main, "get_system_metrics", metrics)
+    monkeypatch.setattr(docker_utils, "_disk_total_bytes", lambda: 100 * 1_000_000_000)
+    monkeypatch.setattr(docker_utils, "_build_cache_bytes", lambda _client: 10 * 1_000_000_000)
     await validator_main._run_startup_tasks()
 
     assert postgres.removed and clickhouse.removed
@@ -972,26 +1013,65 @@ def test_container_sweep_survives_container_vanishing_mid_sweep(inject_client):
 
 # --- pressure-gated cache prune ---------------------------------------------
 
+GB = 1_000_000_000
 
-def test_cache_prune_only_fires_at_or_above_threshold(inject_client):
+
+@pytest.fixture
+def pressure_sizes(monkeypatch):
+    """A 100 GB disk holding a 50 GB build cache, unless a test overrides the cache size."""
+    sizes = {"cache": 50 * GB}
+    monkeypatch.setattr(docker_utils, "_disk_total_bytes", lambda: 100 * GB)
+    monkeypatch.setattr(docker_utils, "_build_cache_bytes", lambda _client: sizes["cache"])
+    return sizes
+
+
+def test_cache_prune_only_fires_at_or_above_threshold(inject_client, pressure_sizes):
     client = inject_client(FakeClient())
 
     prune_caches_under_disk_pressure(disk_used_percent=50, pressure_percent=80, dry_run=False)
     assert not client.pruned_images and not client.pruned_builds
 
     prune_caches_under_disk_pressure(disk_used_percent=80, pressure_percent=80, dry_run=False)
-    assert client.pruned_images and client.pruned_builds
-    assert client.build_prune_calls == [{"filters": {"until": "1h"}, "all": True}]
+    assert client.pruned_images
+    # 80% -> 70% target frees 10 GB; the 123 bytes from images count toward it.
+    assert client.build_prune_calls == [{"keep_storage": 40 * GB + 123, "all": True}]
 
 
-def test_cache_prune_dry_run_never_prunes(inject_client):
+def test_cache_prune_trims_only_what_images_did_not_free(inject_client, pressure_sizes):
+    client = inject_client(FakeClient(image_prune_reclaimed=[4 * GB]))
+
+    prune_caches_under_disk_pressure(disk_used_percent=85, pressure_percent=80, dry_run=False)
+
+    # 85% -> 70% frees 15 GB; images freed 4 GB, so the cache gives up 11 GB.
+    assert client.build_prune_calls == [{"keep_storage": 39 * GB, "all": True}]
+
+
+def test_cache_prune_skips_the_cache_when_images_freed_enough(inject_client, pressure_sizes):
+    client = inject_client(FakeClient(image_prune_reclaimed=[20 * GB]))
+
+    result = prune_caches_under_disk_pressure(disk_used_percent=85, pressure_percent=80, dry_run=False)
+
+    assert not client.pruned_builds
+    assert result == {"fired": True, "image_bytes": 20 * GB, "build_bytes": 0, "errors": 0}
+
+
+def test_cache_prune_budget_never_goes_negative(inject_client, pressure_sizes):
+    pressure_sizes["cache"] = 3 * GB
+    client = inject_client(FakeClient())
+
+    prune_caches_under_disk_pressure(disk_used_percent=99, pressure_percent=80, dry_run=False)
+
+    assert client.build_prune_calls == [{"keep_storage": 0, "all": True}]
+
+
+def test_cache_prune_dry_run_never_prunes(inject_client, pressure_sizes):
     client = inject_client(FakeClient())
 
     prune_caches_under_disk_pressure(disk_used_percent=95, pressure_percent=80, dry_run=True)
     assert not client.pruned_images and not client.pruned_builds
 
 
-def test_cache_prune_returns_reclaim_summary(inject_client):
+def test_cache_prune_returns_reclaim_summary(inject_client, pressure_sizes):
     inject_client(FakeClient())
 
     below = prune_caches_under_disk_pressure(disk_used_percent=50, pressure_percent=80, dry_run=False)
@@ -1001,49 +1081,79 @@ def test_cache_prune_returns_reclaim_summary(inject_client):
     assert fired == {"fired": True, "image_bytes": 123, "build_bytes": 456, "errors": 0}
 
 
-def test_dangling_prune_repeats_until_zero_and_sums_reclaimed_bytes(inject_client):
-    client = inject_client(FakeClient(image_prune_reclaimed=[100, 20, 0]))
-
-    result = prune_docker_disk_resources(include_build_cache=True, dry_run=False, until="1h")
-
-    assert result == {"image_bytes": 120, "build_bytes": 456, "errors": 0}
-    assert client.image_prune_filters == [{"dangling": True, "until": "1h"}] * 3
-    assert client.build_prune_calls == [{"filters": {"until": "1h"}, "all": True}]
-    assert client.pruned_builds
-
-
-def test_dangling_prune_is_bounded_and_dry_run_is_non_destructive(inject_client):
-    client = inject_client(FakeClient(image_prune_reclaimed=[10, 10, 10, 10, 10]))
-
-    result = prune_docker_disk_resources(include_build_cache=False, dry_run=False, until="6h")
-
-    assert result == {"image_bytes": 40, "build_bytes": 0, "errors": 0}
-    assert len(client.image_prune_filters) == 4
-
-    dry_client = inject_client(FakeClient())
-    assert prune_docker_disk_resources(include_build_cache=True, dry_run=True) == {
-        "image_bytes": 0,
-        "build_bytes": 0,
-        "errors": 0,
-    }
-    assert not dry_client.pruned_images and not dry_client.pruned_builds
-
-
-def test_prune_errors_are_returned_to_caller(inject_client):
+def test_cache_prune_reports_unknown_cache_size_without_trimming(inject_client, monkeypatch):
     client = inject_client(FakeClient())
+    monkeypatch.setattr(docker_utils, "_disk_total_bytes", lambda: 100 * GB)
 
-    def fail_image_prune(filters=None):
-        raise RuntimeError("image prune failed")
+    def fail(_client):
+        raise RuntimeError("snapshot does not exist")
 
-    def fail_build_prune(filters=None, all=None):
-        raise RuntimeError("build prune failed")
+    monkeypatch.setattr(docker_utils, "_build_cache_bytes", fail)
 
-    client.images.prune = fail_image_prune
-    client.api.prune_builds = fail_build_prune
+    result = prune_caches_under_disk_pressure(disk_used_percent=95, pressure_percent=80, dry_run=False)
 
-    result = prune_docker_disk_resources(include_build_cache=True, dry_run=False, until="1h")
+    assert not client.pruned_builds
+    assert result["errors"] == 1
 
-    assert result == {"image_bytes": 0, "build_bytes": 0, "errors": 2}
+
+def test_build_cache_bytes_queries_only_the_build_cache():
+    calls = []
+    api = SimpleNamespace(
+        _url=lambda path: f"http://docker{path}",
+        _get=lambda url, params: calls.append((url, params)) or "response",
+        _result=lambda response, json: {"BuildCache": [{"Size": 5}, {"Size": None}, {"Size": 7}]},
+    )
+
+    assert docker_utils._build_cache_bytes(SimpleNamespace(api=api)) == 12
+    assert calls == [("http://docker/system/df", {"type": "build-cache"})]
+
+
+# --- hourly build-leftover prune --------------------------------------------
+
+
+def test_default_prune_keeps_digest_pinned_registry_images(inject_client):
+    """A sidecar pulled as image@sha256 is dangling (no tag) but must survive the hourly prune."""
+    leftover = FakeImage("sha256:leftover", [], size=100)
+    unlabeled_leftover = FakeImage("sha256:unlabeled", None, size=20, repo_digests=["<none>@<none>"])
+    in_use_leftover = FakeImage("sha256:in-use", [], size=5)
+    sidecar = FakeImage("sha256:clickhouse", [], repo_digests=["clickhouse/clickhouse-server@sha256:cc6b"])
+    tagged = FakeImage("sha256:tagged", ["python:3.13-slim"])
+    client = inject_client(
+        FakeClient(
+            images=[leftover, unlabeled_leftover, in_use_leftover, sidecar, tagged],
+            image_remove_status_codes={"sha256:in-use": 409},
+        )
+    )
+
+    result = prune_docker_disk_resources(dry_run=False, until="1h")
+
+    assert result == {"image_bytes": 120, "errors": 0}
+    assert client.removed_image_ids == ["sha256:leftover", "sha256:unlabeled"]
+    assert client.image_list_filters == [{"dangling": True, "until": "1h"}] * 2
+    assert not client.pruned_images and not client.pruned_builds
+
+
+def test_leftover_prune_is_bounded_and_dry_run_is_non_destructive(inject_client):
+    client = inject_client(FakeClient(images=[FakeImage("sha256:leftover", [], size=10)], forget_removals=True))
+
+    result = prune_docker_disk_resources(dry_run=False, until="6h")
+
+    assert result == {"image_bytes": 40, "errors": 0}
+    assert len(client.image_list_filters) == 4
+
+    dry_client = inject_client(FakeClient(images=[FakeImage("sha256:leftover", [])]))
+    assert prune_docker_disk_resources(dry_run=True) == {"image_bytes": 0, "errors": 0}
+    assert dry_client.removed_image_ids == [] and dry_client.image_list_filters == []
+
+
+def test_default_prune_reports_unexpected_remove_failures(inject_client):
+    inject_client(
+        FakeClient(images=[FakeImage("sha256:leftover", [])], image_remove_status_codes={"sha256:leftover": 500})
+    )
+
+    result = prune_docker_disk_resources(dry_run=False, until="1h")
+
+    assert result == {"image_bytes": 0, "errors": 1}
 
 
 def test_long_timeout_client_fallback_is_not_cached(monkeypatch):
@@ -1089,11 +1199,11 @@ def test_container_sweep_matches_when_alias_precedes_primary_name(inject_client)
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("disk_percent,include_build_cache", [(90.0, True), (30.0, False), (None, False)])
+@pytest.mark.parametrize("disk_percent", [90.0, 30.0, None])
 @pytest.mark.parametrize("dry_run", [True, False])
 @pytest.mark.parametrize("image_sweep_fails", [False, True])
 async def test_validator_startup_honors_dry_run_and_pressure_gates_build_cache(
-    monkeypatch, caplog, disk_percent, include_build_cache, dry_run, image_sweep_fails
+    monkeypatch, caplog, disk_percent, dry_run, image_sweep_fails
 ):
     from validator import main as validator_main
 
@@ -1111,6 +1221,7 @@ async def test_validator_startup_honors_dry_run_and_pressure_gates_build_cache(
     cleanup_kwargs = {}
     image_kwargs = {}
     prune_kwargs = {}
+    pressure_kwargs = {}
     events = []
 
     async def metrics():
@@ -1131,7 +1242,12 @@ async def test_validator_startup_honors_dry_run_and_pressure_gates_build_cache(
     def prune(**kwargs):
         events.append("prune")
         prune_kwargs.update(kwargs)
-        return {"image_bytes": 0, "build_bytes": 0}
+        return {"image_bytes": 0, "errors": 0}
+
+    def pressure(**kwargs):
+        events.append("pressure")
+        pressure_kwargs.update(kwargs)
+        return {"fired": False, "image_bytes": 0, "build_bytes": 0, "errors": 0}
 
     class FakeLoop:
         def add_signal_handler(self, *_args):
@@ -1141,11 +1257,12 @@ async def test_validator_startup_honors_dry_run_and_pressure_gates_build_cache(
     monkeypatch.setattr(validator_main, "cleanup_harbor_docker_resources", cleanup)
     monkeypatch.setattr(validator_main, "sweep_leaked_harbor_images", images)
     monkeypatch.setattr(validator_main, "prune_docker_disk_resources", prune)
+    monkeypatch.setattr(validator_main, "prune_caches_under_disk_pressure", pressure)
     monkeypatch.setattr(validator_main.asyncio, "get_running_loop", lambda: FakeLoop())
 
     await validator_main._run_startup_tasks()
 
-    assert events == ["containers", "images", "prune"]
+    assert events == ["containers", "images", "prune"] + (["pressure"] if disk_percent is not None else [])
     assert cleanup_kwargs["dry_run"] is dry_run
     assert image_kwargs == {
         "tag_grace_sec": 6 * 3600,
@@ -1153,7 +1270,9 @@ async def test_validator_startup_honors_dry_run_and_pressure_gates_build_cache(
         "disk_used_percent": disk_percent,
         "pulled_image_pressure_percent": 50,
     }
-    assert prune_kwargs == {"include_build_cache": include_build_cache, "dry_run": dry_run, "until": "1h"}
+    assert prune_kwargs == {"dry_run": dry_run, "until": "1h"}
+    if disk_percent is not None:
+        assert pressure_kwargs == {"disk_used_percent": disk_percent, "pressure_percent": 75, "dry_run": dry_run}
     if image_sweep_fails:
         assert "Janitor startup image cleanup failed" in caplog.text
     assert f"errors={int(image_sweep_fails)} dry_run=" in caplog.text
