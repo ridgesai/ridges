@@ -23,6 +23,7 @@ class ValidatorRegistrationResponse(BaseModel):
     running_eval_timeout_seconds: int
     max_evaluation_run_log_size_bytes: int
     environment_build_timeout_multiplier: float = 1.0
+    task_image_registry: str | None = None
 
 
 class ScreenerRegistrationRequest(BaseModel):
@@ -37,6 +38,7 @@ class ScreenerRegistrationResponse(BaseModel):
     running_eval_timeout_seconds: int
     max_evaluation_run_log_size_bytes: int
     environment_build_timeout_multiplier: float = 1.0
+    task_image_registry: str | None = None
 
 
 class ValidatorRequestEvaluationRequest(BaseModel):

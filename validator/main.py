@@ -978,6 +978,7 @@ async def main():
     logger.info(f"  Running Evaluation Timeout: {running_eval_timeout_seconds} second(s)")
     logger.info(f"  Max Evaluation Run Log Size: {max_evaluation_run_log_size_bytes} byte(s)")
     logger.info(f"  Environment Build Timeout Multiplier: {environment_build_timeout_multiplier}x")
+    logger.info(f"  Task Image Registry: {register_response.task_image_registry or 'disabled'}")
 
     execution_engine = ExecutionEngine(
         harbor_results_dir=config.RIDGES_HARBOR_RESULTS_DIR,
@@ -986,6 +987,7 @@ async def main():
         max_eval_timeout_sec=running_eval_timeout_seconds,
         max_cost_usd=config.RIDGES_MAX_COST_USD,
         build_timeout_multiplier=environment_build_timeout_multiplier,
+        task_image_registry=register_response.task_image_registry,
     )
 
     # Start the heartbeat sender on its own thread
