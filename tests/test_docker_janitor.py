@@ -229,6 +229,17 @@ def test_image_allowlist_matches_only_eval_images():
     assert not image_ref_is_janitor_target(None)
 
 
+REGISTRY_TASK_IMAGE = f"validator-registry-dev.ridges.ai/tasks/v1/{'a' * 64}/verifier/main:linux-amd64"
+
+
+def test_registry_task_images_match_only_the_cache_contract():
+    assert image_ref_is_janitor_target(REGISTRY_TASK_IMAGE)
+    assert not image_ref_is_janitor_target("validator-registry-dev.ridges.ai/tasks/v1/abc/agent/main:linux-amd64")
+    assert not image_ref_is_janitor_target(REGISTRY_TASK_IMAGE.replace("/verifier/", "/builder/"))
+    assert not image_ref_is_janitor_target(f"ghcr.io/foreign/tasks/v1/{'a' * 64}/agent/main:latest")
+    assert not image_ref_is_janitor_target(REGISTRY_TASK_IMAGE.rsplit(":", 1)[0] + "@sha256:" + "b" * 64)
+
+
 FULL_ID = "sha256:" + "9b" * 32
 
 
@@ -864,6 +875,16 @@ def test_pulled_eval_images_with_zero_lasttagtime_removed_above_pressure(inject_
         "swebench/sweb.eval.x86_64.django_1776_django-15128:latest",
     ]
     assert client.removed_tags == result["names"]
+
+
+def test_registry_task_images_are_removed_only_under_disk_pressure(inject_client):
+    image = FakeImage("sha256:registry", [REGISTRY_TASK_IMAGE], last_tag_age=timedelta(days=30))
+    client = inject_client(FakeClient(images=[image]))
+
+    assert _sweep_images(disk_used_percent=49.9)["count"] == 0
+    assert client.removed_tags == []
+    assert _sweep_images(disk_used_percent=50.0)["names"] == [REGISTRY_TASK_IMAGE]
+    assert client.removed_tags == [REGISTRY_TASK_IMAGE]
 
 
 @pytest.mark.parametrize("disk_used_percent", [49.9, None])
