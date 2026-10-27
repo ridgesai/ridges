@@ -3,7 +3,7 @@ Optional task image cache for Docker; native Harbor remains the fallback.
 
 Pulls authenticate with a short-lived, per-repository token from the registered
 provider (the validator asks the platform API), or with the host Docker
-configuration when no provider is registered. 
+configuration when no provider is registered.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from ridges_harbor.task_image_contract import (
 
 
 def registry_environment_kwargs(task_digest: str) -> dict:
-    """Opt in per host, optionally restricted to a pilot's full task digests."""
+    """Opt in per Docker host."""
     registry = os.environ.get("RIDGES_TASK_IMAGE_REGISTRY", "").strip()
     if not registry:
         return {}
@@ -42,13 +42,6 @@ def registry_environment_kwargs(task_digest: str) -> dict:
     validate_registry(registry)
     if not DIGEST_RE.fullmatch(task_digest):
         raise ValueError("Image cache requires a full task digest")
-
-    selected = os.environ.get("RIDGES_TASK_IMAGE_DIGESTS", "").replace(",", " ").split()
-    if any(not DIGEST_RE.fullmatch(digest) for digest in selected):
-        raise ValueError("RIDGES_TASK_IMAGE_DIGESTS must contain full sha256 task digests")
-
-    if selected and task_digest not in selected:
-        return {}
 
     timeout = int(os.environ.get("RIDGES_TASK_IMAGE_PULL_TIMEOUT_SEC", "300"))
     if not 1 <= timeout <= 1800:
