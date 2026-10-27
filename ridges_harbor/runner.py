@@ -342,7 +342,21 @@ async def _run_task_dir(
             core_api=core_api,
         )
     else:
+        registry_kwargs = {}
+        if os.getenv("RIDGES_TASK_IMAGE_REGISTRY", "").strip():
+            from ridges_harbor.registry_environment import registry_environment_kwargs, registry_startup_timeouts
+
+            registry_kwargs = registry_environment_kwargs(task_digest)
+            if registry_kwargs:
+                native_timeout, environment_build_timeout_multiplier = registry_startup_timeouts(
+                    _load_single_step_task(task_dir).config.environment.build_timeout_sec,
+                    environment_build_timeout_multiplier,
+                    registry_kwargs["image_pull_timeout_sec"],
+                )
+                registry_kwargs["native_startup_timeout_sec"] = native_timeout
         environment_config = EnvironmentConfig(
+            import_path=("ridges_harbor.registry_environment:RegistryDockerEnvironment" if registry_kwargs else None),
+            kwargs=registry_kwargs,
             env=docker_environment_env(
                 ridges_trial_id=ridges_trial_id,
                 evaluation_run_id=evaluation_run_id,
@@ -350,7 +364,7 @@ async def _run_task_dir(
                 proxy_data_dir=str(proxy_data_dir),
                 openrouter_config=openrouter_config,
                 inference_seed=inference_seed,
-            )
+            ),
         )
         enable_verifier_egress = build_enable_verifier_egress_hook(ridges_trial_id=ridges_trial_id)
         verifier_import_path = "ridges_harbor.verifier:RidgesVerifier"
