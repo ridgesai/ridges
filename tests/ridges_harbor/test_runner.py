@@ -281,7 +281,6 @@ async def test_docker_registry_config_keeps_task_identity_and_credentials_host_s
     _install_fake_harbor(monkeypatch)
     digest = "sha256:" + "a" * 64
     monkeypatch.setenv("RIDGES_ENVIRONMENT_TYPE", "docker")
-    monkeypatch.setenv("RIDGES_TASK_IMAGE_REGISTRY", "validator-registry-dev.ridges.ai" if enabled else "")
     monkeypatch.setenv("RIDGES_TASK_IMAGE_PULL_TIMEOUT_SEC", "300")
     monkeypatch.setenv("DOCKER_CONFIG", "/host-only/docker-config")
     monkeypatch.setattr(
@@ -302,6 +301,7 @@ async def test_docker_registry_config_keeps_task_identity_and_credentials_host_s
         agent_timeout_sec=30,
         verifier_timeout_sec=60,
         environment_build_timeout_multiplier=multiplier,
+        task_image_registry="validator-registry-dev.ridges.ai" if enabled else None,
         results_dir=tmp_path / "results",
         debug=False,
         job_name="registry-test",
@@ -327,8 +327,6 @@ async def test_docker_registry_config_keeps_task_identity_and_credentials_host_s
 
 @pytest.mark.anyio
 async def test_run_task_dir_uses_loopback_proxy_in_kubernetes(tmp_path: Path, monkeypatch) -> None:
-    # The Docker-only cache must not even validate settings in Kubernetes mode.
-    monkeypatch.setenv("RIDGES_TASK_IMAGE_REGISTRY", "not-a-valid-registry/with/path")
     from validator import config as validator_config
 
     _install_fake_harbor(monkeypatch)
@@ -357,6 +355,8 @@ async def test_run_task_dir_uses_loopback_proxy_in_kubernetes(tmp_path: Path, mo
         agent_path=tmp_path / "agent.py",
         agent_timeout_sec=30.0,
         verifier_timeout_sec=None,
+        # The Docker-only cache must not even validate its registry in Kubernetes mode.
+        task_image_registry="not-a-valid-registry/with/path",
         results_dir=tmp_path / "results",
         debug=False,
         job_name="job-k8s",

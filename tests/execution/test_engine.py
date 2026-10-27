@@ -574,6 +574,7 @@ async def test_evaluate_forwards_build_timeout_multiplier(tmp_path: Path, monkey
     engine = ExecutionEngine(
         harbor_results_dir=tmp_path / "results",
         build_timeout_multiplier=2.5,
+        task_image_registry="validator-registry-dev.ridges.ai",
     )
 
     await engine.evaluate(
@@ -585,6 +586,7 @@ async def test_evaluate_forwards_build_timeout_multiplier(tmp_path: Path, monkey
     )
 
     assert captured["environment_build_timeout_multiplier"] == 2.5
+    assert captured["task_image_registry"] == "validator-registry-dev.ridges.ai"
 
 
 @pytest.mark.anyio
@@ -620,3 +622,4 @@ async def test_evaluate_defaults_build_timeout_multiplier_to_none(tmp_path: Path
     )
 
     assert captured["environment_build_timeout_multiplier"] is None
+    assert captured["task_image_registry"] is None

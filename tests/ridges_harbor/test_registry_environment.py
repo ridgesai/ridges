@@ -38,19 +38,22 @@ def test_identity_vector():
     )
 
 
-def test_opt_in(monkeypatch):
-    monkeypatch.delenv("RIDGES_TASK_IMAGE_REGISTRY", raising=False)
-    assert registry_environment_kwargs(DIGEST) == {}
-    monkeypatch.setenv("RIDGES_TASK_IMAGE_REGISTRY", REGISTRY)
-    assert registry_environment_kwargs(DIGEST)["task_digest"] == DIGEST
+def test_kwargs_carry_the_platform_registry(monkeypatch):
+    monkeypatch.delenv("RIDGES_TASK_IMAGE_PULL_TIMEOUT_SEC", raising=False)
+    assert registry_environment_kwargs(REGISTRY, DIGEST) == {
+        "task_image_registry": REGISTRY,
+        "task_digest": DIGEST,
+        "image_pull_timeout_sec": 300,
+    }
+    with pytest.raises(ValueError):
+        registry_environment_kwargs("https://" + REGISTRY, DIGEST)
 
 
 @pytest.mark.parametrize("timeout", ["0", "1801", "not-a-number"])
 def test_invalid_timeout_rejected(monkeypatch, timeout):
-    monkeypatch.setenv("RIDGES_TASK_IMAGE_REGISTRY", REGISTRY)
     monkeypatch.setenv("RIDGES_TASK_IMAGE_PULL_TIMEOUT_SEC", timeout)
     with pytest.raises(ValueError):
-        registry_environment_kwargs(DIGEST)
+        registry_environment_kwargs(REGISTRY, DIGEST)
 
 
 @pytest.fixture(autouse=True)
