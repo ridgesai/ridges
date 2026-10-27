@@ -33,12 +33,8 @@ from ridges_harbor.task_image_contract import (
 )
 
 
-def registry_environment_kwargs(task_digest: str) -> dict:
-    """Opt in per Docker host."""
-    registry = os.environ.get("RIDGES_TASK_IMAGE_REGISTRY", "").strip()
-    if not registry:
-        return {}
-
+def registry_environment_kwargs(registry: str, task_digest: str) -> dict:
+    """Harbor environment kwargs for a registry handed out by the platform at registration."""
     validate_registry(registry)
     if not DIGEST_RE.fullmatch(task_digest):
         raise ValueError("Image cache requires a full task digest")
