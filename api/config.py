@@ -289,6 +289,9 @@ SENTRY_DSN = os.getenv("SENTRY_DSN")
 if not SENTRY_DSN:
     logger.warning("SENTRY_DSN is not set, Sentry will not be configured.")
 
+TASK_IMAGE_TOKEN_SIGNING_KEY = os.getenv("TASK_IMAGE_TOKEN_SIGNING_KEY", "").replace("\\n", "\n").strip()
+TASK_IMAGE_PUBLISHER_PASSWORD = os.getenv("TASK_IMAGE_PUBLISHER_PASSWORD", "")
+
 logger.info(
     f"API configuration loaded: host={HOST} port={PORT} env={ENV} netuid={NETUID} "
     f"subtensor_network={SUBTENSOR_NETWORK} subtensor_address={SUBTENSOR_ADDRESS} "
@@ -345,6 +348,7 @@ logger.info(f"Auto Approval Enabled: {AUTO_APPROVAL_ENABLED}")
 logger.info(f"Auto Approval Projector Loop Enabled: {AUTO_APPROVAL_RUN_LOOP}")
 logger.info(f"Approval Projector Poll Interval: {APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS} second(s)")
 logger.info(f"Earliest SET ID with good data: {EARLIEST_SET_ID_WITH_GOOD_DATA}")
+logger.info(f"Task Image Tokens: {'enabled' if TASK_IMAGE_TOKEN_SIGNING_KEY else 'disabled'}")
 logger.info(f"Incentive Start Set ID: {INCENTIVE_START_SET_ID}")
 logger.info(
     f"Incentives: performance_threshold={INCENTIVE_PERFORMANCE_THRESHOLD} "
