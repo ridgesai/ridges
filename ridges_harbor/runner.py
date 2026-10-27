@@ -343,6 +343,7 @@ async def _run_task_dir(
         )
     else:
         environment_config = EnvironmentConfig(
+            import_path="ridges_harbor.docker_runtime:RidgesDockerEnvironment",
             env=docker_environment_env(
                 ridges_trial_id=ridges_trial_id,
                 evaluation_run_id=evaluation_run_id,
@@ -350,7 +351,7 @@ async def _run_task_dir(
                 proxy_data_dir=str(proxy_data_dir),
                 openrouter_config=openrouter_config,
                 inference_seed=inference_seed,
-            )
+            ),
         )
         enable_verifier_egress = build_enable_verifier_egress_hook(ridges_trial_id=ridges_trial_id)
         verifier_import_path = "ridges_harbor.verifier:RidgesVerifier"

@@ -5,12 +5,76 @@ from __future__ import annotations
 import asyncio
 import asyncio.subprocess
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
+
+from harbor.environments.docker.docker import DockerEnvironment
 
 from models.openrouter import OpenRouterRuntimeConfig
 
 RIDGES_TRIAL_ID_LABEL = "ridges.trial_id"
+
+
+class DockerStartGate:
+    """Keeps the janitor's cache eviction from overlapping Docker environment starts.
+
+    A start pulls digest-pinned sidecars and resolves build-cache base images
+    before any container references them, so evicting either one mid-start fails
+    the trial. Starts share the gate; eviction holds it exclusively, and new
+    starts wait while eviction drains the in-flight ones.
+    """
+
+    def __init__(self) -> None:
+        self._condition = asyncio.Condition()
+        self._active_starts = 0
+        self._exclusive = False
+
+    @asynccontextmanager
+    async def start(self) -> AsyncIterator[None]:
+        async with self._condition:
+            await self._condition.wait_for(lambda: not self._exclusive)
+            self._active_starts += 1
+        try:
+            yield
+        finally:
+            async with self._condition:
+                self._active_starts -= 1
+                self._condition.notify_all()
+
+    @asynccontextmanager
+    async def exclusive(self, *, drain_timeout_sec: float) -> AsyncIterator[bool]:
+        """Yield True once no start is in flight, or False (gate released) after the drain timeout."""
+        async with self._condition:
+            self._exclusive = True
+            try:
+                async with asyncio.timeout(drain_timeout_sec):
+                    await self._condition.wait_for(lambda: self._active_starts == 0)
+                drained = True
+            except TimeoutError:
+                drained = False
+            if not drained:
+                self._exclusive = False
+                self._condition.notify_all()
+        try:
+            yield drained
+        finally:
+            if drained:
+                async with self._condition:
+                    self._exclusive = False
+                    self._condition.notify_all()
+
+
+docker_start_gate = DockerStartGate()
+
+
+class RidgesDockerEnvironment(DockerEnvironment):
+    """Harbor's Docker environment with every start registered on the shared start gate."""
+
+    async def start(self, force_build: bool):
+        async with docker_start_gate.start():
+            await super().start(force_build)
 
 
 @dataclass(slots=True, frozen=True)

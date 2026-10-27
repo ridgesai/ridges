@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import shutil
 import subprocess
 from datetime import datetime, timezone
 
@@ -24,6 +25,7 @@ FULL_IMAGE_ID_PATTERN = re.compile(r"^(sha256:)?[0-9a-f]{64}$")
 SWEAP_IMAGE_PREFIX = "jefzda/sweap-images"
 SWEBENCH_IMAGE_PREFIX = "swebench/sweb.eval."
 RIDGES_TRIAL_ID_LABEL = "ridges.trial_id"
+PRESSURE_PRUNE_HEADROOM_PERCENT = 10
 
 
 docker_client = None
@@ -357,32 +359,50 @@ def cleanup_harbor_docker_resources(
     return {"count": removed, "names": names, "errors": errors}
 
 
-def prune_docker_disk_resources(
-    *,
-    include_build_cache: bool = False,
-    dry_run: bool = False,
-    until: str = "6h",
-) -> dict:
-    """Prune dangling image chains and optionally all unused, aged BuildKit cache.
+def _remove_dangling_build_leftovers(docker_client, *, until: str) -> int:
+    """Remove dangling images that carry no registry digest and return their summed size.
+
+    Docker also reports an image pulled only by digest (`image@sha256:...`) as
+    dangling because it has no tag. Those are task sidecars and base images that
+    a starting trial may be about to use, so only the start-gated pressure prune
+    may evict them. An image still used by a container is refused by the daemon
+    and skipped.
+    """
+    reclaimed = 0
+    for summary in docker_client.api.images(filters={"dangling": True, "until": until}):
+        if any("<none>" not in digest for digest in summary.get("RepoDigests") or []):
+            continue
+        try:
+            docker_client.api.remove_image(summary["Id"], force=False, noprune=False)
+            reclaimed += summary.get("Size") or 0
+        except docker.errors.NotFound:
+            continue
+        except docker.errors.APIError as e:
+            if e.status_code != 409:
+                raise
+    return reclaimed
+
+
+def prune_docker_disk_resources(*, dry_run: bool = False, until: str = "6h") -> dict:
+    """Remove dangling build leftovers, keeping digest-pinned registry images.
+
+    Registry images and build cache are only evicted by the start-gated
+    `prune_caches_under_disk_pressure`.
 
     Untagging an image can expose another dangling parent only after a prune
     pass. Repeat until no bytes are reclaimed, capped at four passes so a broken
     or extremely deep daemon graph cannot monopolize the validator indefinitely.
     """
-    summary = {"image_bytes": 0, "build_bytes": 0, "errors": 0}
+    summary = {"image_bytes": 0, "errors": 0}
     if dry_run:
-        logger.info(
-            f"Janitor (dry-run): would prune dangling images (until={until}, max_passes=4)"
-            + (f" and all unused build cache older than {until}" if include_build_cache else "")
-        )
+        logger.info(f"Janitor (dry-run): would prune dangling build leftovers (until={until}, max_passes=4)")
         return summary
 
     docker_client = get_long_timeout_docker_client()
     logger.info("Pruning dangling Docker images...")
     for _ in range(4):
         try:
-            result = docker_client.images.prune(filters={"dangling": True, "until": until})
-            reclaimed = result.get("SpaceReclaimed", 0) or 0
+            reclaimed = _remove_dangling_build_leftovers(docker_client, until=until)
             summary["image_bytes"] += reclaimed
             if reclaimed == 0:
                 break
@@ -391,17 +411,6 @@ def prune_docker_disk_resources(
             logger.warning(f"Failed to prune dangling Docker images: {e}")
             break
     logger.info(f"Reclaimed {summary['image_bytes']} byte(s) from dangling Docker images")
-
-    if include_build_cache:
-        logger.info(f"Pruning all unused Docker build cache older than {until}...")
-        try:
-            result = docker_client.api.prune_builds(all=True, filters={"until": until})
-            summary["build_bytes"] = result.get("SpaceReclaimed", 0) or 0
-            logger.info(f"Reclaimed {summary['build_bytes']} byte(s) from Docker build cache")
-        except Exception as e:
-            summary["errors"] += 1
-            logger.warning(f"Failed to prune Docker build cache: {e}")
-
     return summary
 
 
@@ -655,8 +664,29 @@ def sweep_leaked_harbor_images(
     return {"count": removed, "names": names, "errors": errors}
 
 
+def _disk_total_bytes() -> int:
+    """Size of the filesystem `get_system_metrics` reports `disk_percent` for."""
+    return shutil.disk_usage("/").total
+
+
+def _build_cache_bytes(docker_client) -> int:
+    """Total BuildKit cache size, queried alone because a full `docker system df`
+    also sizes live containers and fails on busy containerd-store hosts."""
+    api = docker_client.api
+    usage = api._result(api._get(api._url("/system/df"), params={"type": "build-cache"}), json=True)
+    return sum(record.get("Size") or 0 for record in usage.get("BuildCache") or [])
+
+
 def prune_caches_under_disk_pressure(*, disk_used_percent: float, pressure_percent: float, dry_run: bool) -> dict:
-    """Aggressively prune build caches, but only when disk usage is at or above the threshold.
+    """Free disk down to PRESSURE_PRUNE_HEADROOM_PERCENT below the threshold, least recently used first.
+
+    Dangling images go first (this includes digest-pinned registry images), then
+    the build cache is trimmed to a size budget, which BuildKit enforces by
+    evicting its least recently used records. Hot task layers survive, unlike a
+    blanket age-based prune that forced cold rebuilds every time it fired.
+
+    This evicts images and cache that a starting trial may need, so the caller
+    must hold the Docker start gate exclusively while it runs.
 
     Returns a summary dict so the caller can log the outcome.
     """
@@ -665,10 +695,17 @@ def prune_caches_under_disk_pressure(*, disk_used_percent: float, pressure_perce
         return summary
 
     summary["fired"] = True
+    target_percent = pressure_percent - PRESSURE_PRUNE_HEADROOM_PERCENT
+    bytes_to_free = (disk_used_percent - target_percent) / 100 * _disk_total_bytes()
     docker_client = get_long_timeout_docker_client()
-    logger.info(f"Janitor: disk at {disk_used_percent:.0f}% (threshold {pressure_percent:.0f}%), pruning caches...")
+    logger.info(
+        f"Janitor: disk at {disk_used_percent:.0f}% (threshold {pressure_percent:.0f}%), "
+        f"freeing ~{bytes_to_free / 1e9:.0f} GB toward {target_percent:.0f}%..."
+    )
     if dry_run:
-        logger.info("Janitor (dry-run): would prune dangling images and all unused build cache older than 1h")
+        logger.info(
+            "Janitor (dry-run): would prune dangling images and trim the build cache, least recently used first"
+        )
         return summary
 
     try:
@@ -680,12 +717,18 @@ def prune_caches_under_disk_pressure(*, disk_used_percent: float, pressure_perce
         logger.warning(f"Janitor: failed to prune dangling images: {e}")
 
     try:
-        result = docker_client.api.prune_builds(all=True, filters={"until": "1h"})
-        summary["build_bytes"] = result.get("SpaceReclaimed", 0) or 0
-        logger.info(f"Janitor: reclaimed {summary['build_bytes']} byte(s) from the build cache")
+        cache_bytes = _build_cache_bytes(docker_client)
+        keep_bytes = max(int(cache_bytes - max(bytes_to_free - summary["image_bytes"], 0)), 0)
+        if keep_bytes < cache_bytes:
+            result = docker_client.api.prune_builds(all=True, keep_storage=keep_bytes)
+            summary["build_bytes"] = result.get("SpaceReclaimed", 0) or 0
+        logger.info(
+            f"Janitor: trimmed the build cache from {cache_bytes / 1e9:.0f} GB to a {keep_bytes / 1e9:.0f} GB budget, "
+            f"reclaiming {summary['build_bytes']} byte(s)"
+        )
     except Exception as e:
         summary["errors"] += 1
-        logger.warning(f"Janitor: failed to prune build cache: {e}")
+        logger.warning(f"Janitor: failed to trim build cache: {e}")
 
     return summary
 
