@@ -231,7 +231,7 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
         job_name="job-1",
     )
 
-    assert FakeEnvironmentFactory.calls == [("docker", None)]
+    assert FakeEnvironmentFactory.calls == [("docker", "ridges_harbor.docker_runtime:RidgesDockerEnvironment")]
     assert FakeJob.created_configs[0].tasks[0].path == task_dir
     assert FakeJob.created_configs[0].verifier.max_timeout_sec == 60.0
     assert FakeJob.created_configs[0].verifier.import_path == "ridges_harbor.verifier:RidgesVerifier"
@@ -247,6 +247,7 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
         "SANDBOX_PROXY_URL": runner_module.DEFAULT_AGENT_SANDBOX_PROXY_URL,
         "AGENT_TIMEOUT": "30",
     }
+    assert FakeJob.created_configs[0].environment.import_path == "ridges_harbor.docker_runtime:RidgesDockerEnvironment"
     assert FakeJob.created_configs[0].environment.env == {
         "RIDGES_TRIAL_ID": FakeJob.created_configs[0].environment.env["RIDGES_TRIAL_ID"],
         "RIDGES_EVALUATION_RUN_ID": "eval-run-1",
