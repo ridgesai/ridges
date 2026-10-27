@@ -23,6 +23,9 @@ DOCKER_AUTOGEN_NAME_PATTERN = re.compile(r"^[a-z]+_[a-z]+[0-9]*$")
 FULL_IMAGE_ID_PATTERN = re.compile(r"^(sha256:)?[0-9a-f]{64}$")
 SWEAP_IMAGE_PREFIX = "jefzda/sweap-images"
 SWEBENCH_IMAGE_PREFIX = "swebench/sweb.eval."
+TASK_CACHE_IMAGE_REPO_PATTERN = re.compile(
+    r"[a-z0-9]+(?:[.-][a-z0-9]+)*/tasks/v[0-9]+/[0-9a-f]{64}/(?:agent|verifier)/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+)
 RIDGES_TRIAL_ID_LABEL = "ridges.trial_id"
 
 
@@ -68,11 +71,18 @@ def image_ref_is_harbor_built(ref: str | None) -> bool:
 
 
 def image_ref_is_pulled_eval(ref: str | None) -> bool:
-    """Whether 'ref' is a re-pullable SWE-bench/SWEAP task image tag."""
+    """Whether 'ref' is a re-pullable SWE-bench/SWEAP or registry task-cache image tag."""
     if not ref:
         return False
     repo = _repo_from_image_ref(ref)
-    return bool(repo and (repo.startswith(SWEBENCH_IMAGE_PREFIX) or repo == SWEAP_IMAGE_PREFIX))
+    return bool(
+        repo
+        and (
+            repo.startswith(SWEBENCH_IMAGE_PREFIX)
+            or repo == SWEAP_IMAGE_PREFIX
+            or TASK_CACHE_IMAGE_REPO_PATTERN.fullmatch(repo)
+        )
+    )
 
 
 def image_ref_is_janitor_target(ref: str | None) -> bool:
@@ -580,7 +590,7 @@ def sweep_leaked_harbor_images(
     """Untag unreferenced evaluation images using population-specific rules.
 
     Locally-built Harbor tags require a usable LastTagTime older than the grace
-    period. Pulled SWE-bench/SWEAP tags are re-pullable cache and become eligible
+    period. Pulled SWE-bench/SWEAP and registry task-cache tags are re-pullable cache and become eligible
     only under disk pressure. Every deletion is non-forced.
     """
     docker_client = get_docker_client()
