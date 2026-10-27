@@ -54,31 +54,31 @@ def environment_builds(environment_dir: Path, docker_image: str | None) -> dict[
             raise ValueError("Image cache requires a main Dockerfile or task-level docker_image")
         builds["main"] = "Dockerfile"
     compose_path = environment_dir / "docker-compose.yaml"
-    
+
     if not compose_path.exists():
         return builds
     compose = yaml.safe_load(compose_path.read_text())
-    
+
     if not isinstance(compose, dict) or not isinstance(compose.get("services"), dict):
         raise ValueError("Expected a Compose services mapping")
-    
+
     for name, service in compose["services"].items():
         if not isinstance(name, str) or not isinstance(service, dict):
             raise ValueError("Invalid Compose service")
-    
+
         if name == "main" and ("build" in service or "image" in service):
             raise ValueError("Task main service overrides the standard image recipe")
-    
+
         if "build" not in service:
             continue
-    
+
         if not SERVICE_RE.fullmatch(name) or name in (
             "sandbox-proxy",
             "proxy",
             "iptables-init",
         ):
             raise ValueError("Unsupported built service")
-    
+
         build = service["build"]
         if (
             "image" in service
@@ -87,7 +87,7 @@ def environment_builds(environment_dir: Path, docker_image: str | None) -> dict[
             or build.get("context", ".") != "."
         ):
             raise ValueError(f"Unsupported build definition for {name}")
-    
+
         dockerfile = build.get("dockerfile")
         if (
             not isinstance(dockerfile, str)
