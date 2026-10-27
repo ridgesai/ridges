@@ -28,6 +28,7 @@ from api.endpoints.validator_models import (
     ValidatorRequestEvaluationRequest,
     ValidatorRequestEvaluationResponse,
     ValidatorTaskDownloadUrlRequest,
+    ValidatorTaskImageTokenRequest,
     ValidatorUpdateEvaluationRunRequest,
     ValidatorUpdateEvaluationRunResponse,
 )
@@ -250,6 +251,17 @@ async def _fetch_task_download_url(task_digest: str) -> str:
             EvaluationRunErrorCode.PLATFORM_FAILED_PROVISIONING,
             f"Failed to fetch download URL for task digest {task_digest}: {type(exc).__name__}: {exc}",
         ) from exc
+
+
+async def _fetch_task_image_token(repository: str) -> str:
+    """Ask the platform for a short-lived pull token for one task image repository."""
+    response = await post_ridges_platform(
+        "/validator/task-image-token",
+        ValidatorTaskImageTokenRequest(repository=repository),
+        bearer_token=session_id,
+        quiet=2,
+    )
+    return response["token"]
 
 
 async def _upload_job_artifacts(job_dir: pathlib.Path, upload_url: str) -> None:
@@ -989,6 +1001,11 @@ async def main():
 
     if config.RIDGES_ENVIRONMENT_TYPE == "docker" and not config.SIMULATE_EVALUATION_RUNS:
         await _update_docker_plugins()
+
+    if config.RIDGES_ENVIRONMENT_TYPE == "docker":
+        from ridges_harbor.registry_environment import set_registry_token_provider
+
+        set_registry_token_provider(_fetch_task_image_token)
 
     # Loop forever, just keep requesting evaluations and running them
     while True:
