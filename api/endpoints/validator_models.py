@@ -70,6 +70,14 @@ class ValidatorTaskDownloadUrlResponse(BaseModel):
     url: str
 
 
+class ValidatorTaskImageTokenRequest(BaseModel):
+    repository: str
+
+
+class ValidatorTaskImageTokenResponse(BaseModel):
+    token: str
+
+
 class ValidatorHeartbeatRequest(BaseModel):
     system_metrics: SystemMetrics
 
