@@ -83,6 +83,7 @@ class ExecutionEngine:
         max_eval_timeout_sec: float | None = None,
         max_cost_usd: float | None = None,
         build_timeout_multiplier: float | None = None,
+        task_image_registry: str | None = None,
     ):
         self.results_dir = harbor_results_dir
         self.debug = harbor_debug
@@ -90,6 +91,7 @@ class ExecutionEngine:
         self.max_eval_timeout_sec = max_eval_timeout_sec
         self.max_cost_usd = max_cost_usd
         self.build_timeout_multiplier = build_timeout_multiplier
+        self.task_image_registry = task_image_registry
 
     async def evaluate(
         self,
@@ -150,6 +152,7 @@ class ExecutionEngine:
                     agent_timeout_sec=request.agent_timeout_sec,
                     verifier_timeout_sec=request.verifier_timeout_sec,
                     environment_build_timeout_multiplier=self.build_timeout_multiplier,
+                    task_image_registry=self.task_image_registry,
                     results_dir=request.results_dir,
                     debug=self.debug,
                     job_name=request.job_name,
