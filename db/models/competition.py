@@ -164,7 +164,7 @@ class CompetitionAdminEvent(Base, CreatedAtMixin):
     __table_args__ = (
         sa.CheckConstraint(
             "operation IN ('state', 'policy', 'allocation', 'metadata', 'validator_concurrency', "
-            "'validator_scheduling', 'validator_allowlist')",
+            "'validator_scheduling', 'validator_allowlist', 'benchmark_phase_start', 'benchmark_phase_end')",
             name="ck_competition_admin_events_operation",
         ),
         sa.CheckConstraint(
@@ -216,3 +216,70 @@ class ValidatorCompetitionLastServed(Base):
         sa.Integer, sa.ForeignKey("competitions.set_id", ondelete="CASCADE"), primary_key=True
     )
     last_served_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
+
+
+class CompetitionBenchmarkPhase(Base):
+    __tablename__ = "competition_benchmark_phases"
+
+    phase_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sa.text("gen_random_uuid()"),
+    )
+    set_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("competitions.set_id"), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")
+    )
+    started_by: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    start_reason: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
+    ended_by: Mapped[Optional[str]] = mapped_column(sa.Text)
+    end_reason: Mapped[Optional[str]] = mapped_column(sa.Text)
+    winner_agent_id: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True))
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "(ended_at IS NULL) = (ended_by IS NULL) AND (ended_at IS NULL) = (end_reason IS NULL)",
+            name="ck_competition_benchmark_phases_end",
+        ),
+        sa.CheckConstraint(
+            "winner_agent_id IS NULL OR ended_at IS NOT NULL",
+            name="ck_competition_benchmark_phases_winner",
+        ),
+        sa.ForeignKeyConstraint(
+            ["phase_id", "winner_agent_id"],
+            ["benchmark_phase_entries.phase_id", "benchmark_phase_entries.agent_id"],
+            name="fk_competition_benchmark_phases_winner_entry",
+            use_alter=True,
+        ),
+        sa.Index(
+            "uq_competition_benchmark_phases_active",
+            "set_id",
+            unique=True,
+            postgresql_where=sa.text("ended_at IS NULL"),
+        ),
+    )
+
+
+class BenchmarkPhaseEntry(Base):
+    __tablename__ = "benchmark_phase_entries"
+
+    phase_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        sa.ForeignKey("competition_benchmark_phases.phase_id"),
+        primary_key=True,
+    )
+    agent_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    set_id: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    entered_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")
+    )
+
+    __table_args__ = (
+        sa.ForeignKeyConstraint(
+            ["agent_id", "set_id"],
+            ["agents.agent_id", "agents.set_id"],
+            name="fk_benchmark_phase_entries_agent_competition",
+        ),
+        sa.Index("idx_benchmark_phase_entries_agent", "agent_id", "set_id"),
+    )

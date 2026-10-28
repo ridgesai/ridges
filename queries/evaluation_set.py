@@ -150,11 +150,12 @@ def _sql_validator_metrics_cte(include_validator_hotkeys: bool, agent_filter_cte
         f"            WHERE\n"
         f"                evaluations.evaluation_set_group = 'validator'::EvaluationSetGroup\n"
         f"                AND evaluations.set_id = $1\n"
+        # Filter agents before aggregating so the planner can index into evaluation_runs instead of seq-scanning it
+        f"                AND evaluations.agent_id IN (SELECT agent_id FROM {agent_filter_cte})\n"
         f"            GROUP BY\n"
         f"                evaluations.agent_id,\n"
         f"                evaluations.evaluation_id\n"
         f"        ) AS ranked\n"
-        f"        JOIN {agent_filter_cte} aiw ON aiw.agent_id = ranked.agent_id\n"
         f"        where ranked.status in ('running', 'success') or ranked.cancelled is true\n"
         f"    ) AS sample\n"
         f"    WHERE sample.rn <= $2::integer\n"
@@ -871,6 +872,7 @@ async def get_evaluation_set_leaderboard_agents(
             aa.relative_improvement_units,
             aa.time_multiplier,
             aa.initial_reward_score,
+            aa.benchmark_phase_id,
             aa.approved_at,
             baseline.agent_id AS baseline_agent_id,
             baseline.name AS baseline_agent_name,
@@ -996,6 +998,7 @@ async def get_approved_agents_for_set(
             aa.relative_improvement_units,
             aa.time_multiplier,
             aa.initial_reward_score,
+            aa.benchmark_phase_id,
             baseline.agent_id AS baseline_agent_id,
             baseline.name AS baseline_agent_name,
             baseline.version_num AS baseline_agent_version_num,

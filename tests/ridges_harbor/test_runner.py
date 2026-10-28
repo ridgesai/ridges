@@ -271,6 +271,62 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("build_timeout,multiplier", [(600, None), (20, 2.5), (600, 0.5)])
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_docker_registry_config_keeps_task_identity_and_credentials_host_side(
+    tmp_path, monkeypatch, build_timeout, multiplier, enabled
+):
+    # Import before installing the fake Harbor modules used by this test harness.
+    import ridges_harbor.registry_environment  # noqa: F401
+
+    _install_fake_harbor(monkeypatch)
+    digest = "sha256:" + "a" * 64
+    monkeypatch.setenv("RIDGES_ENVIRONMENT_TYPE", "docker")
+    monkeypatch.setenv("RIDGES_TASK_IMAGE_PULL_TIMEOUT_SEC", "300")
+    monkeypatch.setenv("DOCKER_CONFIG", "/host-only/docker-config")
+    monkeypatch.setattr(
+        runner_module,
+        "_load_single_step_task",
+        lambda path: SimpleNamespace(
+            config=SimpleNamespace(environment=SimpleNamespace(build_timeout_sec=build_timeout))
+        ),
+    )
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    await _run_task_dir(
+        task_dir=task_dir,
+        task_name="task",
+        task_digest=digest,
+        evaluation_run_id="registry-test",
+        agent_path=tmp_path / "agent.py",
+        agent_timeout_sec=30,
+        verifier_timeout_sec=60,
+        environment_build_timeout_multiplier=multiplier,
+        task_image_registry="validator-registry-dev.ridges.ai" if enabled else None,
+        results_dir=tmp_path / "results",
+        debug=False,
+        job_name="registry-test",
+    )
+    config = FakeJob.created_configs[0]
+    assert config.tasks[0].path == task_dir
+    if enabled:
+        native_timeout = build_timeout * (1 if multiplier is None else multiplier)
+        assert config.environment.import_path == "ridges_harbor.registry_environment:RegistryDockerEnvironment"
+        assert config.environment.kwargs["task_digest"] == digest
+        assert config.environment.kwargs["native_startup_timeout_sec"] == native_timeout
+        assert config.environment_build_timeout_multiplier * build_timeout == pytest.approx(native_timeout + 300)
+    else:
+        assert config.environment.import_path == "ridges_harbor.docker_runtime:RidgesDockerEnvironment"
+        assert config.environment.kwargs == {}
+        assert config.environment_build_timeout_multiplier == multiplier
+    assert config.agents[0].override_timeout_sec == 30
+    assert config.verifier.max_timeout_sec == 60
+    assert "DOCKER_CONFIG" not in config.agents[0].env
+    assert "DOCKER_CONFIG" not in config.environment.env
+    assert not any("password" in key.lower() for key in config.environment.kwargs)
+
+
+@pytest.mark.anyio
 async def test_run_task_dir_uses_loopback_proxy_in_kubernetes(tmp_path: Path, monkeypatch) -> None:
     from validator import config as validator_config
 
@@ -300,6 +356,8 @@ async def test_run_task_dir_uses_loopback_proxy_in_kubernetes(tmp_path: Path, mo
         agent_path=tmp_path / "agent.py",
         agent_timeout_sec=30.0,
         verifier_timeout_sec=None,
+        # The Docker-only cache must not even validate its registry in Kubernetes mode.
+        task_image_registry="not-a-valid-registry/with/path",
         results_dir=tmp_path / "results",
         debug=False,
         job_name="job-k8s",

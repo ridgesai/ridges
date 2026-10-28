@@ -10,6 +10,7 @@ import api.endpoints.evaluation_sets as evaluation_sets_endpoint
 import api.endpoints.retrieval as retrieval_endpoint
 import utils.database as _db
 from api.endpoints import competitions as competitions_endpoint
+from models.leaderboard import LeaderboardQuery
 from queries.competition import get_public_evaluation_set_context
 from queries.evaluation_set import get_evaluation_set_score_distribution
 from utils.ttl import clear_all_ttl_caches
@@ -234,7 +235,9 @@ async def test_grandfathered_routes_use_history_and_validator_fallback(monkeypat
 
     assert (await evaluation_sets_endpoint.evaluation_set_detail(7)).id == 7
     assert await evaluation_sets_endpoint.evaluation_set_overview(7) is not None
-    assert await evaluation_sets_endpoint.evaluation_set_leaderboard(7) == []
+    leaderboard = await evaluation_sets_endpoint.evaluation_set_leaderboard(7, LeaderboardQuery())
+    assert leaderboard.items == []
+    assert leaderboard.total == 0
     assert await evaluation_sets_endpoint.evaluation_set_approved_agents(7) == []
 
     assert await evaluation_sets_endpoint.evaluation_set_overview(56) is not None

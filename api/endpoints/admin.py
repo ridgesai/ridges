@@ -10,6 +10,7 @@ from api.admin_auth import require_coldkey_ban_admin
 from api.endpoints import validator as validator_endpoint
 from db.models import InternalFlagName
 from models.banned_coldkey import BannedColdkey
+from models.benchmark_phase import BenchmarkPhaseEndRequest, BenchmarkPhaseSnapshot, BenchmarkPhaseStartRequest
 from models.competition import (
     CompetitionAdminSnapshot,
     CompetitionAllocationSnapshot,
@@ -32,6 +33,7 @@ from models.validator_scheduling import (
     ValidatorAllowlistUpdateRequest,
 )
 from queries.banned_coldkey import ban_coldkey, unban_coldkey
+from queries.benchmark_phase import end_benchmark_phase, get_benchmark_phase, start_benchmark_phase
 from queries.competition import (
     get_competition_validator_concurrency,
     replace_competition_allocations,
@@ -142,6 +144,42 @@ async def put_competition_upload_pricing(
         price_updated_at=price.price_updated_at,
         as_of=price.as_of,
     )
+
+
+@router.get(
+    "/competitions/{set_id}/benchmark-phase",
+    response_model=BenchmarkPhaseSnapshot,
+    dependencies=[Depends(require_coldkey_ban_admin)],
+)
+async def get_competition_benchmark_phase(set_id: int) -> BenchmarkPhaseSnapshot:
+    phase = await get_benchmark_phase(set_id)
+    if phase is None:
+        raise HTTPException(status_code=404, detail="no_benchmark_phase")
+    return phase
+
+
+@router.post("/competitions/{set_id}/benchmark-phase/start", response_model=BenchmarkPhaseSnapshot)
+async def post_competition_benchmark_phase_start(
+    set_id: int,
+    request: BenchmarkPhaseStartRequest,
+    actor: Annotated[str, Depends(require_coldkey_ban_admin)],
+) -> BenchmarkPhaseSnapshot:
+    phase = await start_benchmark_phase(set_id=set_id, actor=actor, reason=request.reason)
+    clear_all_ttl_caches()
+    return phase
+
+
+@router.post("/competitions/{set_id}/benchmark-phase/end", response_model=BenchmarkPhaseSnapshot)
+async def post_competition_benchmark_phase_end(
+    set_id: int,
+    request: BenchmarkPhaseEndRequest,
+    actor: Annotated[str, Depends(require_coldkey_ban_admin)],
+) -> BenchmarkPhaseSnapshot:
+    phase = await end_benchmark_phase(
+        set_id=set_id, winner_agent_id=request.winner_agent_id, actor=actor, reason=request.reason
+    )
+    clear_all_ttl_caches()
+    return phase
 
 
 @router.get(

@@ -105,6 +105,32 @@ async def test_validator_reregistration_from_same_ip_cleans_up_active_evaluation
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("configured", "expected"),
+    [("validator-registry-dev.ridges.ai", "validator-registry-dev.ridges.ai"), ("", None)],
+)
+async def test_validator_registration_hands_out_the_task_image_registry(monkeypatch, configured, expected) -> None:
+    monkeypatch.setattr(validator_endpoint, "SESSION_ID_TO_VALIDATOR", {})
+    monkeypatch.setattr(validator_endpoint, "validate_signed_timestamp", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(validator_endpoint, "is_validator_hotkey_whitelisted", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(validator_endpoint, "validator_hotkey_to_name", lambda *_args, **_kwargs: "TAOApp")
+    monkeypatch.setattr(validator_endpoint, "COMMIT_HASH", "test-commit")
+    monkeypatch.setattr(validator_endpoint.config, "TASK_IMAGE_REGISTRY", configured)
+
+    response = await validator_endpoint.validator_register_as_validator(
+        _make_request("127.0.0.1"),
+        ValidatorRegistrationRequest(
+            timestamp=int(time.time()),
+            signed_timestamp="signed",
+            hotkey="validator-hotkey",
+            commit_hash="test-commit",
+        ),
+    )
+
+    assert response.task_image_registry == expected
+
+
+@pytest.mark.anyio
 async def test_validator_reregistration_from_different_ip_is_rejected(monkeypatch) -> None:
     old_session_id = uuid4()
     old_validator = _make_validator(

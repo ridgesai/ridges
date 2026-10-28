@@ -337,3 +337,38 @@ def test_public_agent_without_competition_context_has_null_state():
     assert agent.set_id is None
     assert agent.approved is None
     assert agent.final_score is None
+
+
+def test_benchmark_pool_review_status_is_its_own_competition_status():
+    status = derive_agent_competition_status(
+        status="finished", set_id=1, approved=False, approval_review_status="benchmark_pool"
+    )
+    assert status is AgentCompetitionStatus.benchmark_pool
+
+
+def test_an_unpicked_benchmark_agent_did_not_qualify():
+    status = derive_agent_competition_status(
+        status="finished", set_id=1, approved=False, approval_review_status="benchmark_not_selected"
+    )
+    assert status is AgentCompetitionStatus.didnt_qualify
+
+
+def test_a_benchmark_winner_without_a_leader_is_approved_not_baseline():
+    state = build_agent_competition_state(
+        status="finished",
+        set_id=1,
+        approved=True,
+        approval_review_status="approved",
+        relative_improvement_units=16.0,
+        benchmark_phase_id=uuid4(),
+    )
+    assert state.status is AgentCompetitionStatus.approved
+    assert state.approved is True
+    assert state.reward_basis == "benchmark"
+
+
+def test_reward_basis_is_relative_for_normal_approvals_and_absent_otherwise():
+    approved = build_agent_competition_state(status="finished", set_id=1, approved=True, performance_delta=0.1)
+    pending = build_agent_competition_state(status="finished", set_id=1, approved=False)
+    assert approved.reward_basis == "relative"
+    assert pending.reward_basis is None

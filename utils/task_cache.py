@@ -29,7 +29,7 @@ def _cache_dir_for_digest(digest: str, *, cache_root: Path = DEFAULT_CACHE_DIR) 
     return cache_root / safe_digest
 
 
-def _touch_digest_dir(task_digest: str, *, cache_root: Path = DEFAULT_CACHE_DIR) -> None:
+def touch_cached_task(task_digest: str, *, cache_root: Path = DEFAULT_CACHE_DIR) -> None:
     """Bump the digest directory's mtime so 'age' tracks last use, not creation.
 
     This makes age-based pruning (see ``prune_task_cache``) behave like an LRU:
@@ -48,6 +48,14 @@ def _touch_digest_dir(task_digest: str, *, cache_root: Path = DEFAULT_CACHE_DIR)
         os.utime(digest_dir, None)
     except OSError as exc:
         logger.debug(f"Could not touch task cache dir {digest_dir}: {exc}")
+
+
+def cached_task_last_used(task_digest: str, *, cache_root: Path = DEFAULT_CACHE_DIR) -> float | None:
+    """Epoch seconds when the cached task was last used, or None if it is not cached."""
+    try:
+        return _cache_dir_for_digest(task_digest, cache_root=cache_root).stat().st_mtime
+    except OSError:
+        return None
 
 
 def _cached_task_dir_for_name(task_name: str, digest: str, *, cache_root: Path = DEFAULT_CACHE_DIR) -> Path:
@@ -129,7 +137,7 @@ def get_cached_task(
     """Return the cached task directory if it exists, otherwise None."""
     cached = _resolve_cached_task_dir(task_name, task_digest, cache_root=cache_root)
     if cached is not None:
-        _touch_digest_dir(task_digest, cache_root=cache_root)
+        touch_cached_task(task_digest, cache_root=cache_root)
     return cached
 
 
@@ -181,7 +189,7 @@ async def get_or_download_task(
     )
     if cached_task_dir is not None:
         logger.info(f"Task cache hit for {task_digest}")
-        _touch_digest_dir(task_digest, cache_root=cache_root)
+        touch_cached_task(task_digest, cache_root=cache_root)
         return cached_task_dir
 
     logger.info(f"Task cache miss for {task_digest}, downloading...")

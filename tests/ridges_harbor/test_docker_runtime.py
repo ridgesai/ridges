@@ -189,6 +189,37 @@ async def test_start_gate_releases_on_drain_timeout() -> None:
 
 
 @pytest.mark.anyio
+async def test_start_gate_reopens_when_a_waiting_eviction_is_cancelled() -> None:
+    gate = docker_runtime_module.DockerStartGate()
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def stuck_start():
+        async with gate.start():
+            entered.set()
+            await release.wait()
+
+    async def eviction():
+        async with gate.exclusive(drain_timeout_sec=60):
+            pass
+
+    stuck_task = asyncio.create_task(stuck_start())
+    await entered.wait()
+    eviction_task = asyncio.create_task(eviction())
+    await asyncio.sleep(0)
+    eviction_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await eviction_task
+
+    async with asyncio.timeout(1):
+        async with gate.start():
+            pass
+
+    release.set()
+    await stuck_task
+
+
+@pytest.mark.anyio
 async def test_start_gate_counts_a_failed_start_as_finished() -> None:
     gate = docker_runtime_module.DockerStartGate()
 
