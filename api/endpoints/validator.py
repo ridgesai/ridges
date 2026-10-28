@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 from weakref import WeakValueDictionary
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 
@@ -35,9 +35,12 @@ from api.endpoints.validator_models import (
     ValidatorRequestEvaluationResponseEvaluationRun,
     ValidatorTaskDownloadUrlRequest,
     ValidatorTaskDownloadUrlResponse,
+    ValidatorTaskImageTokenRequest,
+    ValidatorTaskImageTokenResponse,
     ValidatorUpdateEvaluationRunRequest,
     ValidatorUpdateEvaluationRunResponse,
 )
+from api.task_image_tokens import TokenSigningUnavailable, mint_token, repository_task_digest
 from db.models import InternalFlagName
 from models.agent import Agent, AgentStatus, PublicAgent
 from models.competition import CompetitionPolicy
@@ -328,6 +331,7 @@ async def validator_register_as_validator(
         running_eval_timeout_seconds=config.VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS,
         max_evaluation_run_log_size_bytes=config.VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES,
         environment_build_timeout_multiplier=config.VALIDATOR_ENVIRONMENT_BUILD_TIMEOUT_MULTIPLIER,
+        task_image_registry=config.TASK_IMAGE_REGISTRY or None,
     )
 
 
@@ -539,6 +543,27 @@ async def validator_request_evaluation(
     )
 
 
+async def _current_evaluation_task_spec(validator: Validator, task_digest: str) -> dict:
+    """Return the execution spec of a task in the validator's current evaluation."""
+
+    if validator.current_evaluation_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="This validator is not currently running an evaluation.",
+        )
+
+    evaluation_runs = await get_all_evaluation_runs_in_evaluation_id(validator.current_evaluation_id)
+    for er in evaluation_runs:
+        spec = er.execution_spec or {}
+        if spec.get("task_digest") == task_digest:
+            return spec
+
+    raise HTTPException(
+        status_code=404,
+        detail=f"No task with digest '{task_digest}' found in the current evaluation.",
+    )
+
+
 # /validator/task-download-url
 @router.post("/task-download-url")
 async def validator_task_download_url(
@@ -547,29 +572,8 @@ async def validator_task_download_url(
 ) -> ValidatorTaskDownloadUrlResponse:
     """Generate a fresh presigned S3 URL for a task archive in the validator's current evaluation."""
 
-    if validator.current_evaluation_id is None:
-        raise HTTPException(
-            status_code=409,
-            detail="This validator is not currently running an evaluation.",
-        )
-
-    # Derive s3_key from the platform's own data — never trust the client for artifact lookup.
-    evaluation_runs = await get_all_evaluation_runs_in_evaluation_id(validator.current_evaluation_id)
-
-    _NOT_FOUND = object()
-    s3_key: str | None | object = _NOT_FOUND
-    for er in evaluation_runs:
-        spec = er.execution_spec or {}
-        if spec.get("task_digest") == request.task_digest:
-            s3_key = spec.get("s3_key")
-            break
-
-    if s3_key is _NOT_FOUND:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No task with digest '{request.task_digest}' found in the current evaluation.",
-        )
-
+    spec = await _current_evaluation_task_spec(validator, request.task_digest)
+    s3_key = spec.get("s3_key")
     if not s3_key:
         raise HTTPException(
             status_code=422,
@@ -583,6 +587,30 @@ async def validator_task_download_url(
         raise HTTPException(status_code=502, detail=f"Failed to generate download URL: {exc}")
 
     return ValidatorTaskDownloadUrlResponse(url=url)
+
+
+# /validator/task-image-token
+@router.post("/task-image-token")
+async def validator_task_image_token(
+    request: ValidatorTaskImageTokenRequest,
+    response: Response,
+    validator: Validator = Depends(get_request_validator),
+) -> ValidatorTaskImageTokenResponse:
+    """Issue a pull-only registry token for one image repository of a task in the validator's current evaluation."""
+
+    task_digest = repository_task_digest(request.repository)
+    if task_digest is None:
+        raise HTTPException(status_code=422, detail="Expected a task image repository name.")
+    await _current_evaluation_task_spec(validator, task_digest)
+
+    try:
+        token = mint_token(validator.hotkey, [{"type": "repository", "name": request.repository, "actions": ["pull"]}])
+    except TokenSigningUnavailable as exc:
+        logger.error(f"Task image tokens unavailable: {exc}")
+        raise HTTPException(status_code=503, detail="Task image tokens are not configured.")
+
+    response.headers["Cache-Control"] = "no-store"
+    return ValidatorTaskImageTokenResponse(token=token)
 
 
 def record_validator_heartbeat(validator: Validator, system_metrics: SystemMetrics | None = None) -> None:

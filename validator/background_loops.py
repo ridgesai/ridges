@@ -18,6 +18,7 @@ from ridges_harbor.docker_runtime import docker_start_gate
 from ridges_harbor.shared import DEFAULT_RESULTS_DIR
 from utils.cleanup import prune_dirs_older_than
 from utils.docker import (
+    prune_build_cache_older_than,
     prune_caches_under_disk_pressure,
     prune_docker_disk_resources,
     sweep_leaked_harbor_images,
@@ -88,7 +89,8 @@ async def cleanup_loop(active_task_digests: Set[str]):
             containers = {"count": 0, "names": [], "errors": 0}
             images = {"count": 0, "names": [], "errors": 0}
             prune = {"image_bytes": 0, "errors": 0}
-            pressure_prune = {"fired": False, "image_bytes": 0, "build_bytes": 0, "errors": 0}
+            pressure_prune = {"fired": False, "image_bytes": 0, "build_bytes": 0, "evicted_images": 0, "errors": 0}
+            build_cache = {"build_bytes": 0, "errors": 0}
             disk_percent = None
             errors = 0
             logger.info(f"Janitor: starting sweep (dry_run={str(dry_run).lower()})")
@@ -111,11 +113,15 @@ async def cleanup_loop(active_task_digests: Set[str]):
                 errors += 1
                 logger.warning(f"Janitor container sweep failed (best-effort): {type(e).__name__}: {e}")
 
-            evicting = (
-                not dry_run
-                and disk_percent is not None
-                and disk_percent >= min(config.CLEANUP_PULLED_IMAGE_DISK_PERCENT, config.CLEANUP_DISK_PRESSURE_PERCENT)
-            )
+            try:
+                build_cache = await asyncio.to_thread(
+                    prune_build_cache_older_than, hours=config.CLEANUP_BUILD_CACHE_RETENTION_HOURS, dry_run=dry_run
+                )
+            except Exception as e:
+                errors += 1
+                logger.warning(f"Janitor build cache prune failed (best-effort): {type(e).__name__}: {e}")
+
+            evicting = not dry_run and disk_percent is not None and disk_percent >= config.CLEANUP_DISK_PRESSURE_PERCENT
             gate = (
                 docker_start_gate.exclusive(drain_timeout_sec=START_DRAIN_TIMEOUT_SECONDS)
                 if evicting
@@ -134,8 +140,6 @@ async def cleanup_loop(active_task_digests: Set[str]):
                         sweep_leaked_harbor_images,
                         tag_grace_sec=config.CLEANUP_IMAGE_TAG_GRACE_HOURS * 3600,
                         dry_run=dry_run,
-                        disk_used_percent=None if skip_eviction else disk_percent,
-                        pulled_image_pressure_percent=config.CLEANUP_PULLED_IMAGE_DISK_PERCENT,
                     )
                 except Exception as e:
                     errors += 1
@@ -162,25 +166,30 @@ async def cleanup_loop(active_task_digests: Set[str]):
                             disk_used_percent=disk_percent,
                             pressure_percent=config.CLEANUP_DISK_PRESSURE_PERCENT,
                             dry_run=dry_run,
+                            active_task_digests=frozenset(active_task_digests),
                         )
                         if pressure_prune.get("fired"):
                             logger.info(
                                 f"Janitor: pressure prune at {disk_percent:.0f}% disk reclaimed "
-                                f"{pressure_prune.get('image_bytes', 0) / 1e6:.0f} MB (images) + "
+                                f"{pressure_prune.get('image_bytes', 0) / 1e6:.0f} MB (build leftovers) + "
                                 f"{pressure_prune.get('build_bytes', 0) / 1e6:.0f} MB (build cache), "
+                                f"evicted {pressure_prune.get('evicted_images', 0)} image(s), "
                                 f"errors={pressure_prune.get('errors', 0)} (dry_run={dry_run})"
                             )
                 except Exception as e:
                     errors += 1
                     logger.warning(f"Janitor cache prune failed (best-effort): {type(e).__name__}: {e}")
 
-            errors += sum(summary.get("errors", 0) for summary in (containers, images, prune, pressure_prune))
+            errors += sum(
+                summary.get("errors", 0) for summary in (containers, build_cache, images, prune, pressure_prune)
+            )
             candidate_names = (containers.get("names") or []) + (images.get("names") or [])
             disk_display = f"{disk_percent:.0f}" if disk_percent is not None else "unknown"
             names_display = ",".join(candidate_names[:20]) or "-"
             logger.info(
                 f"Janitor: containers={containers.get('count', 0)} "
                 f"images={images.get('count', 0)} prune_bytes={prune.get('image_bytes', 0)} "
+                f"build_cache_bytes={build_cache.get('build_bytes', 0)} "
                 f"disk_percent={disk_display} errors={errors} "
                 f"dry_run={str(dry_run).lower()} names={names_display}"
             )

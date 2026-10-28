@@ -54,6 +54,10 @@ class DockerStartGate:
                 drained = True
             except TimeoutError:
                 drained = False
+            except BaseException:
+                self._exclusive = False
+                self._condition.notify_all()
+                raise
             if not drained:
                 self._exclusive = False
                 self._condition.notify_all()

@@ -157,6 +157,7 @@ async def run_task(
     agent_timeout_sec: float | None = None,
     verifier_timeout_sec: float | None = None,
     environment_build_timeout_multiplier: float | None = None,
+    task_image_registry: str | None = None,
     results_dir: str | Path | None = DEFAULT_RESULTS_DIR,
     debug: bool = False,
     job_name: str | None = None,
@@ -194,6 +195,7 @@ async def run_task(
         agent_timeout_sec=agent_timeout_sec,
         verifier_timeout_sec=verifier_timeout_sec,
         environment_build_timeout_multiplier=environment_build_timeout_multiplier,
+        task_image_registry=task_image_registry,
         results_dir=resolved_results_dir,
         debug=debug,
         job_name=job_name,
@@ -218,6 +220,7 @@ async def _run_task_dir(
     agent_timeout_sec: float | None,
     verifier_timeout_sec: float | None,
     environment_build_timeout_multiplier: float | None = None,
+    task_image_registry: str | None = None,
     results_dir: Path,
     debug: bool,
     job_name: str | None,
@@ -342,8 +345,24 @@ async def _run_task_dir(
             core_api=core_api,
         )
     else:
+        registry_kwargs = {}
+        if task_image_registry:
+            from ridges_harbor.registry_environment import registry_environment_kwargs, registry_startup_timeouts
+
+            registry_kwargs = registry_environment_kwargs(task_image_registry, task_digest)
+            native_timeout, environment_build_timeout_multiplier = registry_startup_timeouts(
+                _load_single_step_task(task_dir).config.environment.build_timeout_sec,
+                environment_build_timeout_multiplier,
+                registry_kwargs["image_pull_timeout_sec"],
+            )
+            registry_kwargs["native_startup_timeout_sec"] = native_timeout
         environment_config = EnvironmentConfig(
-            import_path="ridges_harbor.docker_runtime:RidgesDockerEnvironment",
+            import_path=(
+                "ridges_harbor.registry_environment:RegistryDockerEnvironment"
+                if registry_kwargs
+                else "ridges_harbor.docker_runtime:RidgesDockerEnvironment"
+            ),
+            kwargs=registry_kwargs,
             env=docker_environment_env(
                 ridges_trial_id=ridges_trial_id,
                 evaluation_run_id=evaluation_run_id,
