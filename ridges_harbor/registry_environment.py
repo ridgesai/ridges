@@ -23,6 +23,7 @@ from weakref import WeakValueDictionary
 import yaml
 from harbor.environments.docker.docker import DockerEnvironment
 
+from ridges_harbor.docker_runtime import docker_start_gate
 from ridges_harbor.task_image_contract import (
     DIGEST_RE,
     PLATFORMS,
@@ -249,6 +250,12 @@ class RegistryDockerEnvironment(DockerEnvironment):
         return role, outcomes
 
     async def start(self, force_build: bool):
+        # Hold the start gate across pull and native start, so the janitor's cache
+        # eviction cannot remove a pulled image before its containers exist.
+        async with docker_start_gate.start():
+            await self._start(force_build)
+
+    async def _start(self, force_build: bool):
         self._reset_registry_selection()
         started = time.monotonic()
         if not force_build:

@@ -336,6 +336,32 @@ async def test_cache_failure_uses_untouched_native_build(make_environment, monke
 
 
 @pytest.mark.anyio
+async def test_pull_and_native_start_hold_the_janitor_start_gate(make_environment, monkeypatch):
+    from ridges_harbor.docker_runtime import docker_start_gate
+
+    env = make_environment()
+    seen = {}
+
+    async def prepare_images():
+        seen["pull_starts"] = docker_start_gate._active_starts
+        async with docker_start_gate.exclusive(drain_timeout_sec=0.01) as drained:
+            seen["eviction_drained_during_pull"] = drained
+        return "agent", []
+
+    native_commands = env._run_docker_compose_command
+
+    async def compose_command(command, **kwargs):
+        seen.setdefault("native_starts", docker_start_gate._active_starts)
+        return await native_commands(command, **kwargs)
+
+    monkeypatch.setattr(env, "_prepare_images", prepare_images)
+    monkeypatch.setattr(env, "_run_docker_compose_command", compose_command)
+    await env.start(force_build=False)
+    assert seen == {"pull_starts": 1, "eviction_drained_during_pull": False, "native_starts": 1}
+    assert docker_start_gate._active_starts == 0
+
+
+@pytest.mark.anyio
 async def test_partial_image_success_does_not_change_fallback(make_environment, monkeypatch):
     env = make_environment(sidecar=True)
     docker = Docker()

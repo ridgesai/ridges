@@ -316,7 +316,7 @@ async def test_docker_registry_config_keeps_task_identity_and_credentials_host_s
         assert config.environment.kwargs["native_startup_timeout_sec"] == native_timeout
         assert config.environment_build_timeout_multiplier * build_timeout == pytest.approx(native_timeout + 300)
     else:
-        assert config.environment.import_path is None
+        assert config.environment.import_path == "ridges_harbor.docker_runtime:RidgesDockerEnvironment"
         assert config.environment.kwargs == {}
         assert config.environment_build_timeout_multiplier == multiplier
     assert config.agents[0].override_timeout_sec == 30
