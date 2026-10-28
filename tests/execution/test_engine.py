@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from uuid import uuid4
 
@@ -623,3 +624,45 @@ async def test_evaluate_defaults_build_timeout_multiplier_to_none(tmp_path: Path
 
     assert captured["environment_build_timeout_multiplier"] is None
     assert captured["task_image_registry"] is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("outcome", ["finished", "failed", "cancelled"])
+async def test_evaluate_marks_the_task_used_when_the_trial_ends(tmp_path: Path, monkeypatch, outcome) -> None:
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    agent_path = tmp_path / "agent.py"
+    write(agent_path, "def agent_main(_input):\n    return ''\n")
+    summary = make_summary(tmp_path, patch="p", test_results=None, verifier_result=successful_verifier_result())
+    touched = []
+
+    async def fake_resolve_task_dir(self, execution_spec, problem_name, fetch_task_url):
+        return task_dir
+
+    async def fake_run_task(*args, **kwargs):
+        assert touched == []
+        if outcome == "failed":
+            raise RuntimeError("harbor crashed")
+        if outcome == "cancelled":
+            raise asyncio.CancelledError
+        return summary
+
+    monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
+    monkeypatch.setattr(engine_module, "run_task", fake_run_task)
+    monkeypatch.setattr(engine_module, "touch_cached_task", touched.append)
+
+    expected = {"finished": None, "failed": EvaluationRunException, "cancelled": asyncio.CancelledError}[outcome]
+    evaluation = ExecutionEngine(harbor_results_dir=tmp_path / "results").evaluate(
+        evaluation_run_id=uuid4(),
+        problem_name="update-status-file",
+        execution_spec=valid_execution_spec(),
+        agent_path=agent_path,
+        agent_code=None,
+    )
+    if expected is None:
+        await evaluation
+    else:
+        with pytest.raises(expected):
+            await evaluation
+
+    assert touched == ["sha256:fake"]

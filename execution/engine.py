@@ -20,7 +20,7 @@ from models.harbor_task import HarborRemoteTaskExecutionSpec
 from models.openrouter import OpenRouterRuntimeConfig
 from ridges_harbor.runner import DEFAULT_RESULTS_DIR, run_task
 from ridges_harbor.seed import problem_seed
-from utils.task_cache import get_cached_task, get_or_download_task
+from utils.task_cache import get_cached_task, get_or_download_task, touch_cached_task
 
 logger = logging.getLogger(__name__)
 _JOB_NAME_FORMAT = "{problem_name}__{evaluation_run_id}"
@@ -178,6 +178,9 @@ class ExecutionEngine:
                 error_message=f"{base_message}: {exception}",
                 extra=collect_job_crash_context(job_dir=request.job_dir),
             ) from exception
+
+        finally:
+            touch_cached_task(request.task_digest)
 
     def _parse_execution_spec(
         self,
