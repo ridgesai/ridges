@@ -42,6 +42,7 @@ from models.openrouter import OpenRouterRuntimeConfig
 from models.problem import ProblemTestResultStatus
 from utils.docker import (
     cleanup_harbor_docker_resources,
+    prune_build_cache_older_than,
     prune_caches_under_disk_pressure,
     prune_docker_disk_resources,
     sweep_leaked_harbor_images,
@@ -107,10 +108,19 @@ async def _run_startup_tasks() -> None:
             containers = {"count": 0, "names": [], "errors": 0}
             images = {"count": 0, "names": [], "errors": 0}
             prune = {"image_bytes": 0, "errors": 0}
-            pressure_prune = {"fired": False, "image_bytes": 0, "build_bytes": 0, "errors": 0}
+            pressure_prune = {"fired": False, "image_bytes": 0, "build_bytes": 0, "evicted_images": 0, "errors": 0}
+            build_cache = {"build_bytes": 0, "errors": 0}
             disk_percent = None
             errors = 0
             logger.info(f"Janitor startup: starting (dry_run={str(dry_run).lower()})")
+
+            try:
+                build_cache = await asyncio.to_thread(
+                    prune_build_cache_older_than, hours=config.CLEANUP_BUILD_CACHE_RETENTION_HOURS, dry_run=dry_run
+                )
+            except Exception as e:
+                errors += 1
+                logger.warning(f"Janitor startup build cache prune failed (best-effort): {type(e).__name__}: {e}")
 
             try:
                 metrics = await get_system_metrics()
@@ -137,8 +147,6 @@ async def _run_startup_tasks() -> None:
                     sweep_leaked_harbor_images,
                     tag_grace_sec=config.CLEANUP_IMAGE_TAG_GRACE_HOURS * 3600,
                     dry_run=dry_run,
-                    disk_used_percent=disk_percent,
-                    pulled_image_pressure_percent=config.CLEANUP_PULLED_IMAGE_DISK_PERCENT,
                 )
             except Exception as e:
                 errors += 1
@@ -163,7 +171,9 @@ async def _run_startup_tasks() -> None:
                     errors += 1
                     logger.warning(f"Janitor startup pressure prune failed (best-effort): {type(e).__name__}: {e}")
 
-            errors += sum(summary.get("errors", 0) for summary in (containers, images, prune, pressure_prune))
+            errors += sum(
+                summary.get("errors", 0) for summary in (build_cache, containers, images, prune, pressure_prune)
+            )
             disk_display = f"{disk_percent:.0f}" if disk_percent is not None else "unknown"
             candidate_names = (containers.get("names") or []) + (images.get("names") or [])
             names_display = ",".join(candidate_names[:20]) or "-"
@@ -171,7 +181,8 @@ async def _run_startup_tasks() -> None:
                 f"Janitor startup: containers={containers.get('count', 0)} "
                 f"images={images.get('count', 0)} "
                 f"prune_bytes={prune.get('image_bytes', 0) + pressure_prune.get('image_bytes', 0)} "
-                f"build_bytes={pressure_prune.get('build_bytes', 0)} disk_percent={disk_display} "
+                f"build_bytes={build_cache.get('build_bytes', 0) + pressure_prune.get('build_bytes', 0)} "
+                f"evicted_images={pressure_prune.get('evicted_images', 0)} disk_percent={disk_display} "
                 f"errors={errors} dry_run={str(dry_run).lower()} names={names_display}"
             )
         else:

@@ -3,14 +3,17 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from datetime import datetime, timezone
 
 import docker
+import psutil
+
+from utils.task_cache import cached_task_last_used
 
 logger = logging.getLogger(__name__)
 
 DOCKER_PREFIX = "ridges-ai"
-SWEBENCH_DOCKER_PREFIX = "sweb"
 HARBOR_CONTAINER_NAME_PATTERN = re.compile(r".+__.+-(main|sandbox-proxy)-1$")
 HARBOR_NETWORK_NAME_PATTERN = re.compile(r".+__.+_sandbox_(internal|egress)$")
 HARBOR_IMAGE_REPO_PATTERN = re.compile(r".+__.+-(main|env-main|sandbox-proxy)$")
@@ -22,13 +25,11 @@ COMPOSE_SERVICE_LABEL = "com.docker.compose.service"
 COMPOSE_NETWORK_LABEL = "com.docker.compose.network"
 DOCKER_AUTOGEN_NAME_PATTERN = re.compile(r"^[a-z]+_[a-z]+[0-9]*$")
 FULL_IMAGE_ID_PATTERN = re.compile(r"^(sha256:)?[0-9a-f]{64}$")
-SWEAP_IMAGE_PREFIX = "jefzda/sweap-images"
-SWEBENCH_IMAGE_PREFIX = "swebench/sweb.eval."
-TASK_CACHE_IMAGE_REPO_PATTERN = re.compile(
-    r"[a-z0-9]+(?:[.-][a-z0-9]+)*/tasks/v[0-9]+/[0-9a-f]{64}/(?:agent|verifier)/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
-)
 RIDGES_TRIAL_ID_LABEL = "ridges.trial_id"
 PRESSURE_PRUNE_HEADROOM_PERCENT = 10
+PRESSURE_EVICTION_MIN_IDLE_SECONDS = 3600
+TASK_DIGEST_LABEL = "org.ridges.task.digest"
+KEEP_IMAGE_TAG_PREFIX = "harbor-prebuilt:"
 
 
 docker_client = None
@@ -72,24 +73,9 @@ def image_ref_is_harbor_built(ref: str | None) -> bool:
     )
 
 
-def image_ref_is_pulled_eval(ref: str | None) -> bool:
-    """Whether 'ref' is a re-pullable SWE-bench/SWEAP or registry task-cache image tag."""
-    if not ref:
-        return False
-    repo = _repo_from_image_ref(ref)
-    return bool(
-        repo
-        and (
-            repo.startswith(SWEBENCH_IMAGE_PREFIX)
-            or repo == SWEAP_IMAGE_PREFIX
-            or TASK_CACHE_IMAGE_REPO_PATTERN.fullmatch(repo)
-        )
-    )
-
-
 def image_ref_is_janitor_target(ref: str | None) -> bool:
     """Whether an image reference belongs to the validator evaluation lifecycle."""
-    return image_ref_is_harbor_built(ref) or image_ref_is_pulled_eval(ref)
+    return image_ref_is_harbor_built(ref)
 
 
 def _is_docker_autogen_name(name: str) -> bool:
@@ -236,36 +222,6 @@ def get_num_docker_containers() -> int:
     return len([line for line in result.stdout.strip().split("\n") if line.strip()])
 
 
-# TODO ADAM: optimize
-def stop_and_delete_all_docker_containers() -> None:
-    docker_client = get_docker_client()
-
-    logger.info("Stopping and deleting all containers...")
-
-    for container in docker_client.containers.list(
-        all=True, filters={"name": f"^({DOCKER_PREFIX}|{SWEBENCH_DOCKER_PREFIX})"}
-    ):
-        logger.info(f"Stopping and deleting container {container.name}...")
-
-        try:
-            container.stop(timeout=3)
-        except Exception as e:
-            logger.warning(f"Failed to stop container {container.name}: {e}")
-            # continue
-
-        try:
-            container.remove(force=True)
-        except Exception as e:
-            logger.warning(f"Failed to remove container {container.name}: {e}")
-            continue
-
-        logger.info(f"Stopped and deleted container {container.name}")
-
-    docker_client.containers.prune()
-
-    logger.info("Stopped and deleted all containers")
-
-
 def cleanup_harbor_docker_resources(
     *,
     dry_run: bool = False,
@@ -396,8 +352,9 @@ def _remove_dangling_build_leftovers(docker_client, *, until: str) -> int:
 def prune_docker_disk_resources(*, dry_run: bool = False, until: str = "6h") -> dict:
     """Remove dangling build leftovers, keeping digest-pinned registry images.
 
-    Registry images and build cache are only evicted by the start-gated
-    `prune_caches_under_disk_pressure`.
+    Pulled images are only evicted by the start-gated
+    `prune_caches_under_disk_pressure`; build cache by that and
+    `prune_build_cache_older_than`.
 
     Untagging an image can expose another dangling parent only after a prune
     pass. Repeat until no bytes are reclaimed, capped at four passes so a broken
@@ -593,14 +550,13 @@ def sweep_leaked_harbor_images(
     *,
     tag_grace_sec: float,
     dry_run: bool,
-    disk_used_percent: float | None,
-    pulled_image_pressure_percent: float = 50.0,
 ) -> dict:
-    """Untag unreferenced evaluation images using population-specific rules.
+    """Untag unreferenced locally-built Harbor images whose LastTagTime is older than the grace period.
 
-    Locally-built Harbor tags require a usable LastTagTime older than the grace
-    period. Pulled SWE-bench/SWEAP and registry task-cache tags are re-pullable cache and become eligible
-    only under disk pressure. Every deletion is non-forced.
+    `hb__` images are shared by every trial of the same environment, but each
+    native start rebuilds and re-tags its image, so an image idle past the grace
+    period is not part of a start. Pulled images are reclaimed only by the
+    start-gated `prune_caches_under_disk_pressure`. Every deletion is non-forced.
     """
     docker_client = get_docker_client()
     now = datetime.now(timezone.utc)
@@ -620,8 +576,7 @@ def sweep_leaked_harbor_images(
         try:
             repo_tags = summary.get("RepoTags") or []
             harbor_tags = [tag for tag in repo_tags if image_ref_is_harbor_built(tag)]
-            pulled_tags = [tag for tag in repo_tags if image_ref_is_pulled_eval(tag)]
-            if not harbor_tags and not pulled_tags:
+            if not harbor_tags:
                 continue
             if image_id in referenced_image_values or any(tag in referenced_image_values for tag in repo_tags):
                 continue
@@ -629,14 +584,11 @@ def sweep_leaked_harbor_images(
             image = docker_client.images.get(image_id)
             last_tag_time = _parse_docker_time((image.attrs.get("Metadata") or {}).get("LastTagTime"))
             age = _age_seconds(last_tag_time, now)
-            eligible_tags = []
-            if age is not None and age > tag_grace_sec:
-                eligible_tags.extend(harbor_tags)
-            if disk_used_percent is not None and disk_used_percent >= pulled_image_pressure_percent:
-                eligible_tags.extend(pulled_tags)
+            if age is None or age <= tag_grace_sec:
+                continue
 
             size_mb = (image.attrs.get("Size") or 0) / 1e6
-            for tag in eligible_tags:
+            for tag in harbor_tags:
                 try:
                     current_refs = _referenced_image_values(docker_client)
                     if image_id in current_refs or tag in current_refs:
@@ -645,12 +597,11 @@ def sweep_leaked_harbor_images(
                     current_image = docker_client.images.get(tag)
                     if current_image.id != image_id:
                         continue
-                    if tag in harbor_tags:
-                        current_age = _age_seconds(
-                            _parse_docker_time((current_image.attrs.get("Metadata") or {}).get("LastTagTime")), now
-                        )
-                        if current_age is None or current_age <= tag_grace_sec:
-                            continue
+                    current_age = _age_seconds(
+                        _parse_docker_time((current_image.attrs.get("Metadata") or {}).get("LastTagTime")), now
+                    )
+                    if current_age is None or current_age <= tag_grace_sec:
+                        continue
 
                     if dry_run:
                         logger.info(f"Janitor (dry-run): would untag leaked image {tag} ({size_mb:.0f} MB)")
@@ -679,6 +630,11 @@ def _disk_total_bytes() -> int:
     return shutil.disk_usage("/").total
 
 
+def _disk_used_percent() -> float:
+    """Measured the same way as `get_system_metrics().disk_percent`."""
+    return psutil.disk_usage("/").percent
+
+
 def _build_cache_bytes(docker_client) -> int:
     """Total BuildKit cache size, queried alone because a full `docker system df`
     also sizes live containers and fails on busy containerd-store hosts."""
@@ -687,20 +643,139 @@ def _build_cache_bytes(docker_client) -> int:
     return sum(record.get("Size") or 0 for record in usage.get("BuildCache") or [])
 
 
-def prune_caches_under_disk_pressure(*, disk_used_percent: float, pressure_percent: float, dry_run: bool) -> dict:
+def prune_build_cache_older_than(*, hours: int, dry_run: bool) -> dict:
+    """Remove build cache records unused for `hours`, regardless of disk pressure.
+
+    BuildKit's `until` filter measures time since a record was last used, and it
+    never removes records held by a running build, so this needs no start gate:
+    a removed cold record only costs a rebuilt step.
+    """
+    summary = {"build_bytes": 0, "errors": 0}
+    if dry_run:
+        logger.info(f"Janitor (dry-run): would remove build cache unused for {hours}h")
+        return summary
+    try:
+        result = get_long_timeout_docker_client().api.prune_builds(all=True, filters={"until": f"{hours}h"})
+        summary["build_bytes"] = result.get("SpaceReclaimed", 0) or 0
+        logger.info(f"Janitor: removed {summary['build_bytes']} byte(s) of build cache unused for {hours}h")
+    except Exception as e:
+        summary["errors"] += 1
+        logger.warning(f"Janitor: failed to prune old build cache: {e}")
+    return summary
+
+
+def _image_refs(summary: dict) -> list[str]:
+    refs = list(summary.get("RepoTags") or []) + list(summary.get("RepoDigests") or [])
+    return [ref for ref in refs if "<none>" not in ref]
+
+
+def _image_last_used(docker_client, summary: dict) -> float:
+    """Epoch seconds an image was last used; 0 when unknown, so it ranks oldest.
+
+    Task images share their task's cache directory mtime, which every lookup and
+    trial end refreshes. Other images only have their last tag time.
+    """
+    task_digest = (summary.get("Labels") or {}).get(TASK_DIGEST_LABEL)
+    if task_digest:
+        return cached_task_last_used(task_digest) or 0.0
+    try:
+        metadata = docker_client.api.inspect_image(summary["Id"]).get("Metadata") or {}
+    except docker.errors.NotFound:
+        return 0.0
+    last_tag_time = _parse_docker_time(metadata.get("LastTagTime"))
+    return last_tag_time.timestamp() if last_tag_time else 0.0
+
+
+def _evict_images_least_recently_used(
+    docker_client, *, target_percent: float, active_task_digests: frozenset[str], summary: dict, dry_run: bool
+) -> None:
+    """Delete unreferenced images, least recently used first, until disk is at the target.
+
+    Skips images a container references (running or stopped), images of tasks the
+    validator is running, Harbor's egress sidecar, and anything used within
+    PRESSURE_EVICTION_MIN_IDLE_SECONDS. An image with no known use (a digest-only
+    sidecar on the classic store has no LastTagTime) ranks oldest and is not
+    protected by that floor. Disk is re-measured after every image because shared
+    layers make image sizes unreliable as reclaimed bytes.
+    """
+    if not dry_run and _disk_used_percent() <= target_percent:
+        return
+    referenced = _referenced_image_values(docker_client)
+    candidates = []
+    for image in docker_client.api.images():
+        refs = _image_refs(image)
+        if image["Id"] in referenced or any(ref in referenced for ref in refs):
+            continue
+
+        if any(ref.startswith(KEEP_IMAGE_TAG_PREFIX) for ref in refs):
+            continue
+
+        if (image.get("Labels") or {}).get(TASK_DIGEST_LABEL) in active_task_digests:
+            continue
+        try:
+            candidates.append((_image_last_used(docker_client, image), image["Id"], image))
+        except Exception as e:
+            summary["errors"] += 1
+            logger.warning(f"Janitor: skipping image {image['Id'][:19]}, could not read its last use: {e}")
+    candidates.sort(key=lambda candidate: candidate[:2])
+
+    dry_run_logged = 0
+    for last_used, image_id, image in candidates:
+        if not dry_run and _disk_used_percent() <= target_percent:
+            return
+
+        if time.time() - last_used < PRESSURE_EVICTION_MIN_IDLE_SECONDS:
+            continue
+        refs = _image_refs(image)
+        name = refs[0] if refs else image_id[:19]
+        if dry_run:
+            if dry_run_logged == 20:
+                return
+            logger.info(f"Janitor (dry-run): would evict image {name}, if disk stays above {target_percent:.0f}%")
+            dry_run_logged += 1
+            continue
+
+        try:
+            current_refs = _referenced_image_values(docker_client)
+            if image_id in current_refs or any(ref in current_refs for ref in refs):
+                continue
+
+            if time.time() - _image_last_used(docker_client, image) < PRESSURE_EVICTION_MIN_IDLE_SECONDS:
+                continue
+
+            for ref in [*refs, image_id]:
+                try:
+                    docker_client.api.remove_image(ref, force=False, noprune=False)
+                except docker.errors.NotFound:
+                    continue
+            summary["evicted_images"] += 1
+            logger.info(f"Janitor: evicted image {name}")
+        except docker.errors.APIError as e:
+            if e.status_code != 409:
+                summary["errors"] += 1
+                logger.warning(f"Janitor: failed to evict image {name}: {e}")
+
+
+def prune_caches_under_disk_pressure(
+    *,
+    disk_used_percent: float,
+    pressure_percent: float,
+    dry_run: bool,
+    active_task_digests: frozenset[str] = frozenset(),
+) -> dict:
     """Free disk down to PRESSURE_PRUNE_HEADROOM_PERCENT below the threshold, least recently used first.
 
-    Dangling images go first (this includes digest-pinned registry images), then
-    the build cache is trimmed to a size budget, which BuildKit enforces by
-    evicting its least recently used records. Hot task layers survive, unlike a
-    blanket age-based prune that forced cold rebuilds every time it fired.
+    Untagged build leftovers go first, then the build cache is trimmed to a size
+    budget, which BuildKit enforces by evicting its least recently used records.
+    If disk is still above the target, unreferenced images are deleted least
+    recently used first, including digest-pinned sidecars.
 
     This evicts images and cache that a starting trial may need, so the caller
     must hold the Docker start gate exclusively while it runs.
 
     Returns a summary dict so the caller can log the outcome.
     """
-    summary = {"fired": False, "image_bytes": 0, "build_bytes": 0, "errors": 0}
+    summary = {"fired": False, "image_bytes": 0, "build_bytes": 0, "evicted_images": 0, "errors": 0}
     if disk_used_percent < pressure_percent:
         return summary
 
@@ -714,32 +789,45 @@ def prune_caches_under_disk_pressure(*, disk_used_percent: float, pressure_perce
     )
     if dry_run:
         logger.info(
-            "Janitor (dry-run): would prune dangling images and trim the build cache, least recently used first"
+            "Janitor (dry-run): would prune build leftovers and trim the build cache, least recently used first"
         )
-        return summary
+    else:
+        try:
+            summary["image_bytes"] = _remove_dangling_build_leftovers(docker_client, until="1h")
+            logger.info(f"Janitor: removed {summary['image_bytes']} byte(s) of dangling build leftovers")
+        except Exception as e:
+            summary["errors"] += 1
+            logger.warning(f"Janitor: failed to prune dangling build leftovers: {e}")
+
+        try:
+            bytes_to_free = max(_disk_used_percent() - target_percent, 0) / 100 * _disk_total_bytes()
+            cache_bytes = _build_cache_bytes(docker_client)
+            keep_bytes = max(int(cache_bytes - bytes_to_free), 0)
+            if keep_bytes < cache_bytes:
+                result = docker_client.api.prune_builds(all=True, keep_storage=keep_bytes)
+                summary["build_bytes"] = result.get("SpaceReclaimed", 0) or 0
+            logger.info(
+                f"Janitor: trimmed the build cache from {cache_bytes / 1e9:.0f} GB to a "
+                f"{keep_bytes / 1e9:.0f} GB budget, reclaiming {summary['build_bytes']} byte(s)"
+            )
+        except Exception as e:
+            summary["errors"] += 1
+            logger.warning(f"Janitor: failed to trim build cache: {e}")
 
     try:
-        result = docker_client.images.prune(filters={"dangling": True, "until": "1h"})
-        summary["image_bytes"] = result.get("SpaceReclaimed", 0) or 0
-        logger.info(f"Janitor: reclaimed {summary['image_bytes']} byte(s) from dangling images")
-    except Exception as e:
-        summary["errors"] += 1
-        logger.warning(f"Janitor: failed to prune dangling images: {e}")
-
-    try:
-        cache_bytes = _build_cache_bytes(docker_client)
-        keep_bytes = max(int(cache_bytes - max(bytes_to_free - summary["image_bytes"], 0)), 0)
-        if keep_bytes < cache_bytes:
-            result = docker_client.api.prune_builds(all=True, keep_storage=keep_bytes)
-            summary["build_bytes"] = result.get("SpaceReclaimed", 0) or 0
-        logger.info(
-            f"Janitor: trimmed the build cache from {cache_bytes / 1e9:.0f} GB to a {keep_bytes / 1e9:.0f} GB budget, "
-            f"reclaiming {summary['build_bytes']} byte(s)"
+        _evict_images_least_recently_used(
+            docker_client,
+            target_percent=target_percent,
+            active_task_digests=active_task_digests,
+            summary=summary,
+            dry_run=dry_run,
         )
     except Exception as e:
         summary["errors"] += 1
-        logger.warning(f"Janitor: failed to trim build cache: {e}")
+        logger.warning(f"Janitor: failed to evict images: {e}")
 
+    if not dry_run:
+        logger.info(f"Janitor: disk at {_disk_used_percent():.0f}% after the pressure prune")
     return summary
 
 
