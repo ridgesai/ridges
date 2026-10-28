@@ -357,7 +357,11 @@ async def _run_task_dir(
             )
             registry_kwargs["native_startup_timeout_sec"] = native_timeout
         environment_config = EnvironmentConfig(
-            import_path=("ridges_harbor.registry_environment:RegistryDockerEnvironment" if registry_kwargs else None),
+            import_path=(
+                "ridges_harbor.registry_environment:RegistryDockerEnvironment"
+                if registry_kwargs
+                else "ridges_harbor.docker_runtime:RidgesDockerEnvironment"
+            ),
             kwargs=registry_kwargs,
             env=docker_environment_env(
                 ridges_trial_id=ridges_trial_id,

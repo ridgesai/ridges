@@ -3,10 +3,13 @@ from types import SimpleNamespace
 
 import pytest
 
+from ridges_harbor.docker_runtime import DockerStartGate
 from validator import background_loops
 
 
-def _configure_cleanup(monkeypatch, tmp_path) -> None:
+def _configure_cleanup(monkeypatch, tmp_path) -> DockerStartGate:
+    gate = DockerStartGate()
+    monkeypatch.setattr(background_loops, "docker_start_gate", gate)
     monkeypatch.setattr(background_loops.config, "CLEANUP_TASK_CACHE_RETENTION_HOURS", 168)
     monkeypatch.setattr(background_loops.config, "CLEANUP_ARTIFACT_RETENTION_HOURS", 48)
     monkeypatch.setattr(background_loops.config, "RIDGES_HARBOR_RESULTS_DIR", str(tmp_path))
@@ -26,6 +29,7 @@ def _configure_cleanup(monkeypatch, tmp_path) -> None:
         raise asyncio.CancelledError
 
     monkeypatch.setattr(background_loops.asyncio, "sleep", stop_after_tick)
+    return gate
 
 
 @pytest.mark.anyio
@@ -172,3 +176,93 @@ async def test_cleanup_loop_logs_zero_summary_when_sweeps_fail(monkeypatch, tmp_
     assert (
         "Janitor: containers=0 images=0 prune_bytes=0 disk_percent=unknown errors=3 dry_run=false names=-" in messages
     )
+
+
+def _patch_docker_sweeps(monkeypatch, *, disk_samples, seen, gate=None) -> None:
+    async def metrics():
+        return SimpleNamespace(disk_percent=disk_samples.pop(0))
+
+    def sweep_images(**kwargs):
+        seen["image_sweep_disk"] = kwargs["disk_used_percent"]
+        return {"count": 0, "names": [], "errors": 0}
+
+    def pressure_prune(**kwargs):
+        seen["pressure_prune_disk"] = kwargs["disk_used_percent"]
+        seen["pressure_prune_exclusive"] = gate._exclusive if gate is not None else None
+        return {"fired": True, "image_bytes": 0, "build_bytes": 0, "errors": 0}
+
+    monkeypatch.setattr(background_loops, "get_system_metrics", metrics)
+    monkeypatch.setattr(
+        background_loops,
+        "sweep_stale_harbor_containers",
+        lambda **_kwargs: {"count": 0, "names": [], "errors": 0},
+    )
+    monkeypatch.setattr(background_loops, "sweep_leaked_harbor_images", sweep_images)
+    monkeypatch.setattr(
+        background_loops,
+        "prune_docker_disk_resources",
+        lambda **_kwargs: {"image_bytes": 0, "build_bytes": 0, "errors": 0},
+    )
+    monkeypatch.setattr(background_loops, "prune_caches_under_disk_pressure", pressure_prune)
+
+
+@pytest.mark.anyio
+async def test_cleanup_loop_evicts_only_while_holding_the_start_gate(monkeypatch, tmp_path) -> None:
+    gate = _configure_cleanup(monkeypatch, tmp_path)
+    seen = {}
+    _patch_docker_sweeps(monkeypatch, disk_samples=[82.0, 80.0], seen=seen, gate=gate)
+
+    with pytest.raises(asyncio.CancelledError):
+        await background_loops.cleanup_loop(set())
+
+    assert seen == {"image_sweep_disk": 82.0, "pressure_prune_disk": 80.0, "pressure_prune_exclusive": True}
+    assert not gate._exclusive
+
+
+@pytest.mark.anyio
+async def test_cleanup_loop_skips_eviction_when_starts_do_not_drain(monkeypatch, tmp_path) -> None:
+    gate = _configure_cleanup(monkeypatch, tmp_path)
+    monkeypatch.setattr(background_loops, "START_DRAIN_TIMEOUT_SECONDS", 0.05)
+    seen = {}
+    warnings = []
+    _patch_docker_sweeps(monkeypatch, disk_samples=[82.0, 80.0], seen=seen)
+    monkeypatch.setattr(background_loops.logger, "warning", warnings.append)
+
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def in_flight_start():
+        async with gate.start():
+            entered.set()
+            await release.wait()
+
+    start_task = asyncio.create_task(in_flight_start())
+    await entered.wait()
+
+    with pytest.raises(asyncio.CancelledError):
+        await background_loops.cleanup_loop(set())
+
+    assert seen == {"image_sweep_disk": None}
+    assert any("did not drain" in message for message in warnings)
+    async with asyncio.timeout(1):
+        async with gate.start():
+            pass
+    release.set()
+    await start_task
+
+
+@pytest.mark.anyio
+async def test_cleanup_loop_never_takes_the_gate_below_both_thresholds(monkeypatch, tmp_path) -> None:
+    """A resample that crosses the threshold mid-sweep must not prune without the gate."""
+    gate = _configure_cleanup(monkeypatch, tmp_path)
+    seen = {}
+    _patch_docker_sweeps(monkeypatch, disk_samples=[40.0, 90.0], seen=seen)
+    gate_entries = []
+    original_exclusive = gate.exclusive
+    monkeypatch.setattr(gate, "exclusive", lambda **kwargs: gate_entries.append(kwargs) or original_exclusive(**kwargs))
+
+    with pytest.raises(asyncio.CancelledError):
+        await background_loops.cleanup_loop(set())
+
+    assert gate_entries == []
+    assert seen == {"image_sweep_disk": 40.0}

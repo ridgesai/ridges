@@ -40,7 +40,12 @@ from models.competition import MAX_CONCURRENCY
 from models.evaluation_run import EvaluationRunErrorCode, EvaluationRunStatus
 from models.openrouter import OpenRouterRuntimeConfig
 from models.problem import ProblemTestResultStatus
-from utils.docker import cleanup_harbor_docker_resources, prune_docker_disk_resources, sweep_leaked_harbor_images
+from utils.docker import (
+    cleanup_harbor_docker_resources,
+    prune_caches_under_disk_pressure,
+    prune_docker_disk_resources,
+    sweep_leaked_harbor_images,
+)
 from utils.git import COMMIT_HASH, reset_local_repo
 from utils.logger import setup_logging
 from utils.system_metrics import get_system_metrics
@@ -101,7 +106,8 @@ async def _run_startup_tasks() -> None:
             dry_run = config.CLEANUP_DOCKER_DRY_RUN
             containers = {"count": 0, "names": [], "errors": 0}
             images = {"count": 0, "names": [], "errors": 0}
-            prune = {"image_bytes": 0, "build_bytes": 0, "errors": 0}
+            prune = {"image_bytes": 0, "errors": 0}
+            pressure_prune = {"fired": False, "image_bytes": 0, "build_bytes": 0, "errors": 0}
             disk_percent = None
             errors = 0
             logger.info(f"Janitor startup: starting (dry_run={str(dry_run).lower()})")
@@ -138,31 +144,34 @@ async def _run_startup_tasks() -> None:
                 errors += 1
                 logger.warning(f"Janitor startup image cleanup failed (best-effort): {type(e).__name__}: {e}")
 
-            include_build_cache = disk_percent is not None and disk_percent >= config.CLEANUP_DISK_PRESSURE_PERCENT
-            logger.info(
-                f"Janitor startup: pruning dangling images (until=1h, "
-                f"build_cache={str(include_build_cache).lower()})..."
-            )
+            logger.info("Janitor startup: pruning dangling build leftovers (until=1h)...")
             try:
-                prune = await asyncio.to_thread(
-                    prune_docker_disk_resources,
-                    include_build_cache=include_build_cache,
-                    dry_run=dry_run,
-                    until="1h",
-                )
+                prune = await asyncio.to_thread(prune_docker_disk_resources, dry_run=dry_run, until="1h")
             except Exception as e:
                 errors += 1
                 logger.warning(f"Janitor startup prune failed (best-effort): {type(e).__name__}: {e}")
 
-            errors += sum(summary.get("errors", 0) for summary in (containers, images, prune))
+            if disk_percent is not None:
+                try:
+                    pressure_prune = await asyncio.to_thread(
+                        prune_caches_under_disk_pressure,
+                        disk_used_percent=disk_percent,
+                        pressure_percent=config.CLEANUP_DISK_PRESSURE_PERCENT,
+                        dry_run=dry_run,
+                    )
+                except Exception as e:
+                    errors += 1
+                    logger.warning(f"Janitor startup pressure prune failed (best-effort): {type(e).__name__}: {e}")
+
+            errors += sum(summary.get("errors", 0) for summary in (containers, images, prune, pressure_prune))
             disk_display = f"{disk_percent:.0f}" if disk_percent is not None else "unknown"
             candidate_names = (containers.get("names") or []) + (images.get("names") or [])
             names_display = ",".join(candidate_names[:20]) or "-"
             logger.info(
                 f"Janitor startup: containers={containers.get('count', 0)} "
                 f"images={images.get('count', 0)} "
-                f"prune_bytes={prune.get('image_bytes', 0)} "
-                f"build_bytes={prune.get('build_bytes', 0)} disk_percent={disk_display} "
+                f"prune_bytes={prune.get('image_bytes', 0) + pressure_prune.get('image_bytes', 0)} "
+                f"build_bytes={pressure_prune.get('build_bytes', 0)} disk_percent={disk_display} "
                 f"errors={errors} dry_run={str(dry_run).lower()} names={names_display}"
             )
         else:

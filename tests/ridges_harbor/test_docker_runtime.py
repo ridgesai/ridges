@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -124,3 +125,94 @@ async def test_enable_verifier_egress_hook_raises_dedicated_error_on_connect_fai
         await enable_verifier_egress(event)
 
     assert "Failed to connect verifier egress" in str(exc_info.value)
+
+
+@pytest.mark.anyio
+async def test_start_gate_exclusive_waits_for_in_flight_starts_and_holds_new_ones() -> None:
+    gate = docker_runtime_module.DockerStartGate()
+    events = []
+    release_first = asyncio.Event()
+    first_entered = asyncio.Event()
+
+    async def first_start():
+        async with gate.start():
+            first_entered.set()
+            await release_first.wait()
+            events.append("first start done")
+
+    async def second_start():
+        async with gate.start():
+            events.append("second start entered")
+
+    async def evict():
+        async with gate.exclusive(drain_timeout_sec=5) as drained:
+            events.append(f"evicting drained={drained}")
+            second_task = asyncio.create_task(second_start())
+            await asyncio.sleep(0.01)
+            events.append("eviction done")
+        await second_task
+
+    first_task = asyncio.create_task(first_start())
+    await first_entered.wait()
+    evict_task = asyncio.create_task(evict())
+    await asyncio.sleep(0.01)
+    assert events == []
+
+    release_first.set()
+    await asyncio.gather(first_task, evict_task)
+
+    assert events == ["first start done", "evicting drained=True", "eviction done", "second start entered"]
+
+
+@pytest.mark.anyio
+async def test_start_gate_releases_on_drain_timeout() -> None:
+    gate = docker_runtime_module.DockerStartGate()
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def stuck_start():
+        async with gate.start():
+            entered.set()
+            await release.wait()
+
+    stuck_task = asyncio.create_task(stuck_start())
+    await entered.wait()
+
+    async with gate.exclusive(drain_timeout_sec=0.01) as drained:
+        assert drained is False
+        async with asyncio.timeout(1):
+            async with gate.start():
+                pass
+
+    release.set()
+    await stuck_task
+
+
+@pytest.mark.anyio
+async def test_start_gate_counts_a_failed_start_as_finished() -> None:
+    gate = docker_runtime_module.DockerStartGate()
+
+    with pytest.raises(RuntimeError):
+        async with gate.start():
+            raise RuntimeError("compose up failed")
+
+    async with gate.exclusive(drain_timeout_sec=0.01) as drained:
+        assert drained is True
+
+
+@pytest.mark.anyio
+async def test_ridges_docker_environment_starts_inside_the_gate(monkeypatch) -> None:
+    gate = docker_runtime_module.DockerStartGate()
+    monkeypatch.setattr(docker_runtime_module, "docker_start_gate", gate)
+    seen = []
+
+    async def harbor_start(_self, force_build):
+        seen.append((force_build, gate._active_starts))
+
+    monkeypatch.setattr(docker_runtime_module.DockerEnvironment, "start", harbor_start)
+    environment = docker_runtime_module.RidgesDockerEnvironment.__new__(docker_runtime_module.RidgesDockerEnvironment)
+
+    await environment.start(force_build=False)
+
+    assert seen == [(False, 1)]
+    assert gate._active_starts == 0
