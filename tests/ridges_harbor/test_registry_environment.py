@@ -43,7 +43,7 @@ def test_kwargs_carry_the_platform_registry(monkeypatch):
     assert registry_environment_kwargs(REGISTRY, DIGEST) == {
         "task_image_registry": REGISTRY,
         "task_digest": DIGEST,
-        "image_pull_timeout_sec": 300,
+        "image_pull_timeout_sec": 600,
     }
     with pytest.raises(ValueError):
         registry_environment_kwargs("https://" + REGISTRY, DIGEST)
