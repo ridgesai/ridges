@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Annotated
 
 from bittensor_wallet.keypair import Keypair
@@ -54,7 +55,7 @@ from queries.validator_scheduling import (
 from utils.debug_lock import DebugLock
 from utils.ttl import clear_all_ttl_caches
 from utils.upload_pricing import multiplier
-from utils.validator_hotkeys import is_validator_hotkey_whitelisted
+from utils.validator_hotkeys import PLATFORM_VALIDATOR_PREFIX, is_validator_hotkey_whitelisted
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,15 @@ def validate_hotkey(miner_hotkey: str) -> None:
         Keypair(ss58_address=miner_hotkey)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid hotkey SS58 address") from None
+
+
+def validate_validator_hotkey(hotkey: str, *, require_whitelisted: bool = False) -> None:
+    if re.fullmatch(rf"{PLATFORM_VALIDATOR_PREFIX}\d+", hotkey):
+        return
+
+    validate_hotkey(hotkey)
+    if require_whitelisted and not is_validator_hotkey_whitelisted(hotkey):
+        raise HTTPException(status_code=400, detail="Validator hotkey is not whitelisted")
 
 
 @router.put("/competitions/{set_id}", response_model=CompetitionAdminSnapshot)
@@ -200,9 +210,7 @@ async def put_validator_concurrency(
     request: ValidatorConcurrencyUpdateRequest,
     actor: Annotated[str, Depends(require_coldkey_ban_admin)],
 ) -> ValidatorConcurrencySnapshot:
-    validate_hotkey(validator_hotkey)
-    if not is_validator_hotkey_whitelisted(validator_hotkey):
-        raise HTTPException(status_code=400, detail="Validator hotkey is not whitelisted")
+    validate_validator_hotkey(validator_hotkey, require_whitelisted=True)
     return await set_competition_validator_concurrency(
         set_id=set_id,
         validator_hotkey=validator_hotkey,
@@ -221,7 +229,7 @@ async def delete_validator_concurrency(
     request: ValidatorConcurrencyDeleteRequest,
     actor: Annotated[str, Depends(require_coldkey_ban_admin)],
 ) -> ValidatorConcurrencySnapshot:
-    validate_hotkey(validator_hotkey)
+    validate_validator_hotkey(validator_hotkey)
     return await set_competition_validator_concurrency(
         set_id=set_id,
         validator_hotkey=validator_hotkey,
@@ -374,7 +382,7 @@ async def put_validator_scheduling(
     dependencies=[Depends(require_coldkey_ban_admin)],
 )
 async def get_validator_competition_allowlist(validator_hotkey: str) -> ValidatorAllowlistSnapshot:
-    validate_hotkey(validator_hotkey)
+    validate_validator_hotkey(validator_hotkey)
     return await get_validator_allowlist(validator_hotkey=validator_hotkey)
 
 
@@ -384,7 +392,5 @@ async def put_validator_competition_allowlist(
     request: ValidatorAllowlistUpdateRequest,
     actor: Annotated[str, Depends(require_coldkey_ban_admin)],
 ) -> ValidatorAllowlistSnapshot:
-    validate_hotkey(validator_hotkey)
-    if request.allowed_set_ids is not None and not is_validator_hotkey_whitelisted(validator_hotkey):
-        raise HTTPException(status_code=400, detail="Validator hotkey is not whitelisted")
+    validate_validator_hotkey(validator_hotkey, require_whitelisted=request.allowed_set_ids is not None)
     return await set_validator_allowlist(validator_hotkey=validator_hotkey, target=request, actor=actor)

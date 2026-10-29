@@ -27,7 +27,14 @@ HEADERS = {"Authorization": "Bearer scheduling-test"}
 
 @pytest.mark.parametrize(
     "path,body",
-    [(MODE_PATH, {"mode": "disabled", "reason": "test"}), (ALLOW_PATH, {"allowed_set_ids": [29], "reason": "test"})],
+    [
+        (MODE_PATH, {"mode": "disabled", "reason": "test"}),
+        (ALLOW_PATH, {"allowed_set_ids": [29], "reason": "test"}),
+        (
+            "/admin/validators/platform-validator-1/competition-allowlist",
+            {"allowed_set_ids": [29], "reason": "test"},
+        ),
+    ],
 )
 def test_all_controls_require_admin_auth(client, path, body):
     assert client.get(path).status_code == 401
@@ -40,12 +47,15 @@ def test_rejects_invalid_allowlists(client, ids):
 
 
 @pytest.mark.parametrize("ids", [None, [], [29], [28, 29]])
-def test_allowlist_admin_contract(client, monkeypatch, ids):
-    save = AsyncMock(return_value=ValidatorAllowlistSnapshot(validator_hotkey=HOTKEY, allowed_set_ids=ids))
+@pytest.mark.parametrize("hotkey", [HOTKEY, "platform-validator-1"])
+def test_allowlist_admin_contract(client, monkeypatch, ids, hotkey):
+    save = AsyncMock(return_value=ValidatorAllowlistSnapshot(validator_hotkey=hotkey, allowed_set_ids=ids))
     monkeypatch.setattr(admin, "set_validator_allowlist", save)
-    response = client.put(ALLOW_PATH, json={"allowed_set_ids": ids, "reason": "test"}, headers=HEADERS)
+    path = f"/admin/validators/{hotkey}/competition-allowlist"
+    response = client.put(path, json={"allowed_set_ids": ids, "reason": "test"}, headers=HEADERS)
     assert response.status_code == 200
     assert response.json()["allowed_set_ids"] == ids
+    assert save.await_args.kwargs["validator_hotkey"] == hotkey
     assert save.await_args.kwargs["actor"] == admin.COMPETITION_ADMIN_ACTOR
 
 
@@ -98,13 +108,40 @@ def test_scheduling_read_and_write_contract(client, monkeypatch, mode):
     assert client.get(MODE_PATH, headers=HEADERS).json() == response.json()
 
 
-def test_allowlist_get_preserves_null_vs_empty(client, monkeypatch):
+@pytest.mark.parametrize("hotkey", [HOTKEY, "platform-validator-1"])
+def test_allowlist_get_preserves_null_vs_empty(client, monkeypatch, hotkey):
     for ids in (None, [], [29]):
         monkeypatch.setattr(
             admin,
             "get_validator_allowlist",
-            AsyncMock(return_value=ValidatorAllowlistSnapshot(validator_hotkey=HOTKEY, allowed_set_ids=ids)),
+            AsyncMock(return_value=ValidatorAllowlistSnapshot(validator_hotkey=hotkey, allowed_set_ids=ids)),
         )
-        response = client.get(ALLOW_PATH, headers=HEADERS)
+        response = client.get(f"/admin/validators/{hotkey}/competition-allowlist", headers=HEADERS)
         assert response.status_code == 200
         assert response.json()["allowed_set_ids"] == ids
+
+
+@pytest.mark.parametrize(
+    "hotkey",
+    ["platform-validator-", "platform-validator-1x", "platform-validator-1-extra", "not-platform-validator-1"],
+)
+def test_all_validator_controls_reject_malformed_platform_names(client, hotkey):
+    allowlist_path = f"/admin/validators/{hotkey}/competition-allowlist"
+    concurrency_path = f"/admin/competitions/29/validator-concurrency/{hotkey}"
+    for method, path, body in [
+        ("GET", allowlist_path, None),
+        ("PUT", allowlist_path, {"allowed_set_ids": [29], "reason": "test"}),
+        ("PUT", concurrency_path, {"max_concurrent_evaluation_runs": 10, "reason": "test"}),
+        ("DELETE", concurrency_path, {"reason": "test"}),
+    ]:
+        assert client.request(method, path, json=body, headers=HEADERS).status_code == 400
+
+
+def test_platform_validator_name_is_not_accepted_as_a_miner_hotkey(client):
+    response = client.post(
+        "/admin/upload-credits",
+        json={"miner_hotkey": "platform-validator-1", "reason": "test", "granted_by": "test"},
+        headers=HEADERS,
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid hotkey SS58 address"

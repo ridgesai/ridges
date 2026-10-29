@@ -11,8 +11,12 @@ from api.endpoints.validator_models import ValidatorUpdateEvaluationRunRequest
 from models.evaluation_run import EvaluationRunErrorCode, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetGroup, EvaluationSetProblem
 from models.problem import ProblemTestCategory, ProblemTestResult, ProblemTestResultStatus
-from queries.agent import get_agent_by_id
-from queries.evaluation import get_evaluation_by_id, get_hydrated_evaluation_by_id
+from queries.agent import EvaluationCandidate, get_agent_by_id
+from queries.evaluation import (
+    create_new_evaluation_and_evaluation_runs,
+    get_evaluation_by_id,
+    get_hydrated_evaluation_by_id,
+)
 from queries.evaluation_run import create_evaluation_runs, get_all_evaluation_runs_in_evaluation_id
 from queries.evaluation_run_attempt import get_attempts_for_evaluation_run
 
@@ -29,7 +33,9 @@ async def clean_tables(postgres_db):
         )
 
 
-async def _seed(conn, *, paused: bool = False):
+async def _seed(
+    conn, *, paused: bool = False, validator_hotkey: str = "validator-hotkey", required_validator_count: int = 1
+):
     agent_id = uuid4()
     await conn.execute(
         "INSERT INTO evaluation_sets (set_id, set_group, problem_name, created_at)"
@@ -42,7 +48,7 @@ async def _seed(conn, *, paused: bool = False):
         SET start_date = NOW(), scoring_mode = 'consensus',
             is_paused = $1,
             screener_1_threshold = 0.4, screener_2_threshold = 0.4,
-            prune_threshold = 0.4, required_validator_count = 1,
+            prune_threshold = 0.4, required_validator_count = $2,
             max_concurrent_evaluation_runs = 8,
             pre_screening_enabled = true, auto_approval_enabled = false,
             hardcoding_policy_version = 'hardcoding-v1', incentive_enabled = false,
@@ -52,6 +58,7 @@ async def _seed(conn, *, paused: bool = False):
         WHERE set_id = 1
         """,
         paused,
+        required_validator_count,
     )
     await conn.execute(
         "INSERT INTO agents (agent_id, miner_hotkey, name, version_num, status, created_at, ip_address, set_id)"
@@ -61,20 +68,21 @@ async def _seed(conn, *, paused: bool = False):
     evaluation_id = uuid4()
     await conn.execute(
         "INSERT INTO evaluations (evaluation_id, agent_id, validator_hotkey, set_id, created_at,"
-        " evaluation_set_group) VALUES ($1, $2, 'validator-hotkey', 1, NOW(), 'validator')",
+        " evaluation_set_group) VALUES ($1, $2, $3, 1, NOW(), 'validator')",
         evaluation_id,
         agent_id,
+        validator_hotkey,
     )
     return agent_id, evaluation_id
 
 
-async def _make_session(evaluation_id, agent_id):
+async def _make_session(evaluation_id, agent_id, hotkey: str = "validator-hotkey"):
     evaluation = await get_evaluation_by_id(evaluation_id)
     agent = await get_agent_by_id(agent_id)
     return validator_endpoint.Validator(
         session_id=uuid4(),
         name="validator-1",
-        hotkey="validator-hotkey",
+        hotkey=hotkey,
         time_connected=datetime.now(timezone.utc),
         ip_address="127.0.0.1",
         current_evaluation_id=evaluation_id,
@@ -281,3 +289,59 @@ async def test_in_session_retry_and_completion_continue_while_competition_is_pau
 
     evaluation = await get_evaluation_by_id(evaluation_id)
     assert evaluation.finished_at is not None
+
+
+async def test_platform_validator_slot_stays_reserved_while_retry_is_granted(monkeypatch, postgres_db):
+    """A platform validator claiming mid-retry must still see the retrying evaluation as holding the slot."""
+    async with _db.pool.acquire() as conn:
+        agent_id, evaluation_id = await _seed(conn, validator_hotkey="platform-validator-1", required_validator_count=3)
+
+    racing_claims = []
+
+    async def presign_while_another_platform_validator_claims(_s3_key):
+        async with _db.pool.acquire() as conn:
+            cursor = await conn.fetchval(
+                "SELECT last_served_set_id FROM competition_work_cursors WHERE family = 'validator'"
+            )
+        racing_claims.append(
+            await create_new_evaluation_and_evaluation_runs(
+                EvaluationCandidate(agent_id, 1), "platform-validator-2", cursor
+            )
+        )
+        return "https://s3.example.com/fresh-upload-url"
+
+    monkeypatch.setattr(
+        validator_endpoint, "generate_presigned_upload_url", presign_while_another_platform_validator_claims
+    )
+
+    await create_evaluation_runs(
+        evaluation_id,
+        [
+            EvaluationSetProblem(
+                set_id=1,
+                set_group=EvaluationSetGroup.validator,
+                problem_name="prob-1",
+                created_at=datetime(2026, 7, 1, tzinfo=timezone.utc),
+            )
+        ],
+    )
+    (run,) = await get_all_evaluation_runs_in_evaluation_id(evaluation_id)
+    validator = await _make_session(evaluation_id, agent_id, hotkey="platform-validator-1")
+
+    response = await _update(
+        validator,
+        run.evaluation_run_id,
+        EvaluationRunStatus.error,
+        error_code=int(EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR),
+        error_message="transient failure",
+        agent_logs="attempt 1 agent logs",
+        eval_logs="attempt 1 eval logs",
+    )
+
+    assert response.retry is True
+    assert racing_claims == [None]
+    attempts = await get_attempts_for_evaluation_run(run.evaluation_run_id)
+    assert [(a.attempt_number, a.status) for a in attempts] == [
+        (1, EvaluationRunStatus.error),
+        (2, EvaluationRunStatus.pending),
+    ]
