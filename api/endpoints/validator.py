@@ -84,8 +84,8 @@ from queries.evaluation_run import (
     update_evaluation_run_by_id,
 )
 from queries.evaluation_run_attempt import (
-    create_next_attempt_and_reset_evaluation_run,
     get_attempt_count_for_evaluation_run,
+    record_error_and_create_next_attempt,
 )
 from queries.internal_flag import get_internal_flags_parsed
 from utils.agent_secrets import AgentKeyDecryptError, AgentKeyEncryptionConfigError, sha256_hex
@@ -796,8 +796,9 @@ async def _maybe_grant_retry(
 ) -> Optional[ValidatorUpdateEvaluationRunResponse]:
     """Grant an in-session retry for an errored run when policy allows it.
 
-    Returns a directive response when a fresh attempt was created, or None to
-    leave the run errored (falling back to the whole-evaluation restart path).
+    Returns a directive response when the error and a fresh attempt were
+    persisted together, or None when nothing was written and the caller must
+    persist the error (falling back to the whole-evaluation restart path).
     Never raises: any failure here just means no retry.
     """
 
@@ -824,7 +825,9 @@ async def _maybe_grant_retry(
             f"artifacts/{evaluation_run.evaluation_run_id}.tar.gz"
         )
 
-        new_attempt = await create_next_attempt_and_reset_evaluation_run(evaluation_run.evaluation_run_id)
+        new_attempt = await record_error_and_create_next_attempt(evaluation_run, attempt_count)
+        if new_attempt is None:
+            return None
     except Exception as exc:
         logger.error(
             f"Failed to grant retry for evaluation run {evaluation_run.evaluation_run_id}: {type(exc).__name__}: {exc}",
@@ -1186,25 +1189,26 @@ async def validator_update_evaluation_run(
             await _create_log_if_new(evaluation_run.evaluation_run_id, EvaluationRunLogType.agent, request.agent_logs)
             await _create_log_if_new(evaluation_run.evaluation_run_id, EvaluationRunLogType.eval, request.eval_logs)
 
-    await update_evaluation_run_by_id(evaluation_run)
-
-    if request.updated_status in (EvaluationRunStatus.finished, EvaluationRunStatus.error):
-        if validator.current_evaluation is not None:
-            current_evaluation = validator.current_evaluation
-            try:
-                await _maybe_stop_agent_by_score_bound(current_evaluation)
-            except Exception as exc:
-                evaluation_id = getattr(current_evaluation, "evaluation_id", "unknown")
-                logger.error(
-                    f"Failed to run score-bound pruning for evaluation {evaluation_id}: {type(exc).__name__}: {exc}",
-                    exc_info=True,
-                )
-
     response = ValidatorUpdateEvaluationRunResponse()
     if request.updated_status == EvaluationRunStatus.error:
         retry_directive = await _maybe_grant_retry(validator, evaluation_run)
         if retry_directive is not None:
             response = retry_directive
+
+    if not response.retry:
+        await update_evaluation_run_by_id(evaluation_run)
+
+        if request.updated_status in (EvaluationRunStatus.finished, EvaluationRunStatus.error):
+            if validator.current_evaluation is not None:
+                current_evaluation = validator.current_evaluation
+                try:
+                    await _maybe_stop_agent_by_score_bound(current_evaluation)
+                except Exception as exc:
+                    evaluation_id = getattr(current_evaluation, "evaluation_id", "unknown")
+                    logger.error(
+                        f"Failed to run score-bound pruning for evaluation {evaluation_id}: {type(exc).__name__}: {exc}",
+                        exc_info=True,
+                    )
 
     logger.info(f"Validator '{validator.name}' updated an evaluation run")
     logger.info(f"  Evaluation run ID: {request.evaluation_run_id}")
