@@ -54,7 +54,11 @@ from models.evaluation_run import (
 )
 from models.evaluation_set import EvaluationSetGroup
 from models.harbor_task import read_execution_spec_metadata
-from models.openrouter import OpenRouterRuntimeConfig
+from models.openrouter import (
+    OPENROUTER_VERIFIER_API_KEY_ENV,
+    OpenRouterRuntimeConfig,
+    OpenRouterVerifierRuntimeConfig,
+)
 from models.validator import ConnectedValidatorInfo, ValidatorStatus
 from queries.agent import (
     get_agent_by_id,
@@ -532,6 +536,16 @@ async def validator_request_evaluation(
         except Exception as exc:
             logger.warning(f"Failed to generate artifact upload URL for {evaluation_run.evaluation_run_id}: {exc}")
 
+    requires_openrouter_verifier = any(
+        OPENROUTER_VERIFIER_API_KEY_ENV in (evaluation_run.execution_spec or {}).get("required_verifier_env", [])
+        for evaluation_run in evaluation_runs
+    )
+    openrouter_verifier_config = (
+        OpenRouterVerifierRuntimeConfig(api_key=config.OPENROUTER_VERIFIER_API_KEY)
+        if requires_openrouter_verifier
+        else None
+    )
+
     return ValidatorRequestEvaluationResponse(
         evaluation_id=evaluation.evaluation_id,
         agent_id=agent_id,
@@ -539,6 +553,7 @@ async def validator_request_evaluation(
         evaluation_runs=response_runs,
         artifact_upload_urls=artifact_upload_urls,
         openrouter_config=openrouter_config,
+        openrouter_verifier_config=openrouter_verifier_config,
         max_concurrent_evaluation_runs=max_concurrent_evaluation_runs,
     )
 

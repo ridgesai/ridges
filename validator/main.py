@@ -38,7 +38,7 @@ from execution.errors import EvaluationRunException
 from execution.types import TrialSnapshot
 from models.competition import MAX_CONCURRENCY
 from models.evaluation_run import EvaluationRunErrorCode, EvaluationRunStatus
-from models.openrouter import OpenRouterRuntimeConfig
+from models.openrouter import OpenRouterRuntimeConfig, OpenRouterVerifierRuntimeConfig
 from models.problem import ProblemTestResultStatus
 from utils.docker import (
     cleanup_harbor_docker_resources,
@@ -364,6 +364,7 @@ async def _run_evaluation_run_with_semaphore(
     semaphore: asyncio.Semaphore,
     artifact_upload_url: str | None = None,
     openrouter_config: OpenRouterRuntimeConfig | None = None,
+    openrouter_verifier_config: OpenRouterVerifierRuntimeConfig | None = None,
 ):
     async with semaphore:
         return await _run_evaluation_run(
@@ -371,6 +372,7 @@ async def _run_evaluation_run_with_semaphore(
             agent_code,
             artifact_upload_url=artifact_upload_url,
             openrouter_config=openrouter_config,
+            openrouter_verifier_config=openrouter_verifier_config,
         )
 
 
@@ -380,6 +382,7 @@ async def _run_single_attempt(
     attempt_number: int,
     artifact_upload_url: str | None,
     openrouter_config: OpenRouterRuntimeConfig | None,
+    openrouter_verifier_config: OpenRouterVerifierRuntimeConfig | None,
 ) -> ValidatorUpdateEvaluationRunResponse:
     """Run one attempt of an evaluation run and report its terminal status.
 
@@ -432,6 +435,7 @@ async def _run_single_attempt(
             agent_path=None,
             agent_code=agent_code,
             openrouter_config=openrouter_config,
+            openrouter_verifier_config=openrouter_verifier_config,
             fetch_task_url=_fetch_task_download_url,
             on_agent_started=_on_agent_started,
             on_verification_started=_on_verification_started,
@@ -528,6 +532,7 @@ async def _run_evaluation_run(
     agent_code: str,
     artifact_upload_url: str | None = None,
     openrouter_config: OpenRouterRuntimeConfig | None = None,
+    openrouter_verifier_config: OpenRouterVerifierRuntimeConfig | None = None,
 ):
     evaluation_run_id = evaluation_run.evaluation_run_id
     problem_name = evaluation_run.problem_name
@@ -541,7 +546,12 @@ async def _run_evaluation_run(
         attempt_number = 1
         while True:
             response = await _run_single_attempt(
-                evaluation_run, agent_code, attempt_number, artifact_upload_url, openrouter_config
+                evaluation_run,
+                agent_code,
+                attempt_number,
+                artifact_upload_url,
+                openrouter_config,
+                openrouter_verifier_config,
             )
             if not response.retry:
                 break
@@ -729,6 +739,7 @@ def _create_evaluation_run_tasks(request_evaluation_response: ValidatorRequestEv
                         semaphore,
                         artifact_upload_url=upload_url,
                         openrouter_config=request_evaluation_response.openrouter_config,
+                        openrouter_verifier_config=request_evaluation_response.openrouter_verifier_config,
                     )
                 )
             )
