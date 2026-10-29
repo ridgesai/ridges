@@ -40,7 +40,7 @@ def registry_environment_kwargs(registry: str, task_digest: str) -> dict:
     if not DIGEST_RE.fullmatch(task_digest):
         raise ValueError("Image cache requires a full task digest")
 
-    timeout = int(os.environ.get("RIDGES_TASK_IMAGE_PULL_TIMEOUT_SEC", "300"))
+    timeout = int(os.environ.get("RIDGES_TASK_IMAGE_PULL_TIMEOUT_SEC", "900"))
     if not 1 <= timeout <= 1800:
         raise ValueError("RIDGES_TASK_IMAGE_PULL_TIMEOUT_SEC must be between 1 and 1800")
     return {"task_image_registry": registry, "task_digest": task_digest, "image_pull_timeout_sec": timeout}
@@ -158,7 +158,7 @@ class RegistryDockerEnvironment(DockerEnvironment):
         task_image_registry: str,
         task_digest: str,
         native_startup_timeout_sec: float,
-        image_pull_timeout_sec: int = 300,
+        image_pull_timeout_sec: int = 900,
         **kwargs,
     ):
         self._registry_compose_path: Path | None = None
