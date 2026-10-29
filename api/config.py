@@ -140,6 +140,9 @@ SCREENER_PASSWORD = os.getenv("SCREENER_PASSWORD")
 if not SCREENER_PASSWORD:
     logger.fatal("SCREENER_PASSWORD is not set in .env")
 
+# Optional: when we require ridges validators
+PLATFORM_VALIDATOR_PASSWORD = os.getenv("PLATFORM_VALIDATOR_PASSWORD")
+
 SCREENER_1_THRESHOLD = os.getenv("SCREENER_1_THRESHOLD")
 if not SCREENER_1_THRESHOLD:
     logger.fatal("SCREENER_1_THRESHOLD is not set in .env")

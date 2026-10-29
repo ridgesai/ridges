@@ -87,8 +87,8 @@ from queries.evaluation_run import (
     update_evaluation_run_by_id,
 )
 from queries.evaluation_run_attempt import (
-    create_next_attempt_and_reset_evaluation_run,
     get_attempt_count_for_evaluation_run,
+    record_error_and_create_next_attempt,
 )
 from queries.internal_flag import get_internal_flags_parsed
 from utils.agent_secrets import AgentKeyDecryptError, AgentKeyEncryptionConfigError, sha256_hex
@@ -98,7 +98,11 @@ from utils.git import COMMIT_HASH
 from utils.incentives import calculate_relative_improvement
 from utils.s3 import download_text_file_from_s3, generate_presigned_upload_url, generate_presigned_url
 from utils.system_metrics import SystemMetrics
-from utils.validator_hotkeys import is_validator_hotkey_whitelisted, validator_hotkey_to_name
+from utils.validator_hotkeys import (
+    PLATFORM_VALIDATOR_PREFIX,
+    is_validator_hotkey_whitelisted,
+    validator_hotkey_to_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -372,6 +376,47 @@ async def validator_register_as_screener(
     session_id = screener.session_id
 
     logger.info(f"Screener {registration_request.name} was registered")
+    logger.info(f"  Session ID: {session_id}")
+    logger.info(f"  IP Address: {ip_address}")
+
+    return ScreenerRegistrationResponse(
+        session_id=session_id,
+        running_agent_timeout_seconds=config.VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS,
+        running_eval_timeout_seconds=config.VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS,
+        max_evaluation_run_log_size_bytes=config.VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES,
+        environment_build_timeout_multiplier=config.VALIDATOR_ENVIRONMENT_BUILD_TIMEOUT_MULTIPLIER,
+    )
+
+
+# /validator/register-as-platform-validator
+@router.post("/register-as-platform-validator")
+async def validator_register_as_platform_validator(
+    request: Request, registration_request: ScreenerRegistrationRequest
+) -> ScreenerRegistrationResponse:
+
+    if registration_request.commit_hash != COMMIT_HASH:
+        raise HTTPException(
+            status_code=426,
+            detail=f"The provided platform validator commit hash ({registration_request.commit_hash}) does not match the platform commit hash ({COMMIT_HASH}). Run `git pull` to update your platform validator, and try again.",
+            headers={"X-Commit-Hash": COMMIT_HASH},
+        )
+
+    if not re.fullmatch(rf"{PLATFORM_VALIDATOR_PREFIX}\d+", registration_request.name):
+        raise HTTPException(status_code=400, detail="The provided name is not in the format platform-validator-NUM.")
+
+    if not config.PLATFORM_VALIDATOR_PASSWORD or registration_request.password != config.PLATFORM_VALIDATOR_PASSWORD:
+        raise HTTPException(status_code=403, detail="The provided password is incorrect.")
+
+    ip_address = request.client.host if request.client else None
+    platform_validator = await register_session(
+        name=registration_request.name,
+        hotkey=registration_request.name,
+        ip_address=ip_address,
+        replacement_reason="Platform validator re-registered; replacing the old session.",
+    )
+    session_id = platform_validator.session_id
+
+    logger.info(f"Platform validator {registration_request.name} was registered")
     logger.info(f"  Session ID: {session_id}")
     logger.info(f"  IP Address: {ip_address}")
 
@@ -779,8 +824,9 @@ async def _maybe_grant_retry(
 ) -> Optional[ValidatorUpdateEvaluationRunResponse]:
     """Grant an in-session retry for an errored run when policy allows it.
 
-    Returns a directive response when a fresh attempt was created, or None to
-    leave the run errored (falling back to the whole-evaluation restart path).
+    Returns a directive response when the error and a fresh attempt were
+    persisted together, or None when nothing was written and the caller must
+    persist the error (falling back to the whole-evaluation restart path).
     Never raises: any failure here just means no retry.
     """
 
@@ -807,7 +853,9 @@ async def _maybe_grant_retry(
             f"artifacts/{evaluation_run.evaluation_run_id}.tar.gz"
         )
 
-        new_attempt = await create_next_attempt_and_reset_evaluation_run(evaluation_run.evaluation_run_id)
+        new_attempt = await record_error_and_create_next_attempt(evaluation_run, attempt_count)
+        if new_attempt is None:
+            return None
     except Exception as exc:
         logger.error(
             f"Failed to grant retry for evaluation run {evaluation_run.evaluation_run_id}: {type(exc).__name__}: {exc}",
@@ -1169,25 +1217,26 @@ async def validator_update_evaluation_run(
             await _create_log_if_new(evaluation_run.evaluation_run_id, EvaluationRunLogType.agent, request.agent_logs)
             await _create_log_if_new(evaluation_run.evaluation_run_id, EvaluationRunLogType.eval, request.eval_logs)
 
-    await update_evaluation_run_by_id(evaluation_run)
-
-    if request.updated_status in (EvaluationRunStatus.finished, EvaluationRunStatus.error):
-        if validator.current_evaluation is not None:
-            current_evaluation = validator.current_evaluation
-            try:
-                await _maybe_stop_agent_by_score_bound(current_evaluation)
-            except Exception as exc:
-                evaluation_id = getattr(current_evaluation, "evaluation_id", "unknown")
-                logger.error(
-                    f"Failed to run score-bound pruning for evaluation {evaluation_id}: {type(exc).__name__}: {exc}",
-                    exc_info=True,
-                )
-
     response = ValidatorUpdateEvaluationRunResponse()
     if request.updated_status == EvaluationRunStatus.error:
         retry_directive = await _maybe_grant_retry(validator, evaluation_run)
         if retry_directive is not None:
             response = retry_directive
+
+    if not response.retry:
+        await update_evaluation_run_by_id(evaluation_run)
+
+        if request.updated_status in (EvaluationRunStatus.finished, EvaluationRunStatus.error):
+            if validator.current_evaluation is not None:
+                current_evaluation = validator.current_evaluation
+                try:
+                    await _maybe_stop_agent_by_score_bound(current_evaluation)
+                except Exception as exc:
+                    evaluation_id = getattr(current_evaluation, "evaluation_id", "unknown")
+                    logger.error(
+                        f"Failed to run score-bound pruning for evaluation {evaluation_id}: {type(exc).__name__}: {exc}",
+                        exc_info=True,
+                    )
 
     logger.info(f"Validator '{validator.name}' updated an evaluation run")
     logger.info(f"  Evaluation run ID: {request.evaluation_run_id}")

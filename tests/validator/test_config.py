@@ -4,6 +4,8 @@ import importlib
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 
 def _load_config(monkeypatch, *, mode: str, ridges_max_cost_usd: str):
     monkeypatch.setenv("MODE", mode)
@@ -65,3 +67,29 @@ def test_screener_mode_falls_back_to_default_when_env_missing(monkeypatch) -> No
     config = _load_config(monkeypatch, mode="screener", ridges_max_cost_usd="0.01")
 
     assert config.MAX_CONCURRENT_EVALUATION_RUNS == config.SCREENER_DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS
+
+
+def test_platform_validator_mode_defaults_name_to_short_hostname(monkeypatch) -> None:
+    monkeypatch.setenv("PLATFORM_VALIDATOR_PASSWORD", "platform-password")
+    monkeypatch.delenv("PLATFORM_VALIDATOR_NAME", raising=False)
+    monkeypatch.setattr("socket.gethostname", lambda: "platform-validator-3.example.internal")
+    config = _load_config(monkeypatch, mode="platform", ridges_max_cost_usd="0.01")
+
+    assert config.PLATFORM_VALIDATOR_NAME == "platform-validator-3"
+
+
+def test_platform_validator_mode_rejects_names_outside_the_platform_validator_format(monkeypatch) -> None:
+    monkeypatch.setenv("PLATFORM_VALIDATOR_PASSWORD", "platform-password")
+    monkeypatch.setenv("PLATFORM_VALIDATOR_NAME", "ubuntu-8gb-fsn1-1")
+
+    with pytest.raises(Exception, match="platform-validator-NUM"):
+        _load_config(monkeypatch, mode="platform", ridges_max_cost_usd="0.01")
+
+
+def test_platform_validator_mode_takes_concurrency_from_the_competition(monkeypatch) -> None:
+    monkeypatch.setenv("PLATFORM_VALIDATOR_PASSWORD", "platform-password")
+    monkeypatch.setenv("PLATFORM_VALIDATOR_NAME", "platform-validator-1")
+    monkeypatch.setenv("MAX_CONCURRENT_EVALUATION_RUNS", "99")
+    config = _load_config(monkeypatch, mode="platform", ridges_max_cost_usd="0.01")
+
+    assert config.MAX_CONCURRENT_EVALUATION_RUNS == config.DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS
