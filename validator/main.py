@@ -457,21 +457,42 @@ async def _run_single_attempt(
         )
 
         # Move from running_eval -> finished
-        terminal_response = await update_evaluation_run(
-            evaluation_run_id,
-            problem_name,
-            EvaluationRunStatus.finished,
-            {
-                "patch": result.patch,
-                "agent_logs": truncate_logs_if_required(result.agent_logs),
-                "verifier_reward": result.verifier_reward,
-                "test_results": [
-                    test.model_dump(exclude={"test_alias"}, exclude_none=True) for test in result.test_results
-                ],
-                "eval_logs": truncate_logs_if_required(result.eval_logs),
-                "cost_usd": result.cost_usd,
-            },
-        )
+        try:
+            terminal_response = await update_evaluation_run(
+                evaluation_run_id,
+                problem_name,
+                EvaluationRunStatus.finished,
+                {
+                    "patch": result.patch,
+                    "agent_logs": truncate_logs_if_required(result.agent_logs),
+                    "verifier_reward": result.verifier_reward,
+                    "test_results": [
+                        test.model_dump(exclude={"test_alias"}, exclude_none=True) for test in result.test_results
+                    ],
+                    "eval_logs": truncate_logs_if_required(result.eval_logs),
+                    "cost_usd": result.cost_usd,
+                },
+            )
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code != 413:
+                raise
+
+            patch_mb = len(result.patch.encode()) / 1_000_000
+            logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name}: patch too large to submit")
+            terminal_response = await update_evaluation_run(
+                evaluation_run_id,
+                problem_name,
+                EvaluationRunStatus.error,
+                {
+                    "error_code": EvaluationRunErrorCode.AGENT_INVALID_PATCH.value,
+                    "error_message": (
+                        f"{EvaluationRunErrorCode.AGENT_INVALID_PATCH.get_error_message()}: "
+                        f"the patch ({patch_mb:.1f} MB) is too large to submit"
+                    ),
+                    "agent_logs": truncate_logs_if_required(result.agent_logs),
+                    "cost_usd": result.cost_usd,
+                },
+            )
 
     except EvaluationRunException as e:
         logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {e}")
