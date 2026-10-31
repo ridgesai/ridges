@@ -332,6 +332,73 @@ async def test_run_evaluation_run_truncates_logs_on_success(monkeypatch) -> None
     assert updates[4]["extra"]["eval_logs"] == "<truncated 5 chars>\n\npqrst"
 
 
+def _reject_finished_with(monkeypatch, status_code: int) -> None:
+    captured_update = validator_main.update_evaluation_run
+
+    async def fake_update(evaluation_run_id, problem_name, updated_status, extra=None, *, timeout=None):
+        if updated_status == EvaluationRunStatus.finished:
+            request = httpx.Request("POST", "https://platform.test/validator/update-evaluation-run")
+            response = httpx.Response(status_code, request=request)
+            raise httpx.HTTPStatusError(f"{status_code}", request=request, response=response)
+        return await captured_update(evaluation_run_id, problem_name, updated_status, extra, timeout=timeout)
+
+    monkeypatch.setattr(validator_main, "update_evaluation_run", fake_update)
+
+
+def _engine_with_patch(patch: str) -> HookAwareEngine:
+    return HookAwareEngine(
+        result=ExecutionResult(
+            backend="harbor",
+            patch=patch,
+            verifier_reward=0.0,
+            test_results=[_test_result("fail_case", ProblemTestResultStatus.FAIL)],
+            agent_logs="agent log line",
+            eval_logs="eval log line",
+            cost_usd=0.21,
+        ),
+    )
+
+
+@pytest.mark.anyio
+async def test_run_evaluation_run_reports_payload_too_large_as_invalid_patch(monkeypatch) -> None:
+    capture = _install_update_capture(monkeypatch)
+    updates = capture["updates"]
+    _set_common_globals(monkeypatch)
+    _reject_finished_with(monkeypatch, 413)
+    monkeypatch.setattr(validator_main, "execution_engine", _engine_with_patch("x" * 2_500_000))
+
+    await validator_main._run_evaluation_run(_evaluation_run(), "print('agent')")
+
+    assert _status_names(updates) == [
+        EvaluationRunStatus.initializing_agent,
+        EvaluationRunStatus.running_agent,
+        EvaluationRunStatus.initializing_eval,
+        EvaluationRunStatus.running_eval,
+        EvaluationRunStatus.error,
+    ]
+    assert updates[-1]["extra"] == {
+        "error_code": EvaluationRunErrorCode.AGENT_INVALID_PATCH.value,
+        "error_message": "The agent returned an invalid patch: the patch (2.5 MB) is too large to submit",
+        "agent_logs": "agent log line",
+        "cost_usd": 0.21,
+    }
+
+
+@pytest.mark.anyio
+async def test_run_evaluation_run_keeps_other_finished_rejections_as_validator_errors(monkeypatch) -> None:
+    capture = _install_update_capture(monkeypatch)
+    updates = capture["updates"]
+    _set_common_globals(monkeypatch)
+    _reject_finished_with(monkeypatch, 400)
+    monkeypatch.setattr(validator_main, "execution_engine", _engine_with_patch("PATCH"))
+
+    await validator_main._run_evaluation_run(_evaluation_run(), "print('agent')")
+
+    assert _status_names(updates)[-1] == EvaluationRunStatus.error
+    assert updates[-1]["extra"]["error_code"] == EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value
+    assert "400" in updates[-1]["extra"]["error_message"]
+
+
 @pytest.mark.anyio
 async def test_run_evaluation_run_wraps_unexpected_exception_as_validator_internal_error(monkeypatch) -> None:
     capture = _install_update_capture(monkeypatch)
