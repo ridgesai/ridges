@@ -235,6 +235,7 @@ if CLEANUP_ENABLED and CLEANUP_DOCKER_ENABLED:
 
 # --- Environment Backend ---
 RIDGES_ENVIRONMENT_TYPE = os.getenv("RIDGES_ENVIRONMENT_TYPE", "docker")
+DOCKER_STORAGE_METRICS_PATH = os.getenv("DOCKER_STORAGE_METRICS_PATH", "").strip() or None
 if RIDGES_ENVIRONMENT_TYPE not in ("docker", "kubernetes"):
     logger.fatal("RIDGES_ENVIRONMENT_TYPE must be 'docker' or 'kubernetes'")
 
