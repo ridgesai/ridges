@@ -12,7 +12,11 @@ import pytest
 from fastapi import HTTPException
 
 from api.endpoints import validator as validator_endpoint
-from api.endpoints.validator_models import ScreenerRegistrationRequest, ValidatorRegistrationRequest
+from api.endpoints.validator_models import (
+    ScreenerRegistrationRequest,
+    ValidatorHeartbeatRequest,
+    ValidatorRegistrationRequest,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -47,6 +51,33 @@ def _make_validator(*, session_id, hotkey: str, ip_address: str, evaluation_id=N
         ip_address=ip_address,
         current_evaluation_id=evaluation_id,
     )
+
+
+@pytest.mark.anyio
+async def test_docker_storage_metrics_survive_heartbeat_and_connected_validator_response(monkeypatch):
+    validator = _make_validator(session_id=uuid4(), hotkey="validator-hotkey", ip_address="127.0.0.1")
+    monkeypatch.setattr(validator_endpoint, "SESSION_ID_TO_VALIDATOR", {validator.session_id: validator})
+
+    async def flags(_names):
+        return {
+            validator_endpoint.InternalFlagName.VALIDATORS_PAUSED: False,
+            validator_endpoint.InternalFlagName.BLACKLISTED_VALIDATORS: [],
+        }
+
+    monkeypatch.setattr(validator_endpoint, "get_internal_flags_parsed", flags)
+    payload = {
+        "disk_percent": 24.7,
+        "docker_disk_percent": 99.0,
+        "docker_disk_total_gb": 200.0,
+        "docker_disk_free_gb": 2.0,
+        "docker_disk_inodes_percent": 100.0,
+        "docker_disk_path": "/mnt/docker-volume/docker",
+    }
+    request = ValidatorHeartbeatRequest.model_validate({"system_metrics": payload})
+    validator_endpoint.record_validator_heartbeat(validator, request.system_metrics)
+    response = await validator_endpoint.validator_connected_validators_info()
+    returned_metrics = response[0].model_dump(mode="json")["system_metrics"]
+    assert {key: returned_metrics[key] for key in payload} == payload
 
 
 @pytest.mark.anyio
