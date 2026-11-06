@@ -17,7 +17,11 @@ from execution.errors import EvaluationRunException
 from execution.types import ExecutionResult, ExecutionRunRequest, TrialSnapshot
 from models.evaluation_run import EvaluationRunErrorCode
 from models.harbor_task import HarborRemoteTaskExecutionSpec
-from models.openrouter import OpenRouterRuntimeConfig
+from models.openrouter import (
+    OPENROUTER_VERIFIER_API_KEY_ENV,
+    OpenRouterRuntimeConfig,
+    OpenRouterVerifierRuntimeConfig,
+)
 from ridges_harbor.runner import DEFAULT_RESULTS_DIR, run_task
 from ridges_harbor.seed import problem_seed
 from utils.task_cache import get_cached_task, get_or_download_task, touch_cached_task
@@ -102,6 +106,7 @@ class ExecutionEngine:
         agent_path: str | Path | None,
         agent_code: str | None,
         openrouter_config: OpenRouterRuntimeConfig | None = None,
+        openrouter_verifier_config: OpenRouterVerifierRuntimeConfig | None = None,
         fetch_task_url: Callable[[str], Awaitable[str]] | None = None,
         on_agent_started: Callable[[], Awaitable[None]] | None = None,
         on_verification_started: Callable[[TrialSnapshot], Awaitable[None]] | None = None,
@@ -115,6 +120,17 @@ class ExecutionEngine:
         """
 
         parsed_spec = self._parse_execution_spec(problem_name=problem_name, execution_spec=execution_spec)
+        verifier_env: dict[str, str] = {}
+        if OPENROUTER_VERIFIER_API_KEY_ENV in parsed_spec.required_verifier_env:
+            if openrouter_verifier_config is None:
+                raise EvaluationRunException(
+                    error_code=EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR,
+                    error_message=(
+                        f"Task '{problem_name}' requires platform verifier credentials, "
+                        "but the assignment did not include them"
+                    ),
+                )
+            verifier_env = openrouter_verifier_config.verifier_env_vars()
         task_dir = await self._resolve_task_dir(
             execution_spec=parsed_spec, problem_name=problem_name, fetch_task_url=fetch_task_url
         )
@@ -157,6 +173,7 @@ class ExecutionEngine:
                     debug=self.debug,
                     job_name=request.job_name,
                     openrouter_config=openrouter_config,
+                    verifier_env=verifier_env,
                     max_cost_usd=self.max_cost_usd,
                     inference_seed=inference_seed,
                     fetch_task_url=fetch_task_url,

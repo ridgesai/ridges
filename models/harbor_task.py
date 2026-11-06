@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from models.openrouter import OPENROUTER_VERIFIER_API_KEY_ENV
 from models.problem import ProblemDifficulty
 
 
@@ -37,6 +38,7 @@ class HarborRemoteTaskExecutionSpec(BaseModel):
     benchmark_family: str | None = None
     problem_suite_name: str | None = None
     problem_difficulty: ProblemDifficulty | None = None
+    required_verifier_env: list[Literal[OPENROUTER_VERIFIER_API_KEY_ENV]] = Field(default_factory=list)
 
 
 class HarborExecutionSpecMetadata(BaseModel):

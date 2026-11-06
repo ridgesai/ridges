@@ -91,12 +91,14 @@ class FakeVerifierConfig:
         disable: bool = False,
         import_path: str | None = None,
         kwargs: dict | None = None,
+        env: dict[str, str] | None = None,
     ):
         self.max_timeout_sec = max_timeout_sec
         self.override_timeout_sec = override_timeout_sec
         self.disable = disable
         self.import_path = import_path
         self.kwargs = kwargs or {}
+        self.env = env or {}
 
 
 class FakeJobConfig:
@@ -362,6 +364,7 @@ async def test_run_task_dir_uses_loopback_proxy_in_kubernetes(tmp_path: Path, mo
         debug=False,
         job_name="job-k8s",
         inference_seed=123,
+        verifier_env={"OPENROUTER_VERIFIER_API_KEY": "verifier-secret"},
         fetch_task_url=fetch_task_url,
     )
 
@@ -371,6 +374,10 @@ async def test_run_task_dir_uses_loopback_proxy_in_kubernetes(tmp_path: Path, mo
     assert config.environment.kwargs["inference_seed"] == 123
     assert config.environment.kwargs["verifier_image_required"] is False
     assert config.environment.kwargs["task_dir"] == str(task_dir)
+    assert config.verifier.env == {"OPENROUTER_VERIFIER_API_KEY": "verifier-secret"}
+    assert "OPENROUTER_VERIFIER_API_KEY" not in config.agents[0].env
+    assert "OPENROUTER_VERIFIER_API_KEY" not in config.environment.env
+    assert "OPENROUTER_VERIFIER_API_KEY" not in config.environment.kwargs
     assert runner_module.DEFAULT_AGENT_SANDBOX_PROXY_URL == "http://sandbox-proxy:80"
 
 
@@ -445,6 +452,7 @@ async def test_run_task_dir_passes_optional_openrouter_key_and_cost_cap(tmp_path
             workspace_id="workspace-1",
             expected_api_key_sha256="expected-hash",
         ),
+        verifier_env={"OPENROUTER_VERIFIER_API_KEY": "verifier-secret"},
         max_cost_usd=12.5,
         inference_seed=123,
     )
@@ -456,6 +464,9 @@ async def test_run_task_dir_passes_optional_openrouter_key_and_cost_cap(tmp_path
     assert FakeJob.created_configs[0].environment.env["RIDGES_OPENROUTER_MANAGEMENT_KEY"] == "sk-or-mgmt-secret"
     assert FakeJob.created_configs[0].environment.env["RIDGES_OPENROUTER_WORKSPACE_ID"] == "workspace-1"
     assert FakeJob.created_configs[0].environment.env["RIDGES_OPENROUTER_EXPECTED_API_KEY_SHA256"] == "expected-hash"
+    assert FakeJob.created_configs[0].verifier.env == {"OPENROUTER_VERIFIER_API_KEY": "verifier-secret"}
+    assert "OPENROUTER_VERIFIER_API_KEY" not in FakeJob.created_configs[0].agents[0].env
+    assert "OPENROUTER_VERIFIER_API_KEY" not in FakeJob.created_configs[0].environment.env
 
 
 @pytest.mark.anyio
