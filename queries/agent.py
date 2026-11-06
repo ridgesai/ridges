@@ -35,6 +35,7 @@ from queries.errors import (
 from utils.agent_secrets import decrypt_agent_secret
 from utils.database import DatabaseConnection, db_operation
 from utils.s3 import upload_text_file_to_s3
+from utils.validator_hotkeys import PLATFORM_VALIDATOR_PREFIX, is_platform_validator_hotkey
 
 logger = logging.getLogger(__name__)
 
@@ -1345,6 +1346,11 @@ async def get_evaluation_candidates_for_validator_hotkey(
                             e.evaluation_set_group = '{EvaluationSetGroup.validator.value}' :: EvaluationSetGroup
                             AND agg.computed_status = '{EvaluationStatus.success.value}' :: EvaluationStatus
                     ) AS num_finished_evals,
+                    COUNT(*) FILTER (
+                        WHERE
+                            e.evaluation_set_group = '{EvaluationSetGroup.validator.value}' :: EvaluationSetGroup
+                            AND e.validator_hotkey LIKE '{PLATFORM_VALIDATOR_PREFIX}%'
+                    ) AS num_platform_validator_evals,
                     COALESCE(
                         MAX(agg.score) FILTER (
                             WHERE
@@ -1417,6 +1423,10 @@ async def get_evaluation_candidates_for_validator_hotkey(
                 WHERE NOT COALESCE(s.already_evaluated, false)
                   AND COALESCE(s.num_running_evals, 0) + COALESCE(s.num_finished_evals, 0)
                       < c.required_validator_count
+                  AND NOT (
+                      $3::boolean
+                      AND COALESCE(s.num_platform_validator_evals, 0) >= (c.required_validator_count - 1) / 2
+                  )
             ),
             competition_heads AS (
                 SELECT agent_id, set_id, validator_scheduling_mode
@@ -1437,6 +1447,7 @@ async def get_evaluation_candidates_for_validator_hotkey(
             """,
             set_group.value,
             validator_hotkey,
+            is_platform_validator_hotkey(validator_hotkey),
         )
 
     return _evaluation_candidate_batch(rows, family=set_group)

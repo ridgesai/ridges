@@ -28,6 +28,7 @@ from api.endpoints.validator_models import (
     ValidatorRequestEvaluationRequest,
     ValidatorRequestEvaluationResponse,
     ValidatorTaskDownloadUrlRequest,
+    ValidatorTaskImageTokenRequest,
     ValidatorUpdateEvaluationRunRequest,
     ValidatorUpdateEvaluationRunResponse,
 )
@@ -39,7 +40,13 @@ from models.competition import MAX_CONCURRENCY
 from models.evaluation_run import EvaluationRunErrorCode, EvaluationRunStatus
 from models.openrouter import OpenRouterRuntimeConfig, OpenRouterVerifierRuntimeConfig
 from models.problem import ProblemTestResultStatus
-from utils.docker import cleanup_harbor_docker_resources, prune_docker_disk_resources, sweep_leaked_harbor_images
+from utils.docker import (
+    cleanup_harbor_docker_resources,
+    prune_build_cache_older_than,
+    prune_caches_under_disk_pressure,
+    prune_docker_disk_resources,
+    sweep_leaked_harbor_images,
+)
 from utils.git import COMMIT_HASH, reset_local_repo
 from utils.logger import setup_logging
 from utils.system_metrics import get_system_metrics
@@ -100,10 +107,20 @@ async def _run_startup_tasks() -> None:
             dry_run = config.CLEANUP_DOCKER_DRY_RUN
             containers = {"count": 0, "names": [], "errors": 0}
             images = {"count": 0, "names": [], "errors": 0}
-            prune = {"image_bytes": 0, "build_bytes": 0, "errors": 0}
+            prune = {"image_bytes": 0, "errors": 0}
+            pressure_prune = {"fired": False, "image_bytes": 0, "build_bytes": 0, "evicted_images": 0, "errors": 0}
+            build_cache = {"build_bytes": 0, "errors": 0}
             disk_percent = None
             errors = 0
             logger.info(f"Janitor startup: starting (dry_run={str(dry_run).lower()})")
+
+            try:
+                build_cache = await asyncio.to_thread(
+                    prune_build_cache_older_than, hours=config.CLEANUP_BUILD_CACHE_RETENTION_HOURS, dry_run=dry_run
+                )
+            except Exception as e:
+                errors += 1
+                logger.warning(f"Janitor startup build cache prune failed (best-effort): {type(e).__name__}: {e}")
 
             try:
                 metrics = await get_system_metrics()
@@ -130,38 +147,42 @@ async def _run_startup_tasks() -> None:
                     sweep_leaked_harbor_images,
                     tag_grace_sec=config.CLEANUP_IMAGE_TAG_GRACE_HOURS * 3600,
                     dry_run=dry_run,
-                    disk_used_percent=disk_percent,
-                    pulled_image_pressure_percent=config.CLEANUP_PULLED_IMAGE_DISK_PERCENT,
                 )
             except Exception as e:
                 errors += 1
                 logger.warning(f"Janitor startup image cleanup failed (best-effort): {type(e).__name__}: {e}")
 
-            include_build_cache = disk_percent is not None and disk_percent >= config.CLEANUP_DISK_PRESSURE_PERCENT
-            logger.info(
-                f"Janitor startup: pruning dangling images (until=1h, "
-                f"build_cache={str(include_build_cache).lower()})..."
-            )
+            logger.info("Janitor startup: pruning dangling build leftovers (until=1h)...")
             try:
-                prune = await asyncio.to_thread(
-                    prune_docker_disk_resources,
-                    include_build_cache=include_build_cache,
-                    dry_run=dry_run,
-                    until="1h",
-                )
+                prune = await asyncio.to_thread(prune_docker_disk_resources, dry_run=dry_run, until="1h")
             except Exception as e:
                 errors += 1
                 logger.warning(f"Janitor startup prune failed (best-effort): {type(e).__name__}: {e}")
 
-            errors += sum(summary.get("errors", 0) for summary in (containers, images, prune))
+            if disk_percent is not None:
+                try:
+                    pressure_prune = await asyncio.to_thread(
+                        prune_caches_under_disk_pressure,
+                        disk_used_percent=disk_percent,
+                        pressure_percent=config.CLEANUP_DISK_PRESSURE_PERCENT,
+                        dry_run=dry_run,
+                    )
+                except Exception as e:
+                    errors += 1
+                    logger.warning(f"Janitor startup pressure prune failed (best-effort): {type(e).__name__}: {e}")
+
+            errors += sum(
+                summary.get("errors", 0) for summary in (build_cache, containers, images, prune, pressure_prune)
+            )
             disk_display = f"{disk_percent:.0f}" if disk_percent is not None else "unknown"
             candidate_names = (containers.get("names") or []) + (images.get("names") or [])
             names_display = ",".join(candidate_names[:20]) or "-"
             logger.info(
                 f"Janitor startup: containers={containers.get('count', 0)} "
                 f"images={images.get('count', 0)} "
-                f"prune_bytes={prune.get('image_bytes', 0)} "
-                f"build_bytes={prune.get('build_bytes', 0)} disk_percent={disk_display} "
+                f"prune_bytes={prune.get('image_bytes', 0) + pressure_prune.get('image_bytes', 0)} "
+                f"build_bytes={build_cache.get('build_bytes', 0) + pressure_prune.get('build_bytes', 0)} "
+                f"evicted_images={pressure_prune.get('evicted_images', 0)} disk_percent={disk_display} "
                 f"errors={errors} dry_run={str(dry_run).lower()} names={names_display}"
             )
         else:
@@ -250,6 +271,17 @@ async def _fetch_task_download_url(task_digest: str) -> str:
             EvaluationRunErrorCode.PLATFORM_FAILED_PROVISIONING,
             f"Failed to fetch download URL for task digest {task_digest}: {type(exc).__name__}: {exc}",
         ) from exc
+
+
+async def _fetch_task_image_token(repository: str) -> str:
+    """Ask the platform for a short-lived pull token for one task image repository."""
+    response = await post_ridges_platform(
+        "/validator/task-image-token",
+        ValidatorTaskImageTokenRequest(repository=repository),
+        bearer_token=session_id,
+        quiet=2,
+    )
+    return response["token"]
 
 
 async def _upload_job_artifacts(job_dir: pathlib.Path, upload_url: str) -> None:
@@ -682,7 +714,10 @@ def _create_evaluation_run_tasks(request_evaluation_response: ValidatorRequestEv
 
     tasks = []
     max_concurrent_evaluation_runs = config.MAX_CONCURRENT_EVALUATION_RUNS
-    if config.MODE == "validator" and request_evaluation_response.max_concurrent_evaluation_runs is not None:
+    if (
+        config.MODE in ("validator", "platform")
+        and request_evaluation_response.max_concurrent_evaluation_runs is not None
+    ):
         max_concurrent_evaluation_runs = request_evaluation_response.max_concurrent_evaluation_runs
     logger.info(f"  Max Concurrent Evaluation Runs: {max_concurrent_evaluation_runs}")
     semaphore = asyncio.Semaphore(max_concurrent_evaluation_runs)
@@ -913,7 +948,7 @@ async def main():
     global execution_engine
 
     setup_logging()
-    max_runs = MAX_CONCURRENCY if config.MODE == "validator" else config.MAX_CONCURRENT_EVALUATION_RUNS
+    max_runs = MAX_CONCURRENCY if config.MODE in ("validator", "platform") else config.MAX_CONCURRENT_EVALUATION_RUNS
     asyncio.get_running_loop().set_default_executor(
         concurrent.futures.ThreadPoolExecutor(
             max_workers=max(64, max_runs * 2 + 32),
@@ -957,6 +992,21 @@ async def main():
                 )
             )
 
+        elif config.MODE == "platform":
+            register_response = ScreenerRegistrationResponse(
+                **(
+                    await post_ridges_platform(
+                        "/validator/register-as-platform-validator",
+                        ScreenerRegistrationRequest(
+                            name=config.PLATFORM_VALIDATOR_NAME,
+                            password=config.PLATFORM_VALIDATOR_PASSWORD,
+                            commit_hash=COMMIT_HASH,
+                        ),
+                        quiet=1,
+                    )
+                )
+            )
+
     except httpx.HTTPStatusError as e:
         if config.UPDATE_AUTOMATICALLY and e.response.status_code == 426:
             logger.info("Updating...")
@@ -977,6 +1027,7 @@ async def main():
     logger.info(f"  Running Evaluation Timeout: {running_eval_timeout_seconds} second(s)")
     logger.info(f"  Max Evaluation Run Log Size: {max_evaluation_run_log_size_bytes} byte(s)")
     logger.info(f"  Environment Build Timeout Multiplier: {environment_build_timeout_multiplier}x")
+    logger.info(f"  Task Image Registry: {register_response.task_image_registry or 'disabled'}")
 
     execution_engine = ExecutionEngine(
         harbor_results_dir=config.RIDGES_HARBOR_RESULTS_DIR,
@@ -985,6 +1036,7 @@ async def main():
         max_eval_timeout_sec=running_eval_timeout_seconds,
         max_cost_usd=config.RIDGES_MAX_COST_USD,
         build_timeout_multiplier=environment_build_timeout_multiplier,
+        task_image_registry=register_response.task_image_registry,
     )
 
     # Start the heartbeat sender on its own thread
@@ -1000,6 +1052,11 @@ async def main():
 
     if config.RIDGES_ENVIRONMENT_TYPE == "docker" and not config.SIMULATE_EVALUATION_RUNS:
         await _update_docker_plugins()
+
+    if config.RIDGES_ENVIRONMENT_TYPE == "docker":
+        from ridges_harbor.registry_environment import set_registry_token_provider
+
+        set_registry_token_provider(_fetch_task_image_token)
 
     # Loop forever, just keep requesting evaluations and running them
     while True:

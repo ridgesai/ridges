@@ -1,10 +1,11 @@
 import logging
-from typing import List
+from typing import List, Optional
 from uuid import UUID, uuid4
 
 import asyncpg
 
-from models.evaluation_run import EvaluationRunAttempt, EvaluationRunStatus
+from models.evaluation_run import EvaluationRun, EvaluationRunAttempt, EvaluationRunStatus
+from queries.evaluation_run import update_evaluation_run_by_id
 from utils.database import DatabaseConnection, db_operation
 
 logger = logging.getLogger(__name__)
@@ -86,3 +87,28 @@ async def create_next_attempt_and_reset_evaluation_run(
     logger.info(f"Created attempt {row['attempt_number']} for evaluation run {evaluation_run_id} and reset mirror")
 
     return _parse_attempt_from_row(row)
+
+
+@db_operation
+async def record_error_and_create_next_attempt(
+    conn: DatabaseConnection, evaluation_run: EvaluationRun, expected_attempt_count: int
+) -> Optional[EvaluationRunAttempt]:
+    """Persist attempt N's error and open attempt N+1, atomically."""
+
+    async with conn.conn.transaction():
+        status = await conn.fetchval(
+            "SELECT status::text FROM evaluation_runs WHERE evaluation_run_id = $1 FOR UPDATE",
+            evaluation_run.evaluation_run_id,
+        )
+        if status is None or status in (EvaluationRunStatus.finished.value, EvaluationRunStatus.error.value):
+            return None
+
+        attempt_count = await conn.fetchval(
+            "SELECT COUNT(*)::int FROM evaluation_run_attempts WHERE evaluation_run_id = $1",
+            evaluation_run.evaluation_run_id,
+        )
+        if attempt_count != expected_attempt_count:
+            return None
+
+        await update_evaluation_run_by_id(evaluation_run)
+        return await create_next_attempt_and_reset_evaluation_run(evaluation_run.evaluation_run_id)

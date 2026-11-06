@@ -64,13 +64,13 @@ def _make_setup(monkeypatch, *, agent_status=AgentStatus.evaluating, attempt_cou
         current_agent=agent,
     )
 
-    capture = {"created_attempts": 0}
+    capture = {"created_attempts": 0, "updated_runs": 0}
 
     async def fake_get_evaluation_run_by_id(_run_id):
         return evaluation_run
 
     async def fake_update_evaluation_run_by_id(_run):
-        return None
+        capture["updated_runs"] += 1
 
     async def fake_create_evaluation_run_log(_run_id, _type, _logs):
         return None
@@ -87,11 +87,11 @@ def _make_setup(monkeypatch, *, agent_status=AgentStatus.evaluating, attempt_cou
     async def fake_get_attempt_count(_run_id):
         return attempt_count
 
-    async def fake_create_next_attempt(run_id):
+    async def fake_record_error_and_create_next_attempt(run, _expected_attempt_count):
         capture["created_attempts"] += 1
         return EvaluationRunAttempt(
             attempt_id=uuid4(),
-            evaluation_run_id=run_id,
+            evaluation_run_id=run.evaluation_run_id,
             attempt_number=attempt_count + 1,
             status=EvaluationRunStatus.pending,
             created_at=datetime.now(timezone.utc),
@@ -109,7 +109,9 @@ def _make_setup(monkeypatch, *, agent_status=AgentStatus.evaluating, attempt_cou
     monkeypatch.setattr(validator_endpoint, "get_agent_by_id", fake_get_agent_by_id)
     monkeypatch.setattr(validator_endpoint, "_maybe_stop_agent_by_score_bound", fake_maybe_stop_agent_by_score_bound)
     monkeypatch.setattr(validator_endpoint, "get_attempt_count_for_evaluation_run", fake_get_attempt_count)
-    monkeypatch.setattr(validator_endpoint, "create_next_attempt_and_reset_evaluation_run", fake_create_next_attempt)
+    monkeypatch.setattr(
+        validator_endpoint, "record_error_and_create_next_attempt", fake_record_error_and_create_next_attempt
+    )
     monkeypatch.setattr(validator_endpoint, "generate_presigned_upload_url", fake_generate_presigned_upload_url)
 
     return evaluation_run, validator, capture
@@ -141,6 +143,7 @@ async def test_retryable_error_grants_retry(monkeypatch) -> None:
     assert response.attempt_number == 2
     assert response.artifact_upload_url == "https://s3.example.com/fresh-upload-url"
     assert capture["created_attempts"] == 1
+    assert capture["updated_runs"] == 0  # the error is persisted with the new attempt, never on its own
 
 
 async def test_agent_error_is_not_retried(monkeypatch) -> None:
@@ -150,6 +153,7 @@ async def test_agent_error_is_not_retried(monkeypatch) -> None:
 
     assert response.retry is False
     assert capture["created_attempts"] == 0
+    assert capture["updated_runs"] == 1
 
 
 async def test_attempt_cap_blocks_retry(monkeypatch) -> None:
@@ -172,6 +176,19 @@ async def test_legacy_run_without_attempts_is_not_retried(monkeypatch) -> None:
 
     assert response.retry is False
     assert capture["created_attempts"] == 0
+
+
+async def test_platform_validator_run_is_retried_like_any_validator(monkeypatch) -> None:
+    """Without a retry, an infra error hands the evaluation to an external validator, adding the load we offload."""
+    evaluation_run, validator, capture = _make_setup(monkeypatch)
+    validator.hotkey = "platform-validator-1"
+
+    response = await _call_update(
+        _error_request(evaluation_run, EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR), validator
+    )
+
+    assert response.retry is True
+    assert capture["created_attempts"] == 1
 
 
 async def test_stopped_agent_blocks_retry(monkeypatch) -> None:

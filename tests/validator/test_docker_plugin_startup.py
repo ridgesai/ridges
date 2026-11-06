@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+import ridges_harbor.registry_environment as registry_environment
 import validator.main as validator_main
 
 SCRIPT = Path(__file__).resolve().parents[2] / "setup" / "update-docker-plugins.sh"
@@ -56,6 +57,8 @@ def _fake_startup(monkeypatch, *, environment: str, simulate: bool, events: list
     monkeypatch.setattr(validator_main, "ExecutionEngine", lambda **kwargs: SimpleNamespace(**kwargs))
     monkeypatch.setattr(validator_main, "start_heartbeat_thread", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(validator_main, "set_weights_loop", background_loop)
+    # main() registers a process-wide token provider on Docker; restore it after each test.
+    monkeypatch.setattr(registry_environment, "_token_provider", None)
 
 
 @pytest.mark.anyio
@@ -78,6 +81,29 @@ async def test_update_runs_after_registration_and_before_intake(monkeypatch, env
         else ["startup", "register", "intake"]
     )
     assert events == expected
+    registered = registry_environment._token_provider is validator_main._fetch_task_image_token
+    assert registered == (environment == "docker")
+
+
+@pytest.mark.anyio
+async def test_task_image_token_fetch_uses_the_session_and_stays_out_of_logs(monkeypatch):
+    calls = []
+
+    async def post(path, body, **kwargs):
+        calls.append((path, body.model_dump(), kwargs))
+        return {"token": "registry-token"}
+
+    monkeypatch.setattr(validator_main, "post_ridges_platform", post)
+    monkeypatch.setattr(validator_main, "session_id", "session")
+
+    assert await validator_main._fetch_task_image_token("tasks/v1/x/agent/main") == "registry-token"
+    assert calls == [
+        (
+            "/validator/task-image-token",
+            {"repository": "tasks/v1/x/agent/main"},
+            {"bearer_token": "session", "quiet": 2},
+        )
+    ]
 
 
 @pytest.mark.anyio

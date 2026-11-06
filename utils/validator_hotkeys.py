@@ -49,3 +49,14 @@ def validator_hotkey_to_name(validator_hotkey: str) -> str:
         (validator["name"] for validator in WHITELISTED_VALIDATORS if validator["hotkey"] == validator_hotkey),
         "unknown",
     )
+
+
+PLATFORM_VALIDATOR_PREFIX = "platform-validator-"
+
+
+def is_platform_validator_hotkey(validator_hotkey: str) -> bool:
+    return validator_hotkey.startswith(PLATFORM_VALIDATOR_PREFIX)
+
+
+def max_platform_validator_evaluations_per_agent(required_validator_count: int) -> int:
+    return (required_validator_count - 1) // 2

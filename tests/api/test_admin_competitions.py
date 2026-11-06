@@ -17,6 +17,7 @@ import utils.database as _db
 from api.endpoints import admin as admin_endpoint
 from api.endpoints.admin import router as admin_router
 from api.exception_handlers import register_exception_handlers
+from models.agent import AgentStatus
 from models.competition import (
     CompetitionAdminSnapshot,
     CompetitionAllocationSnapshot,
@@ -27,6 +28,7 @@ from models.competition import (
     CompetitionState,
     CompetitionStateUpdateRequest,
 )
+from queries.agent import EvaluationCandidate, get_evaluation_candidates_for_validator_hotkey
 from queries.competition import (
     replace_competition_allocations,
     replace_competition_metadata,
@@ -34,6 +36,8 @@ from queries.competition import (
     update_competition_state,
 )
 from queries.errors import CompetitionAdminConflictError, CompetitionNotFoundError
+from queries.evaluation import create_new_evaluation_and_evaluation_runs
+from tests.queries.test_competition_lifecycle_gates import _insert_agent
 from utils.ttl import clear_all_ttl_caches, ttl_cache
 from utils.validator_hotkeys import WHITELISTED_VALIDATORS
 
@@ -784,10 +788,11 @@ async def concurrency_client(monkeypatch):
         yield client
 
 
-async def test_concurrency_admin_endpoints(clean_competitions, db, concurrency_client, monkeypatch):
+@pytest.mark.parametrize("hotkey", [CONCURRENCY_HOTKEY, "platform-validator-1"])
+async def test_concurrency_admin_endpoints(clean_competitions, db, concurrency_client, monkeypatch, hotkey):
     client = concurrency_client
     base = "/admin/competitions/10/validator-concurrency"
-    path = f"{base}/{CONCURRENCY_HOTKEY}"
+    path = f"{base}/{hotkey}"
     auth = {"Authorization": "Bearer concurrency-test"}
     payload = {"max_concurrent_evaluation_runs": 25, "reason": "more RAM"}
     for method, url, body in [("GET", base, None), ("PUT", path, payload), ("DELETE", path, {"reason": "inherit"})]:
@@ -812,13 +817,63 @@ async def test_concurrency_admin_endpoints(clean_competitions, db, concurrency_c
     assert response.status_code == 200
     assert response.json()["effective_max_concurrent_evaluation_runs"] == 25
     # Retirement does not hide stored overrides or prevent removing them.
+    # Platform identities do not depend on the external validator whitelist.
     monkeypatch.setattr(admin_endpoint, "is_validator_hotkey_whitelisted", lambda _: False)
     monkeypatch.setattr(competition_queries, "WHITELISTED_VALIDATORS", [])
-    assert (await client.put(path, json=payload, headers=auth)).status_code == 400
+    expected_status = 400 if hotkey == CONCURRENCY_HOTKEY else 200
+    assert (await client.put(path, json=payload, headers=auth)).status_code == expected_status
     rows = (await client.get(base, headers=auth)).json()["validators"]
-    retired = next(row for row in rows if row["validator_hotkey"] == CONCURRENCY_HOTKEY)
+    retired = next(row for row in rows if row["validator_hotkey"] == hotkey)
     assert retired["validator_name"] is None and retired["effective_max_concurrent_evaluation_runs"] == 25
     removed = await client.request("DELETE", path, json={"reason": "inherit"}, headers=auth)
     assert removed.status_code == 200 and removed.json()["effective_max_concurrent_evaluation_runs"] == 15
     monkeypatch.setattr(config, "COLDKEY_BAN_ADMIN_API_KEY", None)
     assert (await client.get(base, headers=auth)).status_code == 503
+
+
+async def test_platform_validator_admin_controls_apply_to_assignments(clean_competitions, db, concurrency_client):
+    hotkey = "platform-validator-1"
+    auth = {"Authorization": "Bearer concurrency-test"}
+    allowlist_path = f"/admin/validators/{hotkey}/competition-allowlist"
+    concurrency_path = f"/admin/competitions/10/validator-concurrency/{hotkey}"
+    for set_id in (10, 20):
+        await _seed_competition(db, set_id=set_id, started=True, policy=_policy())
+    agent_id = await _insert_agent(db, set_id=10, status=AgentStatus.evaluating)
+    candidate = EvaluationCandidate(agent_id, 10)
+
+    for allowed_set_ids in ([20], []):
+        response = await concurrency_client.put(
+            allowlist_path,
+            json={"allowed_set_ids": allowed_set_ids, "reason": "restrict routing"},
+            headers=auth,
+        )
+        assert response.status_code == 200
+        assert (await concurrency_client.get(allowlist_path, headers=auth)).json()["allowed_set_ids"] == allowed_set_ids
+        assert not (await get_evaluation_candidates_for_validator_hotkey(hotkey)).candidates
+        assert await create_new_evaluation_and_evaluation_runs(candidate, hotkey, None) is None
+
+    response = await concurrency_client.put(
+        allowlist_path, json={"allowed_set_ids": None, "reason": "restore routing"}, headers=auth
+    )
+    assert response.status_code == 200
+    assert response.json()["allowed_set_ids"] is None
+    response = await concurrency_client.put(
+        concurrency_path, json={"max_concurrent_evaluation_runs": 3, "reason": "worker capacity"}, headers=auth
+    )
+    assert response.status_code == 200
+    batch = await get_evaluation_candidates_for_validator_hotkey(hotkey)
+    assert batch.candidates == (candidate,)
+    assignment = await create_new_evaluation_and_evaluation_runs(candidate, hotkey, batch.observed_last_served_set_id)
+    assert assignment is not None
+    assert assignment.max_concurrent_evaluation_runs == 3
+
+    response = await concurrency_client.request(
+        "DELETE", concurrency_path, json={"reason": "restore default"}, headers=auth
+    )
+    assert response.status_code == 200
+    next_agent_id = await _insert_agent(db, set_id=10, status=AgentStatus.evaluating)
+    next_assignment = await create_new_evaluation_and_evaluation_runs(
+        EvaluationCandidate(next_agent_id, 10), hotkey, 10
+    )
+    assert next_assignment is not None
+    assert next_assignment.max_concurrent_evaluation_runs == 8

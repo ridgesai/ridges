@@ -6,6 +6,7 @@ import uuid
 from dotenv import load_dotenv
 
 from models.competition import MAX_CONCURRENCY
+from ridges_harbor.task_image_contract import validate_registry
 from utils.logger import setup_logging
 
 setup_logging()
@@ -142,6 +143,9 @@ if not DATABASE_NAME:
 SCREENER_PASSWORD = os.getenv("SCREENER_PASSWORD")
 if not SCREENER_PASSWORD:
     logger.fatal("SCREENER_PASSWORD is not set in .env")
+
+# Optional: when we require ridges validators
+PLATFORM_VALIDATOR_PASSWORD = os.getenv("PLATFORM_VALIDATOR_PASSWORD")
 
 SCREENER_1_THRESHOLD = os.getenv("SCREENER_1_THRESHOLD")
 if not SCREENER_1_THRESHOLD:
@@ -293,6 +297,15 @@ SENTRY_DSN = os.getenv("SENTRY_DSN")
 if not SENTRY_DSN:
     logger.warning("SENTRY_DSN is not set, Sentry will not be configured.")
 
+TASK_IMAGE_TOKEN_SIGNING_KEY = os.getenv("TASK_IMAGE_TOKEN_SIGNING_KEY", "").replace("\\n", "\n").strip()
+TASK_IMAGE_PUBLISHER_PASSWORD = os.getenv("TASK_IMAGE_PUBLISHER_PASSWORD", "")
+TASK_IMAGE_REGISTRY = os.getenv("TASK_IMAGE_REGISTRY", "").strip()
+if TASK_IMAGE_REGISTRY:
+    try:
+        validate_registry(TASK_IMAGE_REGISTRY)
+    except ValueError as exc:
+        logger.fatal(f"TASK_IMAGE_REGISTRY is invalid: {exc}")
+
 logger.info(
     f"API configuration loaded: host={HOST} port={PORT} env={ENV} netuid={NETUID} "
     f"subtensor_network={SUBTENSOR_NETWORK} subtensor_address={SUBTENSOR_ADDRESS} "
@@ -349,6 +362,8 @@ logger.info(f"Auto Approval Enabled: {AUTO_APPROVAL_ENABLED}")
 logger.info(f"Auto Approval Projector Loop Enabled: {AUTO_APPROVAL_RUN_LOOP}")
 logger.info(f"Approval Projector Poll Interval: {APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS} second(s)")
 logger.info(f"Earliest SET ID with good data: {EARLIEST_SET_ID_WITH_GOOD_DATA}")
+logger.info(f"Task Image Tokens: {'enabled' if TASK_IMAGE_TOKEN_SIGNING_KEY else 'disabled'}")
+logger.info(f"Task Image Registry: {TASK_IMAGE_REGISTRY or 'disabled'}")
 logger.info(f"Incentive Start Set ID: {INCENTIVE_START_SET_ID}")
 logger.info(
     f"Incentives: performance_threshold={INCENTIVE_PERFORMANCE_THRESHOLD} "

@@ -51,3 +51,19 @@ def test_projector_loops_follow_deployment_loop_switch_not_policy_defaults() -> 
     )
 
     assert result.stdout.strip() == "True True"
+
+
+def test_invalid_task_image_registry_stops_api_startup() -> None:
+    env = os.environ.copy()
+    env["TASK_IMAGE_REGISTRY"] = "https://validator-registry-dev.ridges.ai"
+    repo_root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [sys.executable, "-c", "import dotenv; dotenv.load_dotenv = lambda *a, **k: False; import api.config"],
+        cwd=repo_root,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "TASK_IMAGE_REGISTRY is invalid" in result.stderr

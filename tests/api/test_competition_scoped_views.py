@@ -368,15 +368,6 @@ async def test_screener_averages_exclude_assigned_mismatches_but_keep_null_legac
                 score,
                 '[{"name":"public-test","category":"unit","status":"pass"}]',
             )
-            await conn.execute(
-                """
-                INSERT INTO inferences (
-                    evaluation_run_id, provider, model, temperature, messages,
-                    num_input_tokens, num_output_tokens
-                ) VALUES ($1, 'test', 'test-model', 0, '[]'::jsonb, 10, 5)
-                """,
-                run_id,
-            )
 
         error_evaluations = []
         async with conn.transaction():
