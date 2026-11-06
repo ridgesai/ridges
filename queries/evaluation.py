@@ -5,10 +5,12 @@ from typing import List, Optional
 from uuid import UUID, uuid4
 
 import api.config as config
+from api.src.utils.openrouter_keys import MintedKey, OpenRouterKeyError, mint_verifier_key
 from models.agent import AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus, HydratedEvaluation
 from models.evaluation_run import EvaluationRun, EvaluationRunErrorCode, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetGroup
+from models.openrouter import OPENROUTER_VERIFIER_API_KEY_ENV
 from queries.agent import EvaluationCandidate
 from queries.errors import EvaluationSetMembershipMismatchError
 from queries.evaluation_run import create_evaluation_runs, get_all_evaluation_runs_in_evaluation_id
@@ -49,6 +51,7 @@ class EvaluationAssignment:
     evaluation: Evaluation
     evaluation_runs: list[EvaluationRun]
     max_concurrent_evaluation_runs: int | None
+    verifier_key: MintedKey | None = None
 
 
 @db_operation
@@ -192,6 +195,8 @@ async def create_new_evaluation_and_evaluation_runs(
     candidate: EvaluationCandidate,
     validator_hotkey: str,
     observed_last_served_set_id: int | None,
+    *,
+    allow_verifier_key_mint: bool = True,
 ) -> EvaluationAssignment | None:
     async with conn.conn.transaction():
         set_group = EvaluationSetGroup.from_validator_hotkey(validator_hotkey)
@@ -306,9 +311,20 @@ async def create_new_evaluation_and_evaluation_runs(
             f"# of problems in set ID {candidate.set_id}, set group {set_group.value}: {len(evaluation_set_problems)}"
         )
 
+        verifier_run_count = sum(
+            OPENROUTER_VERIFIER_API_KEY_ENV in (problem.execution_spec or {}).get("required_verifier_env", [])
+            for problem in evaluation_set_problems
+        )
+        if verifier_run_count and not allow_verifier_key_mint:
+            raise OpenRouterKeyError("Verifier key minting already failed for this request")
+
         evaluation_id = await create_evaluation(candidate.agent_id, validator_hotkey, candidate.set_id)
 
         await create_evaluation_runs(evaluation_id, evaluation_set_problems)
+
+        verifier_key = None
+        if verifier_run_count:
+            verifier_key = await mint_verifier_key(evaluation_id=evaluation_id, run_count=verifier_run_count)
 
         await conn.execute(
             """
@@ -345,6 +361,7 @@ async def create_new_evaluation_and_evaluation_runs(
             evaluation=await get_evaluation_by_id(evaluation_id),
             evaluation_runs=await get_all_evaluation_runs_in_evaluation_id(evaluation_id),
             max_concurrent_evaluation_runs=concurrency,
+            verifier_key=verifier_key,
         )
 
 

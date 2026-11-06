@@ -19,6 +19,8 @@ def initialize_sentry() -> None:
         # Add data like request headers and IP for users,
         # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
         send_default_pii=True,
+        # Frame locals can hold OpenRouter keys; name-based scrubbing misses them.
+        include_local_variables=False,
         # Enable sending logs to Sentry
         enable_logs=True,
         # Set traces_sample_rate to 0.75 to capture 75%
