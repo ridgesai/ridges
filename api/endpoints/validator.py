@@ -38,6 +38,7 @@ from api.endpoints.validator_models import (
     ValidatorUpdateEvaluationRunRequest,
     ValidatorUpdateEvaluationRunResponse,
 )
+from api.src.utils.openrouter_keys import OpenRouterKeyError, delete_verifier_key
 from db.models import InternalFlagName
 from models.agent import Agent, AgentStatus, PublicAgent
 from models.competition import CompetitionPolicy
@@ -51,11 +52,7 @@ from models.evaluation_run import (
 )
 from models.evaluation_set import EvaluationSetGroup
 from models.harbor_task import read_execution_spec_metadata
-from models.openrouter import (
-    OPENROUTER_VERIFIER_API_KEY_ENV,
-    OpenRouterRuntimeConfig,
-    OpenRouterVerifierRuntimeConfig,
-)
+from models.openrouter import OpenRouterRuntimeConfig, OpenRouterVerifierRuntimeConfig
 from models.validator import ConnectedValidatorInfo, ValidatorStatus
 from queries.agent import (
     get_agent_by_id,
@@ -129,6 +126,8 @@ class Validator(BaseModel):
 
 # Map of session IDs to validator objects
 SESSION_ID_TO_VALIDATOR: Dict[UUID, Validator] = {}
+# Minted verifier keys still to delete when their evaluation finishes.
+VERIFIER_KEY_HASH_BY_EVALUATION_ID: Dict[UUID, str] = {}
 SESSION_REGISTRATION_LOCKS: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
 
 
@@ -435,6 +434,7 @@ async def validator_request_evaluation(
     try:
         async with DebugLock(lock, f"{validator.name} ({validator.hotkey}) for {lock_name}", timeout=60):
             candidate_batch = await get_evaluation_candidates_for_validator_hotkey(validator.hotkey)
+            verifier_mint_failed = False
             for candidate in candidate_batch.candidates:
                 agent = await get_agent_by_id(candidate.agent_id)
                 if agent is None:
@@ -471,17 +471,25 @@ async def validator_request_evaluation(
                             expected_api_key_sha256=sha256_hex(openrouter_secrets.runtime_api_key),
                         )
 
-                evaluation_bundle = await create_new_evaluation_and_evaluation_runs(
-                    candidate,
-                    validator.hotkey,
-                    candidate_batch.observed_last_served_set_id,
-                )
+                try:
+                    evaluation_bundle = await create_new_evaluation_and_evaluation_runs(
+                        candidate,
+                        validator.hotkey,
+                        candidate_batch.observed_last_served_set_id,
+                        allow_verifier_key_mint=not verifier_mint_failed,
+                    )
+                except OpenRouterKeyError as exc:
+                    log = logger.info if verifier_mint_failed else logger.error
+                    log(f"Skipping evaluation candidate {candidate.agent_id}: {exc}")
+                    verifier_mint_failed = True
+                    continue
                 if evaluation_bundle is None:
                     continue
 
                 evaluation = evaluation_bundle.evaluation
                 evaluation_runs = evaluation_bundle.evaluation_runs
                 max_concurrent_evaluation_runs = evaluation_bundle.max_concurrent_evaluation_runs
+                verifier_key = evaluation_bundle.verifier_key
                 agent_id = candidate.agent_id
                 break
             else:
@@ -494,6 +502,8 @@ async def validator_request_evaluation(
 
     validator.current_evaluation_id = evaluation.evaluation_id
     validator.current_evaluation = evaluation
+    if verifier_key is not None:
+        VERIFIER_KEY_HASH_BY_EVALUATION_ID[evaluation.evaluation_id] = verifier_key.key_hash
     validator.current_agent = agent
 
     logger.info(
@@ -532,14 +542,8 @@ async def validator_request_evaluation(
         except Exception as exc:
             logger.warning(f"Failed to generate artifact upload URL for {evaluation_run.evaluation_run_id}: {exc}")
 
-    requires_openrouter_verifier = any(
-        OPENROUTER_VERIFIER_API_KEY_ENV in (evaluation_run.execution_spec or {}).get("required_verifier_env", [])
-        for evaluation_run in evaluation_runs
-    )
     openrouter_verifier_config = (
-        OpenRouterVerifierRuntimeConfig(api_key=config.OPENROUTER_VERIFIER_API_KEY)
-        if requires_openrouter_verifier
-        else None
+        OpenRouterVerifierRuntimeConfig(api_key=verifier_key.secret) if verifier_key is not None else None
     )
 
     return ValidatorRequestEvaluationResponse(
@@ -1283,6 +1287,13 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
     Adds the finished_at field to an evaluation. If the evaluation is marked as successful
     (all evaluation runs completed successfully), transitions the corresponding agent into the next state.
     """
+    key_hash = VERIFIER_KEY_HASH_BY_EVALUATION_ID.pop(evaluation_id, None)
+    if key_hash is not None:
+        try:
+            await delete_verifier_key(key_hash)
+        except OpenRouterKeyError as exc:
+            logger.warning(f"Could not delete verifier key for evaluation {evaluation_id}: {exc}")
+
     await update_evaluation_finished_at(evaluation_id)
 
     hydrated_evaluation = await get_hydrated_evaluation_by_id(evaluation_id)
