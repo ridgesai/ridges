@@ -15,6 +15,7 @@ from fastapi import HTTPException, UploadFile
 from api.endpoints import validator as validator_endpoint
 from api.endpoints.validator_models import ValidatorRequestEvaluationRequest
 from api.src.utils import openrouter_validation as openrouter_validation_module
+from api.src.utils.openrouter_keys import MintedKey, OpenRouterKeyError
 from api.src.utils.openrouter_validation import OPENROUTER_API_BASE_URL, ValidatedOpenRouterKeys
 from db.models import InternalFlagName
 from models.agent import Agent, AgentStatus
@@ -525,6 +526,7 @@ def _patch_validator_dependencies(
     updated_runs: list[EvaluationRun] | None = None,
     handled_evaluations: list | None = None,
     competition_policy=None,
+    verifier_key: MintedKey | None = None,
 ):
     evaluation = _make_evaluation(agent_id, validator_hotkey)
     evaluation_runs = [
@@ -543,7 +545,7 @@ def _patch_validator_dependencies(
     async def fake_download_text(_key: str):
         return "print('agent')\n"
 
-    async def fake_create_bundle(_candidate, _validator_hotkey, _observed_last_served_set_id):
+    async def fake_create_bundle(_candidate, _validator_hotkey, _observed_last_served_set_id, **_kwargs):
         if created_evaluations is not None:
             created_evaluations.append((_candidate.agent_id, _validator_hotkey))
         return EvaluationAssignment(
@@ -552,6 +554,7 @@ def _patch_validator_dependencies(
             competition_policy.max_concurrent_evaluation_runs
             if competition_policy is not None and not validator_hotkey.startswith("screener-")
             else None,
+            verifier_key=verifier_key,
         )
 
     async def fake_generate_upload_url(_s3_key: str):
@@ -670,23 +673,8 @@ async def test_validator_request_evaluation_allows_missing_openrouter_record(mon
     assert response.openrouter_verifier_config is None
 
 
-@pytest.mark.anyio
-async def test_validator_request_evaluation_sends_verifier_key_only_when_required(monkeypatch) -> None:
-    agent_id = uuid4()
-    validator_hotkey = "screener-1-test"
-    _, evaluation_runs = _patch_validator_dependencies(
-        monkeypatch,
-        agent_id=agent_id,
-        validator_hotkey=validator_hotkey,
-        openrouter_secrets=None,
-    )
-    evaluation_runs[0].execution_spec = {"required_verifier_env": ["OPENROUTER_VERIFIER_API_KEY"]}
-    monkeypatch.setattr(
-        validator_endpoint.config,
-        "OPENROUTER_VERIFIER_API_KEY",
-        "verifier-secret",
-    )
-    validator = validator_endpoint.Validator(
+def _make_test_validator(validator_hotkey: str) -> validator_endpoint.Validator:
+    return validator_endpoint.Validator(
         session_id=uuid4(),
         name="validator",
         hotkey=validator_hotkey,
@@ -694,15 +682,144 @@ async def test_validator_request_evaluation_sends_verifier_key_only_when_require
         ip_address="127.0.0.1",
     )
 
+
+@pytest.mark.anyio
+async def test_validator_request_evaluation_sends_minted_verifier_key(monkeypatch) -> None:
+    agent_id = uuid4()
+    evaluation, _ = _patch_validator_dependencies(
+        monkeypatch,
+        agent_id=agent_id,
+        validator_hotkey="screener-1-test",
+        openrouter_secrets=None,
+        verifier_key=MintedKey(secret="sk-or-v1-minted", key_hash="h1"),
+    )
+    monkeypatch.setattr(validator_endpoint, "VERIFIER_KEY_HASH_BY_EVALUATION_ID", {})
+
+    response = await validator_endpoint.validator_request_evaluation(
+        ValidatorRequestEvaluationRequest(),
+        validator=_make_test_validator("screener-1-test"),
+    )
+
+    assert response is not None
+    assert response.openrouter_verifier_config is not None
+    assert response.openrouter_verifier_config.api_key == "sk-or-v1-minted"
+    assert validator_endpoint.VERIFIER_KEY_HASH_BY_EVALUATION_ID == {evaluation.evaluation_id: "h1"}
+
+
+@pytest.mark.anyio
+async def test_validator_request_evaluation_without_verifier_key_records_nothing(monkeypatch) -> None:
+    _patch_validator_dependencies(
+        monkeypatch,
+        agent_id=uuid4(),
+        validator_hotkey="screener-1-test",
+        openrouter_secrets=None,
+    )
+    monkeypatch.setattr(validator_endpoint, "VERIFIER_KEY_HASH_BY_EVALUATION_ID", {})
+
+    response = await validator_endpoint.validator_request_evaluation(
+        ValidatorRequestEvaluationRequest(),
+        validator=_make_test_validator("screener-1-test"),
+    )
+
+    assert response is not None
+    assert response.openrouter_verifier_config is None
+    assert validator_endpoint.VERIFIER_KEY_HASH_BY_EVALUATION_ID == {}
+
+
+def _patch_candidate_issue(monkeypatch, batch: EvaluationCandidateBatch, fake_issue) -> None:
+    async def fake_flags(_flags):
+        return {
+            InternalFlagName.VALIDATORS_PAUSED: False,
+            InternalFlagName.BLACKLISTED_VALIDATORS: [],
+        }
+
+    async def fake_get_candidates(_hotkey: str):
+        return batch
+
+    async def fake_get_agent(candidate_agent_id):
+        return _make_agent(candidate_agent_id)
+
+    async def fake_download(_key: str):
+        return "print('agent')\n"
+
+    async def fake_upload_url(_key: str):
+        return "https://example.com/upload"
+
+    monkeypatch.setattr(validator_endpoint, "get_internal_flags_parsed", fake_flags)
+    monkeypatch.setattr(validator_endpoint, "get_competition_policy", _async_none)
+    monkeypatch.setattr(validator_endpoint, "record_validator_heartbeat", lambda _validator: None)
+    monkeypatch.setattr(validator_endpoint, "get_evaluation_candidates_for_validator_hotkey", fake_get_candidates)
+    monkeypatch.setattr(validator_endpoint, "get_agent_by_id", fake_get_agent)
+    monkeypatch.setattr(validator_endpoint, "download_text_file_from_s3", fake_download)
+    monkeypatch.setattr(validator_endpoint, "get_openrouter_secrets_for_agent_id", _async_none)
+    monkeypatch.setattr(validator_endpoint, "create_new_evaluation_and_evaluation_runs", fake_issue)
+    monkeypatch.setattr(validator_endpoint, "generate_presigned_upload_url", fake_upload_url)
+    monkeypatch.setattr(validator_endpoint, "read_execution_spec_metadata", lambda *_args, **_kwargs: None)
+
+
+@pytest.mark.anyio
+async def test_validator_request_evaluation_skips_to_keyless_candidate_after_mint_failure(monkeypatch) -> None:
+    first, second, third = uuid4(), uuid4(), uuid4()
+    batch = EvaluationCandidateBatch(
+        observed_last_served_set_id=None,
+        candidates=tuple(EvaluationCandidate(agent_id=agent_id, set_id=20) for agent_id in (first, second, third)),
+    )
+    evaluation = _make_evaluation(third, "screener-1-test")
+    mint_allowed: list[bool] = []
+
+    async def fake_issue(candidate, _hotkey, _cursor, *, allow_verifier_key_mint=True):
+        mint_allowed.append(allow_verifier_key_mint)
+        if candidate.agent_id in (first, second):
+            raise OpenRouterKeyError("Minting verifier key failed")
+        return EvaluationAssignment(evaluation, [_make_evaluation_run(evaluation.evaluation_id)], None)
+
+    _patch_candidate_issue(monkeypatch, batch, fake_issue)
+    skip_logs: list[tuple[str, str]] = []
+    for level in ("error", "info"):
+        original = getattr(validator_endpoint.logger, level)
+
+        def record(message, *args, _level=level, _original=original, **kwargs):
+            if str(message).startswith("Skipping evaluation candidate"):
+                skip_logs.append((_level, str(message)))
+            return _original(message, *args, **kwargs)
+
+        monkeypatch.setattr(validator_endpoint.logger, level, record)
+    validator = _make_test_validator("screener-1-test")
+
     response = await validator_endpoint.validator_request_evaluation(
         ValidatorRequestEvaluationRequest(),
         validator=validator,
     )
 
     assert response is not None
-    assert response.openrouter_config is None
-    assert response.openrouter_verifier_config is not None
-    assert response.openrouter_verifier_config.api_key == "verifier-secret"
+    assert validator.current_agent is not None
+    assert validator.current_agent.agent_id == third
+    assert mint_allowed == [True, False, False]
+    # One outage is one error; the derived skips must not flood Sentry.
+    assert [level for level, _ in skip_logs] == ["error", "info"]
+    assert response.openrouter_verifier_config is None
+
+
+@pytest.mark.anyio
+async def test_validator_request_evaluation_returns_none_when_every_mint_fails(monkeypatch) -> None:
+    batch = EvaluationCandidateBatch(
+        observed_last_served_set_id=None,
+        candidates=(EvaluationCandidate(agent_id=uuid4(), set_id=20),),
+    )
+
+    async def fake_issue(_candidate, _hotkey, _cursor, **_kwargs):
+        raise OpenRouterKeyError("Minting verifier key failed")
+
+    _patch_candidate_issue(monkeypatch, batch, fake_issue)
+    validator = _make_test_validator("screener-1-test")
+
+    response = await validator_endpoint.validator_request_evaluation(
+        ValidatorRequestEvaluationRequest(),
+        validator=validator,
+    )
+
+    assert response is None
+    assert validator.current_evaluation_id is None
 
 
 @pytest.mark.anyio
@@ -801,7 +918,7 @@ async def test_validator_request_evaluation_falls_through_to_next_competition(
                 raise AgentKeyEncryptionConfigError("missing key")
         return None
 
-    async def fake_issue(candidate, _hotkey, observed_cursor):
+    async def fake_issue(candidate, _hotkey, observed_cursor, **_kwargs):
         issued.append((candidate, observed_cursor))
         return EvaluationAssignment(evaluation, evaluation_runs, None)
 
