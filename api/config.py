@@ -99,9 +99,9 @@ if not RIDGES_AGENT_KEY_ENCRYPTION_KEY:
         "will be unavailable until it is configured."
     )
 
-OPENROUTER_VERIFIER_API_KEY = os.getenv("OPENROUTER_VERIFIER_API_KEY")
-if not OPENROUTER_VERIFIER_API_KEY:
-    raise RuntimeError("OPENROUTER_VERIFIER_API_KEY is required")
+OPENROUTER_VERIFIER_MANAGEMENT_KEY = os.getenv("OPENROUTER_VERIFIER_MANAGEMENT_KEY")
+if not OPENROUTER_VERIFIER_MANAGEMENT_KEY:
+    raise RuntimeError("OPENROUTER_VERIFIER_MANAGEMENT_KEY is required")
 
 
 # Load S3 configuration
