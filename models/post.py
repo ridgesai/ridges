@@ -1,8 +1,11 @@
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
+
+from models.pagination import PageParams
 
 
 class PostRecord(BaseModel):
@@ -38,3 +41,35 @@ class Post(BaseModel):
             **record.model_dump(exclude={"image_s3_key", "image_content_type"}),
             image_url=image_url,
         )
+
+
+class PostSortField(str, Enum):
+    created_at = "created_at"
+    featured = "featured"
+
+
+class PostListQuery(PageParams):
+    """Query params for GET /posts."""
+
+    featured: Optional[bool] = Field(None, description="Only return posts with this featured flag")
+    sort: str = Field(
+        f"-{PostSortField.created_at.value}",
+        description=(
+            f"One of {', '.join(field.value for field in PostSortField)}; prefix with '-' to sort descending. "
+            "Ties are broken by newest first, so '-featured' returns featured posts first, each group newest first."
+        ),
+    )
+
+    @field_validator("sort")
+    @classmethod
+    def validate_sort(cls, value: str) -> str:
+        PostSortField(value.removeprefix("-"))
+        return value
+
+    @property
+    def sort_field(self) -> PostSortField:
+        return PostSortField(self.sort.removeprefix("-"))
+
+    @property
+    def sort_descending(self) -> bool:
+        return self.sort.startswith("-")

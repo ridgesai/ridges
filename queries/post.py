@@ -1,7 +1,7 @@
 from typing import Optional
 from uuid import UUID
 
-from models.post import PostRecord
+from models.post import PostRecord, PostSortField
 from utils.database import DatabaseConnection, db_operation
 
 
@@ -40,21 +40,35 @@ async def get_post(conn: DatabaseConnection, post_id: UUID) -> Optional[PostReco
     return PostRecord(**row) if row is not None else None
 
 
+# Fixed column names only: the sort value is never interpolated into SQL.
+_SORT_COLUMNS: dict[PostSortField, str] = {
+    PostSortField.created_at: "created_at",
+    PostSortField.featured: "featured",
+}
+
+
 @db_operation
 async def list_posts(
     conn: DatabaseConnection,
     *,
     featured: Optional[bool] = None,
+    sort: PostSortField = PostSortField.created_at,
+    descending: bool = True,
     limit: int,
     offset: int,
 ) -> tuple[list[PostRecord], int]:
-    """Return one page of posts, newest first, and the total count matching the filter."""
+    """Return one page of posts and the total count matching the filter.
+
+    Rows are ordered by `sort`, then newest first, then by id so pagination is stable.
+    """
+    direction = "DESC" if descending else "ASC"
+    order_by = f"{_SORT_COLUMNS[sort]} {direction}, created_at DESC, id DESC"
     rows = await conn.fetch(
-        """
+        f"""
         SELECT *
         FROM posts
         WHERE $1::boolean IS NULL OR featured = $1
-        ORDER BY created_at DESC, id DESC
+        ORDER BY {order_by}
         LIMIT $2 OFFSET $3
         """,
         featured,

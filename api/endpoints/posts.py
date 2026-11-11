@@ -4,12 +4,12 @@ Post images are stored unmodified in S3 under `posts/`; the database only holds 
 responses carry short-lived presigned URLs.
 """
 
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from models.pagination import Page, PageParams
-from models.post import Post, PostRecord
+from models.pagination import Page
+from models.post import Post, PostListQuery, PostRecord
 from queries import post as post_queries
 from utils import s3
 
@@ -18,19 +18,19 @@ router = APIRouter(tags=["posts"])
 POST_IMAGE_URL_TTL_SECONDS = 60 * 60
 
 
-class PostListQuery(PageParams):
-    featured: Optional[bool] = None
-
-
 # /posts
 @router.get("", response_model=Page[Post])
 async def get_posts(query: Annotated[PostListQuery, Query()]) -> Page[Post]:
-    """List posts, newest first. `featured` optionally filters by the featured flag.
+    """List posts. `featured` filters by the featured flag; `sort` orders them (default `-created_at`, newest first).
+
+    Use `sort=-featured` to get featured posts first, each group newest first.
 
     `image_url` is a presigned URL valid for one hour; do not persist it.
     """
     records, total = await post_queries.list_posts(
         featured=query.featured,
+        sort=query.sort_field,
+        descending=query.sort_descending,
         limit=query.page_size,
         offset=(query.page - 1) * query.page_size,
     )

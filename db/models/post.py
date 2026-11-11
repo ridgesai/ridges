@@ -44,5 +44,5 @@ class Post(Base, CreatedAtMixin):
             "(image_s3_key IS NULL) = (image_content_type IS NULL)",
             name="ck_posts_image_content_type_pair",
         ),
-        sa.Index("idx_posts_featured_created_at", "featured", sa.text("created_at DESC")),
+        sa.Index("idx_posts_featured_created_at", sa.text("featured DESC"), sa.text("created_at DESC")),
     )

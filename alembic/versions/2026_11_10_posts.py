@@ -45,7 +45,7 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("idx_posts_featured_created_at", "posts", ["featured", sa.text("created_at DESC")])
+    op.create_index("idx_posts_featured_created_at", "posts", [sa.text("featured DESC"), sa.text("created_at DESC")])
 
 
 def downgrade() -> None:
