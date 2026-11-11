@@ -46,6 +46,8 @@ RUNTIME_BOOTSTRAP_PROBE_LOG_FILENAME = "runtime-bootstrap-probe.log"
 RUNTIME_PERMISSIONS_LOG_FILENAME = "runtime-permissions.log"
 STDLIB_CONTRACT_FILENAME = "_stdlib_contract.py"
 
+MAX_PATCH_BYTES = 8_000_000
+
 
 class RidgesMinerAgent(BaseInstalledAgent):
     """Harbor agent wrapper for a 'agent_main' miner."""
@@ -257,6 +259,21 @@ class RidgesMinerAgent(BaseInstalledAgent):
         await environment.upload_file(self.stdlib_contract_path, self._env_stdlib_contract_path)
         await environment.upload_file(self.runtime_script_path, self._env_runtime_path)
 
+    def _patch_check_command(self) -> str:
+        """Shell command that enforces the patch size cap, then checks the patch applies.
+
+        An oversized patch is deleted before failing.
+        """
+        raw_patch = shlex.quote(self._env_raw_patch_path)
+        return (
+            f"size=$(($(wc -c < {raw_patch}))); "
+            f'if [ "$size" -gt {MAX_PATCH_BYTES} ]; then '
+            f"rm -f {raw_patch}; "
+            f'echo "patch is $size bytes; the limit is {MAX_PATCH_BYTES} bytes" >&2; '
+            "exit 1; fi; "
+            f"git apply --check {raw_patch}"
+        )
+
     async def _ensure_git_baseline(self, environment: "BaseEnvironment") -> None:
         """Ensure the task workdir has a valid git HEAD before patch generation."""
         exclude_bytecode = (
@@ -334,7 +351,7 @@ class RidgesMinerAgent(BaseInstalledAgent):
                 include_output_body=False,
             )
 
-            patch_check_command = f"git apply --check {shlex.quote(self._env_raw_patch_path)}"
+            patch_check_command = self._patch_check_command()
             await self._exec_with_log(
                 environment,
                 executor=self.exec_as_agent,
