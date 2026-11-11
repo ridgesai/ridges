@@ -30,3 +30,11 @@ class Post(BaseModel):
     featured: bool
     created_at: datetime
     updated_at: Optional[datetime] = None
+
+    @classmethod
+    def from_record(cls, record: PostRecord, *, image_url: Optional[str]) -> "Post":
+        """Build the public view of a stored post. The S3 key and content type are never exposed."""
+        return cls(
+            **record.model_dump(exclude={"image_s3_key", "image_content_type"}),
+            image_url=image_url,
+        )
