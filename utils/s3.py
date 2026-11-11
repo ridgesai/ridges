@@ -89,6 +89,37 @@ async def download_text_file_from_s3(path: str) -> str:
         return content
 
 
+async def upload_bytes_to_s3(path: str, data: bytes, *, content_type: str):
+    async with _s3_client() as s3_client:
+        logger.info(f"Uploading {len(data)} bytes ({content_type}) to s3://{bucket}/{path}")
+        await s3_client.put_object(Bucket=bucket, Key=path, Body=data, ContentType=content_type)
+        logger.info(f"Successfully uploaded file to s3://{bucket}/{path}")
+
+
+async def delete_file_from_s3(path: str):
+    async with _s3_client() as s3_client:
+        logger.info(f"Deleting s3://{bucket}/{path}")
+        await s3_client.delete_object(Bucket=bucket, Key=path)
+        logger.info(f"Successfully deleted s3://{bucket}/{path}")
+
+
+async def generate_presigned_urls(keys: list[str], *, ttl_seconds: int = 300) -> dict[str, str]:
+    """Presign GET URLs for several keys with a single client."""
+    if not keys:
+        return {}
+    async with _s3_client() as s3_client:
+        urls = {
+            key: await s3_client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": bucket, "Key": key},
+                ExpiresIn=ttl_seconds,
+            )
+            for key in keys
+        }
+        logger.info(f"Generated {len(urls)} presigned URLs for s3://{bucket} (ttl={ttl_seconds}s)")
+        return urls
+
+
 async def generate_presigned_url(key: str, *, ttl_seconds: int = 300) -> str:
     async with _s3_client() as s3_client:
         url = await s3_client.generate_presigned_url(
