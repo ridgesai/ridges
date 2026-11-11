@@ -35,7 +35,7 @@ agents.py.run()       ── exec ───────►      python3 ridges_m
                                                calls agent_main(instruction)
                                                writes raw-patch.diff
 
-                      ── exec ───────►      git apply --check
+                      ── exec ───────►      size cap, then git apply --check
                       ── exec ───────►      git apply (as root)
                       ── exec ───────►      atomic publish → patch.diff
 
@@ -50,6 +50,11 @@ When the task asks for a separate verifier, the agent only runs `git apply
 --check` before publishing `patch.diff`. Harbor hands that patch to the
 verifier environment as a declared artifact, and `test.sh` applies it before
 grading.
+
+A raw patch over `MAX_PATCH_BYTES` (8 MB) is deleted and the run fails as an
+invalid patch. The check sits in the container because Harbor copies the agent
+log directory out even when a run fails, and the Kubernetes backend reads that
+copy into validator memory.
 
 ## File map
 
