@@ -132,7 +132,7 @@ def test_create_with_image_stores_original_bytes_in_s3(client, backend) -> None:
     assert post["title"] == "Hello"
     assert post["body"] == "World"
     assert post["featured"] is True
-    assert post["unique_thumbnail_id"] is None
+    assert post["thumbnail_id"] is None
     assert "image_s3_key" not in post
 
     ((key, (data, content_type)),) = backend.objects.items()
@@ -143,19 +143,19 @@ def test_create_with_image_stores_original_bytes_in_s3(client, backend) -> None:
 
 
 def test_create_with_thumbnail_only(client, backend) -> None:
-    response = _create(client, image=None, unique_thumbnail_id="  hero-card  ")
+    response = _create(client, image=None, thumbnail_id="  hero-card  ")
 
     assert response.status_code == 201
     post = response.json()
-    assert post["unique_thumbnail_id"] == "hero-card"
+    assert post["thumbnail_id"] == "hero-card"
     assert post["image_url"] is None
     assert post["featured"] is False
     assert backend.objects == {}
 
 
 def test_thumbnail_id_can_repeat_across_posts(client, backend) -> None:
-    first = _create(client, image=None, unique_thumbnail_id="hero-card")
-    second = _create(client, image=None, unique_thumbnail_id="hero-card")
+    first = _create(client, image=None, thumbnail_id="hero-card")
+    second = _create(client, image=None, thumbnail_id="hero-card")
 
     assert first.status_code == second.status_code == 201
     assert len(backend.posts) == 2
@@ -163,7 +163,7 @@ def test_thumbnail_id_can_repeat_across_posts(client, backend) -> None:
 
 @pytest.mark.parametrize("thumbnail_id", [None, "   "])
 def test_create_requires_image_or_thumbnail(client, backend, thumbnail_id) -> None:
-    data = {} if thumbnail_id is None else {"unique_thumbnail_id": thumbnail_id}
+    data = {} if thumbnail_id is None else {"thumbnail_id": thumbnail_id}
 
     response = _create(client, image=None, **data)
 
@@ -276,7 +276,7 @@ def test_list_rejects_unknown_sort(client, sort) -> None:
 
 
 def test_patch_makes_existing_post_featured_without_touching_other_fields(client, backend) -> None:
-    created = _create(client, unique_thumbnail_id="hero-card").json()
+    created = _create(client, thumbnail_id="hero-card").json()
     objects_before = dict(backend.objects)
 
     response = client.patch(f"/admin/posts/{created['id']}", data={"featured": "true"}, headers=AUTH)
@@ -285,7 +285,7 @@ def test_patch_makes_existing_post_featured_without_touching_other_fields(client
     updated = response.json()
     assert updated["featured"] is True
     assert updated["updated_at"] is not None
-    for field in ("title", "body", "unique_thumbnail_id", "image_url"):
+    for field in ("title", "body", "thumbnail_id", "image_url"):
         assert updated[field] == created[field]
     assert backend.objects == objects_before
 
@@ -321,7 +321,7 @@ def test_patch_replaces_image_and_deletes_old_object(client, backend) -> None:
 
 
 def test_patch_empty_image_removes_it_and_keeps_post_with_thumbnail(client, backend) -> None:
-    created = _create(client, unique_thumbnail_id="hero-card").json()
+    created = _create(client, thumbnail_id="hero-card").json()
 
     response = client.patch(f"/admin/posts/{created['id']}", data={"image": ""}, headers=AUTH)
 
@@ -332,68 +332,66 @@ def test_patch_empty_image_removes_it_and_keeps_post_with_thumbnail(client, back
 
 def test_patch_rejects_leaving_post_without_image_or_thumbnail(client, backend) -> None:
     image_only = _create(client).json()
-    thumbnail_only = _create(client, image=None, unique_thumbnail_id="hero-card").json()
+    thumbnail_only = _create(client, image=None, thumbnail_id="hero-card").json()
     objects_before = dict(backend.objects)
 
     removed_image = client.patch(f"/admin/posts/{image_only['id']}", data={"image": ""}, headers=AUTH)
-    cleared_thumbnail = client.patch(
-        f"/admin/posts/{thumbnail_only['id']}", data={"unique_thumbnail_id": ""}, headers=AUTH
-    )
+    cleared_thumbnail = client.patch(f"/admin/posts/{thumbnail_only['id']}", data={"thumbnail_id": ""}, headers=AUTH)
 
     assert removed_image.status_code == 422
     assert cleared_thumbnail.status_code == 422
     assert backend.objects == objects_before
-    assert backend.posts[UUID(thumbnail_only["id"])].unique_thumbnail_id == "hero-card"
+    assert backend.posts[UUID(thumbnail_only["id"])].thumbnail_id == "hero-card"
 
 
 def test_patch_can_swap_thumbnail_for_image(client, backend) -> None:
-    created = _create(client, image=None, unique_thumbnail_id="hero-card").json()
+    created = _create(client, image=None, thumbnail_id="hero-card").json()
 
     response = client.patch(
         f"/admin/posts/{created['id']}",
-        data={"unique_thumbnail_id": ""},
+        data={"thumbnail_id": ""},
         files={"image": ("new.png", PNG_BYTES, "image/png")},
         headers=AUTH,
     )
 
     assert response.status_code == 200
-    assert response.json()["unique_thumbnail_id"] is None
+    assert response.json()["thumbnail_id"] is None
     assert response.json()["image_url"] is not None
 
 
 def test_patch_omitted_image_and_thumbnail_are_left_unchanged(client, backend) -> None:
-    created = _create(client, unique_thumbnail_id="hero-card").json()
+    created = _create(client, thumbnail_id="hero-card").json()
     objects_before = dict(backend.objects)
 
     response = client.patch(
         f"/admin/posts/{created['id']}",
-        files={"title": (None, "Renamed")},  # multipart body without image / unique_thumbnail_id parts
+        files={"title": (None, "Renamed")},  # multipart body without image / thumbnail_id parts
         headers=AUTH,
     )
 
     assert response.status_code == 200
     assert response.json()["title"] == "Renamed"
-    assert response.json()["unique_thumbnail_id"] == "hero-card"
+    assert response.json()["thumbnail_id"] == "hero-card"
     assert response.json()["image_url"] == created["image_url"]
     assert backend.objects == objects_before
 
 
 def test_patch_clears_image_and_thumbnail_with_empty_multipart_fields(client, backend) -> None:
-    with_both = _create(client, unique_thumbnail_id="hero-card").json()
+    with_both = _create(client, thumbnail_id="hero-card").json()
 
     cleared_image = client.patch(f"/admin/posts/{with_both['id']}", files={"image": (None, "")}, headers=AUTH)
     assert cleared_image.status_code == 200
     assert cleared_image.json()["image_url"] is None
-    assert cleared_image.json()["unique_thumbnail_id"] == "hero-card"
+    assert cleared_image.json()["thumbnail_id"] == "hero-card"
     assert backend.objects == {}
 
     restored = client.patch(
         f"/admin/posts/{with_both['id']}",
-        files={"image": ("new.png", PNG_BYTES, "image/png"), "unique_thumbnail_id": (None, "")},
+        files={"image": ("new.png", PNG_BYTES, "image/png"), "thumbnail_id": (None, "")},
         headers=AUTH,
     )
     assert restored.status_code == 200
-    assert restored.json()["unique_thumbnail_id"] is None
+    assert restored.json()["thumbnail_id"] is None
     assert restored.json()["image_url"] is not None
 
 
@@ -434,7 +432,7 @@ async def _insert(**overrides) -> PostRecord:
         "body": "World",
         "image_s3_key": None,
         "image_content_type": None,
-        "unique_thumbnail_id": "hero-card",
+        "thumbnail_id": "hero-card",
         "featured": False,
         **overrides,
     }
@@ -449,7 +447,7 @@ async def test_queries_round_trip(clean_posts) -> None:
         featured=True,
         image_s3_key="posts/x/y.png",
         image_content_type="image/png",
-        unique_thumbnail_id="hero-card",  # same id as `older`: repeats are allowed
+        thumbnail_id="hero-card",  # same id as `older`: repeats are allowed
     )
 
     records, total = await post_queries.list_posts(featured=None, limit=10, offset=0)
@@ -471,7 +469,7 @@ async def test_queries_round_trip(clean_posts) -> None:
         body=older.body,
         image_s3_key=None,
         image_content_type=None,
-        unique_thumbnail_id=older.unique_thumbnail_id,
+        thumbnail_id=older.thumbnail_id,
         featured=True,
     )
     assert updated.featured is True
@@ -507,4 +505,4 @@ async def test_list_query_sorts_featured_first(clean_posts) -> None:
 @pytest.mark.anyio
 async def test_database_rejects_post_without_image_or_thumbnail(clean_posts) -> None:
     with pytest.raises(asyncpg.CheckViolationError):
-        await _insert(unique_thumbnail_id=None)
+        await _insert(thumbnail_id=None)

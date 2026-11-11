@@ -16,7 +16,7 @@ class PostRecord(BaseModel):
     body: str
     image_s3_key: Optional[str] = None
     image_content_type: Optional[str] = None
-    unique_thumbnail_id: Optional[str] = None
+    thumbnail_id: Optional[str] = None
     featured: bool
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -29,7 +29,7 @@ class Post(BaseModel):
     title: str
     body: str
     image_url: Optional[str] = None
-    unique_thumbnail_id: Optional[str] = None
+    thumbnail_id: Optional[str] = None
     featured: bool
     created_at: datetime
     updated_at: Optional[datetime] = None

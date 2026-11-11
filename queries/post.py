@@ -14,12 +14,12 @@ async def create_post(
     body: str,
     image_s3_key: Optional[str],
     image_content_type: Optional[str],
-    unique_thumbnail_id: Optional[str],
+    thumbnail_id: Optional[str],
     featured: bool,
 ) -> PostRecord:
     row = await conn.fetchrow(
         """
-        INSERT INTO posts (id, title, body, image_s3_key, image_content_type, unique_thumbnail_id, featured)
+        INSERT INTO posts (id, title, body, image_s3_key, image_content_type, thumbnail_id, featured)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *
         """,
@@ -28,7 +28,7 @@ async def create_post(
         body,
         image_s3_key,
         image_content_type,
-        unique_thumbnail_id,
+        thumbnail_id,
         featured,
     )
     return PostRecord(**row)
@@ -91,7 +91,7 @@ async def update_post(
     body: str,
     image_s3_key: Optional[str],
     image_content_type: Optional[str],
-    unique_thumbnail_id: Optional[str],
+    thumbnail_id: Optional[str],
     featured: bool,
 ) -> Optional[PostRecord]:
     """Overwrite every editable column of a post. Returns None when the post does not exist."""
@@ -102,7 +102,7 @@ async def update_post(
             body = $3,
             image_s3_key = $4,
             image_content_type = $5,
-            unique_thumbnail_id = $6,
+            thumbnail_id = $6,
             featured = $7,
             updated_at = NOW()
         WHERE id = $1
@@ -113,7 +113,7 @@ async def update_post(
         body,
         image_s3_key,
         image_content_type,
-        unique_thumbnail_id,
+        thumbnail_id,
         featured,
     )
     return PostRecord(**row) if row is not None else None

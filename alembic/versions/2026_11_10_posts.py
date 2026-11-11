@@ -27,7 +27,7 @@ def upgrade() -> None:
         sa.Column("image_s3_key", sa.Text(), nullable=True, comment="S3 object key of the post image"),
         sa.Column("image_content_type", sa.Text(), nullable=True),
         sa.Column(
-            "unique_thumbnail_id",
+            "thumbnail_id",
             sa.Text(),
             nullable=True,
             comment="Frontend-provided id of a pre-built thumbnail component. May repeat across posts.",
@@ -36,7 +36,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=True),
         sa.Column("created_at", sa.TIMESTAMP(timezone=True), server_default=sa.text("NOW()"), nullable=False),
         sa.CheckConstraint(
-            "image_s3_key IS NOT NULL OR unique_thumbnail_id IS NOT NULL",
+            "image_s3_key IS NOT NULL OR thumbnail_id IS NOT NULL",
             name="ck_posts_image_or_thumbnail",
         ),
         sa.CheckConstraint(

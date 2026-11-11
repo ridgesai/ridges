@@ -13,7 +13,7 @@ class Post(Base, CreatedAtMixin):
     """A post shown on the frontend.
 
     The image bytes live in S3, only the object key is stored here. A post must have an image,
-    a `unique_thumbnail_id` (which the frontend maps to a pre-built component), or both.
+    a `thumbnail_id` (which the frontend maps to a pre-built component), or both.
     """
 
     __tablename__ = "posts"
@@ -28,7 +28,7 @@ class Post(Base, CreatedAtMixin):
     body: Mapped[str] = mapped_column(sa.Text, nullable=False)
     image_s3_key: Mapped[Optional[str]] = mapped_column(sa.Text, comment="S3 object key of the post image")
     image_content_type: Mapped[Optional[str]] = mapped_column(sa.Text)
-    unique_thumbnail_id: Mapped[Optional[str]] = mapped_column(
+    thumbnail_id: Mapped[Optional[str]] = mapped_column(
         sa.Text,
         comment="Frontend-provided id of a pre-built thumbnail component. May repeat across posts.",
     )
@@ -37,7 +37,7 @@ class Post(Base, CreatedAtMixin):
 
     __table_args__ = (
         sa.CheckConstraint(
-            "image_s3_key IS NOT NULL OR unique_thumbnail_id IS NOT NULL",
+            "image_s3_key IS NOT NULL OR thumbnail_id IS NOT NULL",
             name="ck_posts_image_or_thumbnail",
         ),
         sa.CheckConstraint(

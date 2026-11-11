@@ -421,9 +421,9 @@ PostBody = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1,
 PostThumbnailId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
 
-def _require_image_or_thumbnail(*, has_image: bool, unique_thumbnail_id: Optional[str]) -> None:
-    if not has_image and unique_thumbnail_id is None:
-        raise HTTPException(status_code=422, detail="A post needs an image, a unique_thumbnail_id, or both")
+def _require_image_or_thumbnail(*, has_image: bool, thumbnail_id: Optional[str]) -> None:
+    if not has_image and thumbnail_id is None:
+        raise HTTPException(status_code=422, detail="A post needs an image, a thumbnail_id, or both")
 
 
 async def _store_post_image(post_id: UUID, image: UploadFile) -> tuple[str, str]:
@@ -461,11 +461,11 @@ async def post_post(
     title: Annotated[PostTitle, Form()],
     body: Annotated[PostBody, Form()],
     featured: Annotated[bool, Form()] = False,
-    unique_thumbnail_id: Annotated[Optional[PostThumbnailId], Form()] = None,
+    thumbnail_id: Annotated[Optional[PostThumbnailId], Form()] = None,
     image: Annotated[Optional[UploadFile], File()] = None,
 ) -> Post:
-    """Create a post. Requires an `image`, a `unique_thumbnail_id`, or both."""
-    _require_image_or_thumbnail(has_image=image is not None, unique_thumbnail_id=unique_thumbnail_id)
+    """Create a post. Requires an `image`, a `thumbnail_id`, or both."""
+    _require_image_or_thumbnail(has_image=image is not None, thumbnail_id=thumbnail_id)
 
     post_id = uuid4()
     image_key, image_content_type = (None, None) if image is None else await _store_post_image(post_id, image)
@@ -477,7 +477,7 @@ async def post_post(
             body=body,
             image_s3_key=image_key,
             image_content_type=image_content_type,
-            unique_thumbnail_id=unique_thumbnail_id,
+            thumbnail_id=thumbnail_id,
             featured=featured,
         )
     except Exception:
@@ -496,14 +496,14 @@ async def patch_post(
     title: Annotated[Optional[PostTitle], Form()] = None,
     body: Annotated[Optional[PostBody], Form()] = None,
     featured: Annotated[Optional[bool], Form()] = None,
-    unique_thumbnail_id: Annotated[Optional[PostThumbnailId], Form()] = None,
+    thumbnail_id: Annotated[Optional[PostThumbnailId], Form()] = None,
     image: Annotated[Optional[UploadFile], File()] = None,
 ) -> Post:
     """Update a post; only the fields present in the form change.
 
     - `featured=true|false` sets the featured flag.
     - `image` with a file replaces the current image.
-    - Form data has no null, so sending `image` or `unique_thumbnail_id` with an empty value clears it;
+    - Form data has no null, so sending `image` or `thumbnail_id` with an empty value clears it;
       omitting the field leaves it unchanged.
     """
     # FastAPI turns an empty form value into the parameter default, which makes "sent empty" look
@@ -515,12 +515,12 @@ async def patch_post(
     if existing is None:
         raise HTTPException(status_code=404, detail="Post not found")
 
-    if "unique_thumbnail_id" not in form:
-        unique_thumbnail_id = existing.unique_thumbnail_id
+    if "thumbnail_id" not in form:
+        thumbnail_id = existing.thumbnail_id
     keeps_existing_image = existing.image_s3_key is not None and not remove_image
     _require_image_or_thumbnail(
         has_image=image is not None or keeps_existing_image,
-        unique_thumbnail_id=unique_thumbnail_id,
+        thumbnail_id=thumbnail_id,
     )
 
     image_key = None if remove_image else existing.image_s3_key
@@ -537,7 +537,7 @@ async def patch_post(
             body=existing.body if body is None else body,
             image_s3_key=image_key,
             image_content_type=image_content_type,
-            unique_thumbnail_id=unique_thumbnail_id,
+            thumbnail_id=thumbnail_id,
             featured=existing.featured if featured is None else featured,
         )
     except Exception:
