@@ -46,6 +46,7 @@ _STATUS_SORT_PRIORITY = {
             AgentCompetitionStatus.rejected,
             AgentCompetitionStatus.didnt_qualify,
             AgentCompetitionStatus.under_review,
+            AgentCompetitionStatus.benchmark_pool,
             AgentCompetitionStatus.baseline,
             AgentCompetitionStatus.approved,
         ]
