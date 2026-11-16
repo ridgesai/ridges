@@ -223,6 +223,38 @@ def _fake_async_client_factory(routes: dict[tuple[str, tuple[tuple[str, str], ..
     return FakeAsyncClient
 
 
+def _byok_route(workspace_id: str) -> tuple[str, tuple[tuple[str, object], ...]]:
+    return (f"{OPENROUTER_API_BASE_URL}/byok", (("limit", 1), ("workspace_id", workspace_id)))
+
+
+def _safe_single_workspace_routes(byok_response: httpx.Response) -> dict:
+    return {
+        (f"{OPENROUTER_API_BASE_URL}/key", ()): httpx.Response(
+            200,
+            json={"data": {"label": "sk-or-v1-run...ime", "creator_user_id": "user_123"}},
+        ),
+        (f"{OPENROUTER_API_BASE_URL}/workspaces", ()): httpx.Response(
+            200,
+            json={"data": [{"id": "workspace-1"}]},
+        ),
+        (f"{OPENROUTER_API_BASE_URL}/keys", (("workspace_id", "workspace-1"),)): httpx.Response(
+            200,
+            json={"data": [{"label": "sk-or-v1-run...ime", "creator_user_id": "user_123"}]},
+        ),
+        (f"{OPENROUTER_API_BASE_URL}/workspaces/workspace-1", ()): httpx.Response(
+            200,
+            json={
+                "data": {
+                    "is_observability_io_logging_enabled": False,
+                    "is_observability_broadcast_enabled": False,
+                    "is_data_discount_logging_enabled": False,
+                }
+            },
+        ),
+        _byok_route("workspace-1"): byok_response,
+    }
+
+
 @pytest.mark.anyio
 async def test_validate_openrouter_keys_succeeds_for_non_default_workspace(monkeypatch) -> None:
     runtime_key = "sk-or-v1-runtime"
@@ -261,6 +293,7 @@ async def test_validate_openrouter_keys_succeeds_for_non_default_workspace(monke
                 }
             },
         ),
+        _byok_route("workspace-2"): httpx.Response(200, json={"data": [], "total_count": 0}),
     }
     monkeypatch.setattr(
         openrouter_validation_module.httpx,
@@ -413,6 +446,53 @@ async def test_validate_openrouter_keys_rejects_unsafe_workspace_flags(monkeypat
 
     assert exc_info.value.status_code == 400
     assert "must disable input/output logging, broadcast, and data discount logging" in exc_info.value.detail
+
+
+@pytest.mark.anyio
+async def test_validate_openrouter_keys_rejects_configured_byok_credentials(monkeypatch) -> None:
+    disabled_credential = {"id": "cred-1", "provider": "anthropic", "disabled": True}
+    routes = _safe_single_workspace_routes(httpx.Response(200, json={"data": [disabled_credential], "total_count": 1}))
+    monkeypatch.setattr(
+        openrouter_validation_module.httpx,
+        "AsyncClient",
+        _fake_async_client_factory(routes),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await openrouter_validation_module.validate_openrouter_keys(
+            openrouter_api_key="sk-or-v1-runtime",
+            openrouter_management_key="sk-or-v1-management",
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "must not have BYOK provider keys configured" in exc_info.value.detail
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "byok_response",
+    [
+        httpx.Response(500, json={"error": {"message": "boom"}}),
+        httpx.Response(200, json={"data": []}),
+        httpx.Response(200, json={"data": None, "total_count": 0}),
+        httpx.Response(200, json=["not", "an", "object"]),
+    ],
+)
+async def test_validate_openrouter_keys_fails_closed_on_bad_byok_inspection(monkeypatch, byok_response) -> None:
+    routes = _safe_single_workspace_routes(byok_response)
+    monkeypatch.setattr(
+        openrouter_validation_module.httpx,
+        "AsyncClient",
+        _fake_async_client_factory(routes),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await openrouter_validation_module.validate_openrouter_keys(
+            openrouter_api_key="sk-or-v1-runtime",
+            openrouter_management_key="sk-or-v1-management",
+        )
+
+    assert exc_info.value.status_code == 503
 
 
 @pytest.mark.anyio
