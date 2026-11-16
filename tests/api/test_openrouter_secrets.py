@@ -451,9 +451,7 @@ async def test_validate_openrouter_keys_rejects_unsafe_workspace_flags(monkeypat
 @pytest.mark.anyio
 async def test_validate_openrouter_keys_rejects_configured_byok_credentials(monkeypatch) -> None:
     disabled_credential = {"id": "cred-1", "provider": "anthropic", "disabled": True}
-    routes = _safe_single_workspace_routes(
-        httpx.Response(200, json={"data": [disabled_credential], "total_count": 1})
-    )
+    routes = _safe_single_workspace_routes(httpx.Response(200, json={"data": [disabled_credential], "total_count": 1}))
     monkeypatch.setattr(
         openrouter_validation_module.httpx,
         "AsyncClient",
