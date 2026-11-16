@@ -145,6 +145,23 @@ async def validate_openrouter_keys(
                 ),
             )
 
+        byok_response = await _request_json(
+            client,
+            path="/byok",
+            bearer_token=management_api_key,
+            invalid_key_detail="Invalid OpenRouter management key",
+            params={"workspace_id": workspace_id, "limit": 1},
+        )
+        credentials = byok_response.get("data") if isinstance(byok_response, dict) else None
+        total = byok_response.get("total_count") if isinstance(byok_response, dict) else None
+        if not isinstance(credentials, list) or not isinstance(total, int) or isinstance(total, bool):
+            raise HTTPException(status_code=503, detail="OpenRouter BYOK inspection returned an unexpected body")
+        if credentials or total > 0:
+            raise HTTPException(
+                status_code=400,
+                detail="The OpenRouter workspace for this key must not have BYOK provider keys configured",
+            )
+
     return ValidatedOpenRouterKeys(
         runtime_api_key=runtime_api_key,
         management_api_key=management_api_key,
