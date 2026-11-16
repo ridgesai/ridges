@@ -191,6 +191,9 @@ export RIDGES_OPENROUTER_MANAGEMENT_KEY=sk-or-v1-...
 
 The management key is only used for platform upload validation. It is not required for `ridges miner run-local`.
 
+The key's OpenRouter workspace must have input/output logging, broadcast, and data discount logging disabled, and
+must not have any BYOK provider keys configured. Uploads and evaluation inference are refused otherwise.
+
 
 The miner CLI reads provider settings from:
 
