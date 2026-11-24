@@ -126,3 +126,10 @@ class InsufficientBalanceError(Exception):
         super().__init__(
             f"Balance {balance_alpha_rao} rao does not cover the ${price_usd:.2f} upload price ({price_alpha_rao} rao)"
         )
+
+
+class PostMissingImageOrThumbnailError(Exception):
+    """Raised when a post update would leave the post with neither an image nor a thumbnail_id."""
+
+    def __init__(self):
+        super().__init__("A post needs an image, a thumbnail_id, or both")

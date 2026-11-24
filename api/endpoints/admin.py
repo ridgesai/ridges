@@ -47,6 +47,7 @@ from queries.competition import (
     set_competition_validator_concurrency,
     update_competition_state,
 )
+from queries.errors import PostMissingImageOrThumbnailError
 from queries.internal_flag import add_hotkey_to_blacklist, remove_hotkey_from_blacklist, set_internal_flag
 from queries.upload_credit import grant_upload_credit
 from queries.upload_price import update_competition_pricing
@@ -509,50 +510,43 @@ async def patch_post(
     # FastAPI turns an empty form value into the parameter default, which makes "sent empty" look
     # like "not sent". The raw form (already parsed and cached by FastAPI) tells the two apart.
     form = await request.form()
-    remove_image = image is None and form.get("image") == ""
 
-    existing = await post_queries.get_post(post_id)
-    if existing is None:
-        raise HTTPException(status_code=404, detail="Post not found")
+    # Only the fields that were sent are written, so a concurrent update is never overwritten with stale values.
+    changes: dict[str, object] = {}
+    if title is not None:
+        changes["title"] = title
+    if body is not None:
+        changes["body"] = body
+    if featured is not None:
+        changes["featured"] = featured
+    if "thumbnail_id" in form:
+        changes["thumbnail_id"] = thumbnail_id
 
-    if "thumbnail_id" not in form:
-        thumbnail_id = existing.thumbnail_id
-    keeps_existing_image = existing.image_s3_key is not None and not remove_image
-    _require_image_or_thumbnail(
-        has_image=image is not None or keeps_existing_image,
-        thumbnail_id=thumbnail_id,
-    )
-
-    image_key = None if remove_image else existing.image_s3_key
-    image_content_type = None if remove_image else existing.image_content_type
     uploaded_key: Optional[str] = None
     if image is not None:
-        image_key, image_content_type = await _store_post_image(post_id, image)
-        uploaded_key = image_key
+        uploaded_key, content_type = await _store_post_image(post_id, image)
+        changes.update(image_s3_key=uploaded_key, image_content_type=content_type)
+    elif form.get("image") == "":
+        changes.update(image_s3_key=None, image_content_type=None)
 
     try:
-        record = await post_queries.update_post(
-            post_id,
-            title=existing.title if title is None else title,
-            body=existing.body if body is None else body,
-            image_s3_key=image_key,
-            image_content_type=image_content_type,
-            thumbnail_id=thumbnail_id,
-            featured=existing.featured if featured is None else featured,
-        )
-    except Exception:
+        result = await post_queries.update_post(post_id, **changes)
+    except Exception as exc:
         if uploaded_key is not None:
             await _delete_post_image_best_effort(uploaded_key)
+        if isinstance(exc, PostMissingImageOrThumbnailError):
+            raise HTTPException(status_code=422, detail=str(exc)) from None
         raise
 
-    if record is None:
-        # Deleted between the read and the update.
+    if result is None:
         if uploaded_key is not None:
             await _delete_post_image_best_effort(uploaded_key)
         raise HTTPException(status_code=404, detail="Post not found")
 
-    if existing.image_s3_key and existing.image_s3_key != record.image_s3_key:
-        await _delete_post_image_best_effort(existing.image_s3_key)
+    record, previous_image_key = result
+    # The previous key is read under the row lock, so it is exactly the image this update replaced.
+    if previous_image_key and previous_image_key != record.image_s3_key:
+        await _delete_post_image_best_effort(previous_image_key)
 
     logger.info(f"Updated post {record.id} (featured={record.featured})")
     return (await to_public_posts([record]))[0]

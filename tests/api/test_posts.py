@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
@@ -14,6 +15,7 @@ from api.endpoints import admin as admin_endpoint
 from api.endpoints import posts as posts_endpoint
 from models.post import PostRecord, PostSortField
 from queries import post as post_queries
+from queries.errors import PostMissingImageOrThumbnailError
 from utils import s3 as s3_utils
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
@@ -32,6 +34,7 @@ class FakeBackend:
         self.posts: dict[UUID, PostRecord] = {}
         self.objects: dict[str, tuple[bytes, str]] = {}
         self.fail_create = False
+        self.update_calls: list[dict] = []
         self._clock = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
     async def create_post(self, **fields) -> PostRecord:
@@ -54,13 +57,17 @@ class FakeBackend:
             matching.reverse()
         return matching[offset : offset + limit], len(matching)
 
-    async def update_post(self, post_id: UUID, **fields) -> PostRecord | None:
+    async def update_post(self, post_id: UUID, **changes) -> post_queries.PostUpdateResult | None:
+        # Mirrors the real query: a partial update that enforces the image-or-thumbnail constraint.
+        self.update_calls.append(changes)
         existing = self.posts.get(post_id)
         if existing is None:
             return None
-        record = existing.model_copy(update={**fields, "updated_at": datetime.now(timezone.utc)})
+        record = existing.model_copy(update={**changes, "updated_at": datetime.now(timezone.utc)})
+        if record.image_s3_key is None and record.thumbnail_id is None:
+            raise PostMissingImageOrThumbnailError()
         self.posts[post_id] = record
-        return record
+        return post_queries.PostUpdateResult(record, existing.image_s3_key)
 
     async def delete_post(self, post_id: UUID) -> PostRecord | None:
         return self.posts.pop(post_id, None)
@@ -376,6 +383,47 @@ def test_patch_omitted_image_and_thumbnail_are_left_unchanged(client, backend) -
     assert backend.objects == objects_before
 
 
+def test_patch_writes_only_the_fields_that_were_sent(client, backend) -> None:
+    created = _create(client, thumbnail_id="hero-card").json()
+
+    response = client.patch(f"/admin/posts/{created['id']}", data={"body": "Edited"}, headers=AUTH)
+
+    assert response.status_code == 200
+    # Untouched columns are never written, so a concurrent update to them cannot be overwritten.
+    assert backend.update_calls == [{"body": "Edited"}]
+
+
+@pytest.mark.parametrize("encoding", ["urlencoded", "multipart"])
+def test_patch_empty_thumbnail_id_alone_clears_it_and_keeps_image(client, backend, encoding) -> None:
+    created = _create(client, thumbnail_id="hero-card").json()
+    objects_before = dict(backend.objects)
+    form = {"data": {"thumbnail_id": ""}} if encoding == "urlencoded" else {"files": {"thumbnail_id": (None, "")}}
+
+    response = client.patch(f"/admin/posts/{created['id']}", headers=AUTH, **form)
+
+    # FastAPI maps the empty value to the default before min_length runs, so this is not a validation error.
+    assert response.status_code == 200
+    assert response.json()["thumbnail_id"] is None
+    assert response.json()["image_url"] == created["image_url"]
+    assert backend.objects == objects_before
+
+
+def test_patch_rejected_by_constraint_removes_uploaded_image(client, backend, monkeypatch) -> None:
+    created = _create(client).json()
+    objects_before = dict(backend.objects)
+
+    async def update_violating_constraint(post_id, **changes):
+        raise PostMissingImageOrThumbnailError()
+
+    monkeypatch.setattr(post_queries, "update_post", update_violating_constraint)
+    response = client.patch(
+        f"/admin/posts/{created['id']}", files={"image": ("new.png", PNG_BYTES, "image/png")}, headers=AUTH
+    )
+
+    assert response.status_code == 422
+    assert backend.objects == objects_before
+
+
 def test_patch_clears_image_and_thumbnail_with_empty_multipart_fields(client, backend) -> None:
     with_both = _create(client, thumbnail_id="hero-card").json()
 
@@ -463,27 +511,55 @@ async def test_queries_round_trip(clean_posts) -> None:
     assert total == 2
 
     assert older.updated_at is None
-    updated = await post_queries.update_post(
-        older.id,
-        title="older, edited",
-        body=older.body,
-        image_s3_key=None,
-        image_content_type=None,
-        thumbnail_id=older.thumbnail_id,
-        featured=True,
-    )
+    updated, previous_image_key = await post_queries.update_post(older.id, title="older, edited", featured=True)
+    assert previous_image_key is None
     assert updated.featured is True
     assert updated.title == "older, edited"
+    assert updated.body == older.body and updated.thumbnail_id == older.thumbnail_id  # untouched columns kept
     assert updated.updated_at is not None
     assert await post_queries.get_post(older.id) == updated
 
     assert (await post_queries.delete_post(newer.id)).image_s3_key == "posts/x/y.png"
     assert await post_queries.get_post(newer.id) is None
     assert await post_queries.delete_post(newer.id) is None
-    assert (
-        await post_queries.update_post(newer.id, **updated.model_dump(exclude={"id", "created_at", "updated_at"}))
-        is None
-    )
+    assert await post_queries.update_post(newer.id, title="gone") is None
+
+
+@pytest.mark.anyio
+async def test_update_query_enforces_image_or_thumbnail(clean_posts) -> None:
+    thumbnail_only = await _insert()
+
+    with pytest.raises(PostMissingImageOrThumbnailError):
+        await post_queries.update_post(thumbnail_only.id, thumbnail_id=None)
+    assert await post_queries.get_post(thumbnail_only.id) == thumbnail_only
+
+    with pytest.raises(ValueError, match="id"):
+        await post_queries.update_post(thumbnail_only.id, id=uuid4())
+
+
+@pytest.mark.anyio
+async def test_concurrent_updates_serialize_and_never_restore_a_replaced_image(clean_posts) -> None:
+    post = await _insert(image_s3_key="posts/p/k1.png", image_content_type="image/png")
+
+    # Hold the row lock so both updates queue behind it, then release it and let them run.
+    async with _db.pool.acquire() as holder:
+        transaction = holder.transaction()
+        await transaction.start()
+        await holder.execute("SELECT 1 FROM posts WHERE id = $1 FOR UPDATE", post.id)
+        replace_image = asyncio.create_task(
+            post_queries.update_post(post.id, image_s3_key="posts/p/k2.png", image_content_type="image/png")
+        )
+        edit_body = asyncio.create_task(post_queries.update_post(post.id, body="Edited"))
+        await asyncio.sleep(0.2)
+        assert not replace_image.done() and not edit_body.done()
+        await transaction.commit()
+    image_result, body_result = await asyncio.gather(replace_image, edit_body)
+
+    final = await post_queries.get_post(post.id)
+    assert final.image_s3_key == "posts/p/k2.png"  # the body-only update did not restore k1
+    assert final.body == "Edited"  # and the image update did not undo the body edit
+    assert image_result.previous_image_s3_key == "posts/p/k1.png"
+    assert body_result.previous_image_s3_key in {"posts/p/k1.png", "posts/p/k2.png"}
 
 
 @pytest.mark.anyio
