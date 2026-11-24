@@ -19,6 +19,7 @@ from api.endpoints.debug import router as debug_router
 from api.endpoints.evaluation_run import router as evaluation_run_router
 from api.endpoints.evaluation_sets import router as evaluation_sets_router
 from api.endpoints.evaluations import router as evaluations_router
+from api.endpoints.posts import router as posts_router
 from api.endpoints.retrieval import router as retrieval_router
 from api.endpoints.scaling import router as scaling_router
 from api.endpoints.scoring import router as scoring_router
@@ -139,6 +140,7 @@ app.add_middleware(CorrelationIdMiddleware)
 
 app.include_router(upload_router, prefix="/upload")
 app.include_router(admin_router, prefix="/admin")
+app.include_router(posts_router, prefix="/posts")
 app.include_router(competitions_router, prefix="/competitions")
 app.include_router(retrieval_router, prefix="/retrieval")
 app.include_router(scoring_router, prefix="/scoring")

@@ -32,6 +32,7 @@ from db.models.internal_flag import (
     InternalFlagName,  # noqa: F401
 )
 from db.models.payment import BurnBalanceEntry, CompetitionUploadPrice, EvaluationPayment, UploadPaymentQuote
+from db.models.post import Post
 from db.models.pre_screening_judge import PreScreeningJob, PreScreeningResult
 from db.models.refund import FailedUploadRefund
 from db.models.upload import UploadAttempt
@@ -60,6 +61,7 @@ __all__ = [
     "FailedUploadRefund",
     "Inference",
     "InternalFlag",
+    "Post",
     "UnapprovedAgentId",
     "UploadAttempt",
     "UploadCredit",

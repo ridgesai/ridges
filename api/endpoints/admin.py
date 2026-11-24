@@ -1,14 +1,16 @@
 import logging
 import re
-from typing import Annotated
+from typing import Annotated, Optional
+from uuid import UUID, uuid4
 
 from bittensor_wallet.keypair import Keypair
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
 from pydantic import AwareDatetime, BaseModel, StringConstraints
 
 from api.admin_auth import COMPETITION_ADMIN_ACTOR as COMPETITION_ADMIN_ACTOR
 from api.admin_auth import require_coldkey_ban_admin
 from api.endpoints import validator as validator_endpoint
+from api.endpoints.posts import to_public_posts
 from db.models import InternalFlagName
 from models.banned_coldkey import BannedColdkey
 from models.benchmark_phase import BenchmarkPhaseEndRequest, BenchmarkPhaseSnapshot, BenchmarkPhaseStartRequest
@@ -26,6 +28,7 @@ from models.competition import (
     ValidatorConcurrencySnapshot,
     ValidatorConcurrencyUpdateRequest,
 )
+from models.post import Post
 from models.upload_credit import UploadCredit
 from models.validator_scheduling import (
     CompetitionSchedulingSnapshot,
@@ -33,6 +36,7 @@ from models.validator_scheduling import (
     ValidatorAllowlistSnapshot,
     ValidatorAllowlistUpdateRequest,
 )
+from queries import post as post_queries
 from queries.banned_coldkey import ban_coldkey, unban_coldkey
 from queries.benchmark_phase import end_benchmark_phase, get_benchmark_phase, start_benchmark_phase
 from queries.competition import (
@@ -43,6 +47,7 @@ from queries.competition import (
     set_competition_validator_concurrency,
     update_competition_state,
 )
+from queries.errors import PostMissingImageOrThumbnailError
 from queries.internal_flag import add_hotkey_to_blacklist, remove_hotkey_from_blacklist, set_internal_flag
 from queries.upload_credit import grant_upload_credit
 from queries.upload_price import update_competition_pricing
@@ -52,7 +57,15 @@ from queries.validator_scheduling import (
     set_competition_scheduling,
     set_validator_allowlist,
 )
+from utils import s3
 from utils.debug_lock import DebugLock
+from utils.images import (
+    IMAGE_EXTENSIONS,
+    ImageTooLargeError,
+    InvalidImageError,
+    UnsupportedImageError,
+    read_image,
+)
 from utils.ttl import clear_all_ttl_caches
 from utils.upload_pricing import multiplier
 from utils.validator_hotkeys import PLATFORM_VALIDATOR_PREFIX, is_validator_hotkey_whitelisted
@@ -394,3 +407,163 @@ async def put_validator_competition_allowlist(
 ) -> ValidatorAllowlistSnapshot:
     validate_validator_hotkey(validator_hotkey, require_whitelisted=request.allowed_set_ids is not None)
     return await set_validator_allowlist(validator_hotkey=validator_hotkey, target=request, actor=actor)
+
+
+# --- Posts (CMS) ----------------------------------------------------------------
+#
+# Images are stored unmodified in S3 under `posts/`. Every upload gets a fresh key, and an image that
+# is no longer referenced is deleted only after the database change succeeds (an orphaned S3 object
+# is harmless, a row pointing at a missing object is not).
+
+MAX_POST_IMAGE_SIZE_BYTES = 20 * 1024 * 1024
+
+PostTitle = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)]
+PostBody = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50_000)]
+PostThumbnailId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+
+
+def _require_image_or_thumbnail(*, has_image: bool, thumbnail_id: Optional[str]) -> None:
+    if not has_image and thumbnail_id is None:
+        raise HTTPException(status_code=422, detail="A post needs an image, a thumbnail_id, or both")
+
+
+async def _store_post_image(post_id: UUID, image: UploadFile) -> tuple[str, str]:
+    """Validate an image and upload it under a fresh key. Returns (s3_key, content_type)."""
+    try:
+        data, content_type = await read_image(image, max_bytes=MAX_POST_IMAGE_SIZE_BYTES)
+    except ImageTooLargeError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from None
+    except UnsupportedImageError as exc:
+        raise HTTPException(status_code=415, detail=str(exc)) from None
+    except InvalidImageError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+
+    # A fresh key per upload, so a replaced image is never served from a stale cache.
+    key = f"posts/{post_id}/{uuid4()}.{IMAGE_EXTENSIONS[content_type]}"
+    await s3.upload_bytes_to_s3(key, data, content_type=content_type)
+    return key, content_type
+
+
+async def _delete_post_image_best_effort(key: str) -> None:
+    """Delete a post image, logging instead of raising: an orphaned object is harmless."""
+    try:
+        await s3.delete_file_from_s3(key)
+    except Exception as exc:
+        logger.error(f"Failed to delete post image s3_key={key}: {type(exc).__name__}: {exc}")
+
+
+@router.post(
+    "/posts",
+    response_model=Post,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_coldkey_ban_admin)],
+)
+async def post_post(
+    title: Annotated[PostTitle, Form()],
+    body: Annotated[PostBody, Form()],
+    featured: Annotated[bool, Form()] = False,
+    thumbnail_id: Annotated[Optional[PostThumbnailId], Form()] = None,
+    image: Annotated[Optional[UploadFile], File()] = None,
+) -> Post:
+    """Create a post. Requires an `image`, a `thumbnail_id`, or both."""
+    _require_image_or_thumbnail(has_image=image is not None, thumbnail_id=thumbnail_id)
+
+    post_id = uuid4()
+    image_key, image_content_type = (None, None) if image is None else await _store_post_image(post_id, image)
+
+    try:
+        record = await post_queries.create_post(
+            post_id=post_id,
+            title=title,
+            body=body,
+            image_s3_key=image_key,
+            image_content_type=image_content_type,
+            thumbnail_id=thumbnail_id,
+            featured=featured,
+        )
+    except Exception:
+        if image_key is not None:
+            await _delete_post_image_best_effort(image_key)
+        raise
+
+    logger.info(f"Created post {record.id} (featured={record.featured}, has_image={image_key is not None})")
+    return (await to_public_posts([record]))[0]
+
+
+@router.patch("/posts/{post_id}", response_model=Post, dependencies=[Depends(require_coldkey_ban_admin)])
+async def patch_post(
+    post_id: UUID,
+    request: Request,
+    title: Annotated[Optional[PostTitle], Form()] = None,
+    body: Annotated[Optional[PostBody], Form()] = None,
+    featured: Annotated[Optional[bool], Form()] = None,
+    thumbnail_id: Annotated[Optional[PostThumbnailId], Form()] = None,
+    image: Annotated[Optional[UploadFile], File()] = None,
+) -> Post:
+    """Update a post; only the fields present in the form change.
+
+    - `featured=true|false` sets the featured flag.
+    - `image` with a file replaces the current image.
+    - Form data has no null, so sending `image` or `thumbnail_id` with an empty value clears it;
+      omitting the field leaves it unchanged.
+    """
+    # FastAPI turns an empty form value into the parameter default, which makes "sent empty" look
+    # like "not sent". The raw form (already parsed and cached by FastAPI) tells the two apart.
+    form = await request.form()
+
+    # Only the fields that were sent are written, so a concurrent update is never overwritten with stale values.
+    changes: dict[str, object] = {}
+    if title is not None:
+        changes["title"] = title
+    if body is not None:
+        changes["body"] = body
+    if featured is not None:
+        changes["featured"] = featured
+    if "thumbnail_id" in form:
+        changes["thumbnail_id"] = thumbnail_id
+
+    uploaded_key: Optional[str] = None
+    if image is not None:
+        uploaded_key, content_type = await _store_post_image(post_id, image)
+        changes.update(image_s3_key=uploaded_key, image_content_type=content_type)
+    elif form.get("image") == "":
+        changes.update(image_s3_key=None, image_content_type=None)
+
+    try:
+        result = await post_queries.update_post(post_id, **changes)
+    except Exception as exc:
+        if uploaded_key is not None:
+            await _delete_post_image_best_effort(uploaded_key)
+        if isinstance(exc, PostMissingImageOrThumbnailError):
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        raise
+
+    if result is None:
+        if uploaded_key is not None:
+            await _delete_post_image_best_effort(uploaded_key)
+        raise HTTPException(status_code=404, detail="Post not found")
+
+    record, previous_image_key = result
+    # The previous key is read under the row lock, so it is exactly the image this update replaced.
+    if previous_image_key and previous_image_key != record.image_s3_key:
+        await _delete_post_image_best_effort(previous_image_key)
+
+    logger.info(f"Updated post {record.id} (featured={record.featured})")
+    return (await to_public_posts([record]))[0]
+
+
+@router.delete(
+    "/posts/{post_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_coldkey_ban_admin)],
+)
+async def delete_post(post_id: UUID) -> Response:
+    """Delete a post and its image."""
+    record = await post_queries.delete_post(post_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if record.image_s3_key:
+        await _delete_post_image_best_effort(record.image_s3_key)
+
+    logger.info(f"Deleted post {post_id}")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
