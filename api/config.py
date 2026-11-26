@@ -293,6 +293,19 @@ SENTRY_DSN = os.getenv("SENTRY_DSN")
 if not SENTRY_DSN:
     logger.warning("SENTRY_DSN is not set, Sentry will not be configured.")
 
+
+def _sample_rate_setting(name: str, default: str) -> float:
+    value = float(os.getenv(name, default))
+    if not math.isfinite(value) or not 0 <= value <= 1:
+        raise ValueError(f"{name} must be between 0 and 1")
+    return value
+
+
+# Span volume is billed against a quota shared with other projects, so keep these low.
+# High-frequency endpoints (see api/src/utils/sentry.py) use the high-frequency rate.
+SENTRY_TRACES_SAMPLE_RATE = _sample_rate_setting("SENTRY_TRACES_SAMPLE_RATE", "0.05")
+SENTRY_HIGH_FREQUENCY_TRACES_SAMPLE_RATE = _sample_rate_setting("SENTRY_HIGH_FREQUENCY_TRACES_SAMPLE_RATE", "0.01")
+
 TASK_IMAGE_TOKEN_SIGNING_KEY = os.getenv("TASK_IMAGE_TOKEN_SIGNING_KEY", "").replace("\\n", "\n").strip()
 TASK_IMAGE_PUBLISHER_PASSWORD = os.getenv("TASK_IMAGE_PUBLISHER_PASSWORD", "")
 TASK_IMAGE_REGISTRY = os.getenv("TASK_IMAGE_REGISTRY", "").strip()
